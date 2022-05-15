@@ -1,0 +1,28 @@
+{
+  "PlayerData": [
+    {
+      "PlayerID": "6FC205855F7B3E92",
+      "Moderator": true
+    },
+    {
+      "PlayerID": "9DF42081F19185CF",
+      "Moderator": true
+    },
+    {
+      "PlayerID": "71A3698E375300DD",
+      "Moderator": true
+    },
+    {
+      "PlayerID": "0123456789ABCDEF",
+      "Admin": false,
+      "Moderator": false,
+      "Founder": false
+    },
+    {
+      "PlayerID": "NO-ID",
+      "Admin": false,
+      "Moderator": false,
+      "Founder": true
+    }
+  ]
+}
