@@ -343,46 +343,38 @@ namespace WCSARS
         {
             for (int i = 0; i < player_list.Length; i++)
             {
-                if (player_list[i] != null)
+                if (player_list[i] != null && player_list[i].isDrinking)
                 {
-                    if (player_list[i].isDrinking)
+                    if (player_list[i].drinkies > 0)
                     {
-                        if (player_list[i].hp != 100)
+                        byte ToDrink = 5;
+                        if ((player_list[i].drinkies - 5) < 0) // If we'll go into the negatives then let's just get all that we can instead
                         {
-                            for (int j = 0; j < player_list[i].drinkies; j++)
-                            {
-                                if ((player_list[i].drinkies - 5) >= 0)
-                                {
-                                    player_list[i].drinkies -= 5;
-                                    player_list[i].hp += 5;
-                                    if (player_list[i].hp > 100)
-                                    {
-                                        player_list[i].hp = 100;
-                                    }
-                                }
-                                else
-                                {
-                                    player_list[i].isDrinking = false;
-                                    NetOutgoingMessage tmp_drinkFinish = server.CreateMessage();
-                                    tmp_drinkFinish.Write((byte)49);
-                                    tmp_drinkFinish.Write(player_list[i].myID);
-                                    server.SendToAll(tmp_drinkFinish, NetDeliveryMethod.ReliableSequenced);
-                                    break;
-                                }
-                            }
+                            ToDrink = (byte)(5 - player_list[i].drinkies);
                         }
-                        else
+                        if ((player_list[i].hp + ToDrink) >= 100)
                         {
+                            ToDrink = (byte)(100 - player_list[i].hp); // store needed difference somewhere
+                            player_list[i].hp += ToDrink;
+                            player_list[i].drinkies -= ToDrink;
                             player_list[i].isDrinking = false;
-                            NetOutgoingMessage tmp_drinkFinish = server.CreateMessage();
-                            tmp_drinkFinish.Write((byte)49);
-                            tmp_drinkFinish.Write(player_list[i].myID);
-                            server.SendToAll(tmp_drinkFinish, NetDeliveryMethod.ReliableSequenced);
+                            ServerAMSG_EndedDrinking(player_list[i].myID);
                             break;
                         }
+                        player_list[i].hp += ToDrink;
+                        if (0 >= (player_list[i].drinkies - ToDrink))
+                        {
+                            player_list[i].drinkies = 0; // seems a bit redundant if drinkies is going to be 0, but you know in case it won't
+                            player_list[i].isDrinking = false;
+                            ServerAMSG_EndedDrinking(player_list[i].myID);
+                            break;
+                        } // if drinkies amount won't go into the negatives or equal 0, then just subtract like normal
+                        player_list[i].drinkies -= ToDrink; 
+                        break; // yes, important. prevents running the last part below
                     }
+                    player_list[i].isDrinking = false;
+                    ServerAMSG_EndedDrinking(player_list[i].myID);
                 }
-                else { break; }
             }
         }
 
@@ -1721,6 +1713,7 @@ namespace WCSARS
                         break;
                     case "/drink":
                         Logger.Success("drink command");
+                        byte drinkiesAmount;
                         if (command.Length > 2)
                         {
                             try
@@ -1734,8 +1727,19 @@ namespace WCSARS
                             {
                                 responseMsg = "One or both arguments were not integer values. please try again.";
                             }
+                        } else if (command.Length > 1)
+                        {
+                            try
+                            {
+                                drinkiesAmount = byte.Parse(command[1]);
+                                player_list[getPlayerArrayIndex(message.SenderConnection)].drinkies = drinkiesAmount;
+                                responseMsg = $"Set your drink amount to {drinkiesAmount}.";
+                            }
+                            catch
+                            {
+                                responseMsg = "Error parsing AMOUNT argument. Usage: /drink {Amount (Integer)}";
+                            }
                         }
-                        else { responseMsg = "Insufficient amount of arguments provided. usage: /drink {ID} {AMOUNT}"; }
                         break;
                     case "/tapes":
                         Logger.Success("tape command");
@@ -1894,6 +1898,16 @@ namespace WCSARS
             msg.Write(nadeHeight);
             msg.Write((byte)1);
             msg.Write((short)0);// this should be a list of all players that are within the blast radius
+            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+        }
+        /// <summary>
+        /// Sends a message to all connected clients that the provided PlayerID has stopped drinking. This method does not set the player's IsDrinking property to false.
+        /// </summary>
+        private void ServerAMSG_EndedDrinking(short aID) // Server Announcement Message - Someone Ended Drinking
+        {
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)49);
+            msg.Write(aID);
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
