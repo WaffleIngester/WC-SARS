@@ -103,47 +103,49 @@ namespace WCSARS
                                     isSorted = false;
                                     break;
                                 case NetConnectionStatus.Disconnected:
-                                    Logger.Warn("Searching for player that disconnected.");
-                                    Logger.Failure(msg.ReadString());
-                                    //Logger.Warn($"{msg.SenderEndPoint} has disconnected...");
+                                    Logger.Warn($"[Connection Update - Disconnected] A client has disconnected (message: {msg.ReadString()}). Attempting to remove their data from server...");
                                     short plr = getPlayerArrayIndex(msg.SenderConnection);
                                     if (plr != -1)
                                     {
                                         NetOutgoingMessage playerLeft = server.CreateMessage();
                                         playerLeft.Write((byte)46);
                                         playerLeft.Write(player_list[plr].myID);
-                                        playerLeft.Write(false); //isAdminGhosting -- not quite sure how to determine this
+                                        playerLeft.Write(false); // Is Ghosting (you know, like a hidden mod or some junk.)
                                         server.SendToAll(playerLeft, NetDeliveryMethod.ReliableOrdered);
                                         availableIDs.Insert(0, player_list[plr].myID);
                                         player_list[plr] = null;
-                                        Logger.Success("Player Disconnected and dealt with successfully.");
+                                        Logger.Success("[Connection Update - Disconnected] Dealt with disconnected player successfully");
                                         isSorted = false;
                                     }
                                     else { Logger.Failure("Well that is awfully strange. No one was found."); }
                                     break;
                                 case NetConnectionStatus.Disconnecting:
-                                    Logger.Warn($"Somebody is disconnecting...");
+                                    Logger.Warn($"[Connection Update - Disconnecting] A client is attempting to disconnect.");
                                     break;
                             }
                             break;
-                        case NetIncomingMessageType.ConnectionApproval:
-                            Logger.Header("<< Incoming Connection >>");
+                        case NetIncomingMessageType.ConnectionApproval: // absolutely NO CLUE why this doesn't do anything anymore.
+                            Logger.Header("[Connection Approval] A new connection is awaiting approval!");
                             string clientKey = msg.ReadString();
+                            Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
                             if (clientKey == "flwoi51nawudkowmqqq")
                             {
                                 if (!matchStarted)
                                 {
-                                    Logger.Success("Connection Allowed.");
+                                    Logger.Success("[Connection Approval] Incoming connection's key was the same as the server's. Connection approved.");
                                     msg.SenderConnection.Approve();
                                 }
                                 else
                                 {
-                                    Logger.Failure("Connection Refused. Match in progress.");
+                                    Logger.Failure("[Connection Approval] Incoming connection had the right key, however the match was in progress. Connection denied.");
                                     msg.SenderConnection.Deny($"The match has already begun, sorry!");
                                 }
-
                             }
-                            else { msg.SenderConnection.Deny($"Your client version key is incorrect.\n\nYour version key: {clientKey}"); Logger.Failure("Client Connected with wrong key..."); }
+                            else
+                            {
+                                msg.SenderConnection.Deny($"Your client version key is incorrect.\n\nYour version key: {clientKey}");
+                                Logger.Failure($"[Connection Approval] Incoming connection {msg.SenderEndPoint}'s sent key was incorrect. Connection denied.");
+                            }
                             break;
                         case NetIncomingMessageType.DebugMessage:
                             Logger.DebugServer(msg.ReadString());
@@ -525,7 +527,7 @@ namespace WCSARS
             {
                 // Request Authentication
                 case 1:
-                    Logger.Header($"Authentication Requestion\nSender: {msg.SenderEndPoint}\n");
+                    Logger.Header($"[Authentication Request] {msg.SenderEndPoint} is sending an authentication request!");
                     sendAuthenticationResponseToClient(msg);
                     break;
 
@@ -2086,10 +2088,10 @@ namespace WCSARS
         /// </summary>
         private NetOutgoingMessage MakeNewDrinkLootItem(short aDrinkAmount, float[] aPositions)
         {
-            sv_TotalLootCounter++; // Increase LootCounter by 1
             NetOutgoingMessage msg = server.CreateMessage();
+            sv_TotalLootCounter++;              // Increase LootCounter by 1
             msg.Write((byte)20);                // Header       |  Byte
-            msg.Write(sv_TotalLootCounter);      // LootID       |  Int
+            msg.Write(sv_TotalLootCounter);     // LootID       |  Int
             msg.Write((byte)LootType.Juices);   // LootType     |  Byte
             msg.Write(aDrinkAmount);            // Info/Amount  |  Short
             msg.Write(aPositions[0]);           // Postion X1   |  Float
@@ -2106,9 +2108,9 @@ namespace WCSARS
         private NetOutgoingMessage MakeNewArmorLootItem(byte armorTicks, byte ArmorTier, float[] aPositions)
         {
             NetOutgoingMessage msg = server.CreateMessage();
-            sv_TotalLootCounter++;               // Increase LootCounter by 1
+            sv_TotalLootCounter++;              // Increase LootCounter by 1
             msg.Write((byte)20);                // Header       |  Byte
-            msg.Write(sv_TotalLootCounter);      // LootID       |  Int
+            msg.Write(sv_TotalLootCounter);     // LootID       |  Int
             msg.Write((byte)LootType.Armor);    // LootType     |  Byte
             msg.Write((short)armorTicks);       // Info/Amount  |  Short
             msg.Write(aPositions[0]);           // Postion X1   |  Float
@@ -2125,12 +2127,12 @@ namespace WCSARS
         /// </summary>
         private NetOutgoingMessage MakeNewTapeLootItem(byte tapeAmount, float[] aPositions)
         {
-            sv_TotalLootCounter++; // Increase LootCounter by 1
             NetOutgoingMessage msg = server.CreateMessage();
+            sv_TotalLootCounter++;              // Increase LootCounter by 1
             msg.Write((byte)20);                // Header       |  Byte
-            msg.Write(sv_TotalLootCounter);      // LootID       |  Int
-            msg.Write((byte)LootType.Tape);   // LootType     |  Byte
-            msg.Write((short)tapeAmount);               // Info/Amount  |  Short
+            msg.Write(sv_TotalLootCounter);     // LootID       |  Int
+            msg.Write((byte)LootType.Tape);     // LootType     |  Byte
+            msg.Write((short)tapeAmount);       // Info/Amount  |  Short
             msg.Write(aPositions[0]);           // Postion X1   |  Float
             msg.Write(aPositions[1]);           // Postion Y1   |  Float
             msg.Write(aPositions[2]);           // Postion X2   |  Float
@@ -2145,10 +2147,10 @@ namespace WCSARS
         private NetOutgoingMessage MakeNewThrowableLootItem(short itemIndex, byte spawnCount, string name, float[] aPositions)
         {
             NetOutgoingMessage msg = server.CreateMessage();
-            sv_TotalLootCounter++;               // Increase LootCounter by 1
-            msg.Write((byte)20);                // Header       |  Byte
-            msg.Write(sv_TotalLootCounter);      // LootID       |  Int
-            msg.Write((byte)LootType.Weapon);   // LootType     |  Byte
+            sv_TotalLootCounter++;              // Increase LootCounter by 1
+            msg.Write((byte)20);                // Header              |  Byte
+            msg.Write(sv_TotalLootCounter);     // LootID              |  Int
+            msg.Write((byte)LootType.Weapon);   // LootType            |  Byte
             msg.Write(itemIndex);               // Info/ Which Weapon  |  Short
             msg.Write(aPositions[0]);           // Postion X1          |  Float
             msg.Write(aPositions[1]);           // Postion Y1          |  Float
@@ -2174,13 +2176,13 @@ namespace WCSARS
             msg.Write(aPositions[2]);            // Postion X2          |  Float
             msg.Write(aPositions[3]);            // Postion Y2          |  Float
             msg.Write(clipAmount);               // Spawn Amount        |  Byte
-            msg.Write(itemRarity.ToString());               // Spawn Amount        |  Byte
+            msg.Write(itemRarity.ToString());    // Spawn Amount        |  Byte
             ItemList.Add(sv_TotalLootCounter, new LootItem(sv_TotalLootCounter, LootType.Weapon, WeaponType.Gun, name, itemRarity, (byte)weaponIndex, clipAmount));
             return msg;
         }
 
         /// <summary>
-        /// Fills the Server's LootItem-List. Only use this once.
+        /// Fills the server's LootItem list using the provided seed.
         /// </summary>
         private void GenerateItemLootList(int seed)
         {
@@ -2189,7 +2191,7 @@ namespace WCSARS
             sv_TotalLootCounter = 0;
             MersenneTwister MerTwist = new MersenneTwister((uint)seed);
             ItemList = new Dictionary<int, LootItem>();
-            int LootID = 0;
+            int LootID;
             bool YesMakeBetter;
             uint MinGenValue;
             uint num;
@@ -2267,7 +2269,7 @@ namespace WCSARS
                     }
                     else
                     {
-                        if (num <= 60.0) // Skip :) [???]
+                        if (num <= 60.0) // Skip ??
                         {
                         }
                         else if (num <= 66.0) // Tape
@@ -2281,26 +2283,6 @@ namespace WCSARS
 
                             short thisInd = WeaponsToChooseByIndex[(int)MerTwist.NextUInt(0U, (uint)WeaponsToChooseByIndex.Count)];
                             Weapon GeneratedWeapon = s_WeaponsList[thisInd];
-                            //num = MerTwist.NextUInt(0U, (uint)Weapon.AllWeaponsInGame.Length);
-                            //num = MerTwist.NextUInt(0U, 101U);
-
-                            //Logger.Basic($"   -> Initial Weapon Chosen: {num}");
-
-                            //WeaponType WeaponType_ = GeneratedWeapon.WeaponType;
-                            //for now, I just made it advance a frame
-
-                            //num = allWeaponsList[ (int)( MerTwist(0U, (uint)( allWeaponsList.Count ) ) ) ];
-
-                            /* This is very annoying.
-                             * Game loads a list of every single weapon in the game. Literally everything.
-                             * Stores that in a list somewhere. Uses that to generate weapos.
-                             * num = some randomly chosen weapon
-                             * WeaponType = what the actual WeaponType for that weapon is
-                             * if the weapon is a melee one, we skip
-                             * if it is a gun go do gun stuff
-                             * if it is a throwable you just spawn it depending on how many should spawn in the overworld
-                             *  (if memory serves correctly; bananas you are able to 2 of. everything other throwable spawns in 1s)
-                             */
                             if (GeneratedWeapon.WeaponType == WeaponType.Gun)
                             {
                                 byte ItemRarity = 0;
@@ -2327,7 +2309,6 @@ namespace WCSARS
                                 {
                                     LootID = sv_TotalLootCounter;
                                     sv_TotalLootCounter++;
-                                    //LootID++;
                                     ItemList.Add(LootID, new LootItem(LootID, LootType.Ammo, WeaponType.NotWeapon, $"Ammo-Type{GeneratedWeapon.AmmoType}", GeneratedWeapon.AmmoType, GeneratedWeapon.AmmoSpawnAmount));
                                 }
                             }
@@ -2342,12 +2323,14 @@ namespace WCSARS
             //Logger.Success($"Successfully generated the ItemList.Count:LootIDCount {ItemList.Keys.Count}:{LootID + 1}");
             //Logger.Success($"ItemList.Count:LootIDCount -- {ItemList.Keys.Count}:{sv_TotalLootCounter}");
         }
-        private void GenerateHamsterballs(int seed)
+        /// <summary>
+        /// Fills the server's hammerball list using the provided seed. 
+        /// </summary>
+        private void GenerateHamsterballs(int seed) // TODO - find list of every single hammerballs and its location. then, you know- use it?
         {
             Logger.Warn("Generating Hamsterballs...");
             MersenneTwister rng = new MersenneTwister((uint)seed);
             HamsterballList = new Dictionary<int, Vehicle>();
-            // TODO - find out how to load a list of all vehicle-spawn tiles.
             int num = 0;
             for (int i = 0; i < 89; i++) // at this moment, we are aware there are 89 total spots. not *where* though, which comes with the data. oh well.
             {
@@ -2357,7 +2340,6 @@ namespace WCSARS
                     num++;
                 }
             }
-            //Logger.DebugServer($"Successfully generated: {num} hamsterballs!"); << -- used to check if generated amounts line up (which they do right now)
         }
 
 
