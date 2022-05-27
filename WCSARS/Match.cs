@@ -73,7 +73,8 @@ namespace WCSARS
 
             // NetServer Initialization and starting
             config = new NetPeerConfiguration("BR2D");
-            config.EnableMessageType(NetIncomingMessageType.ConnectionLatencyUpdated);
+            config.EnableMessageType(NetIncomingMessageType.ConnectionLatencyUpdated); // Reminder to not remove this
+            config.EnableMessageType(NetIncomingMessageType.ConnectionApproval); // Reminder to not remove this
             config.PingInterval = 22f;
             config.LocalAddress = System.Net.IPAddress.Parse(ip);
             config.Port = port;
@@ -104,6 +105,26 @@ namespace WCSARS
                                     break;
                                 case NetConnectionStatus.Disconnected:
                                     Logger.Warn($"[Connection Update - Disconnected] A client has disconnected (message: {msg.ReadString()}). Attempting to remove their data from server...");
+                                    if (tryFindIndexbyConnection(msg.SenderConnection, out int index))
+                                    {
+                                        NetOutgoingMessage msg_disconnect = server.CreateMessage();
+                                        msg_disconnect.Write((byte)46);
+                                        msg_disconnect.Write(player_list[index].myID); // player left ID
+                                        msg_disconnect.Write(false); // no clue? IsVanish? [as in, moderator ghosting like MC]
+                                        server.SendToAll(msg_disconnect, NetDeliveryMethod.ReliableOrdered);
+
+                                        // TODO - Major Problem 1 - Handling incoming Player IDs is a bit messy, and calls for this convoluted solution
+                                        availableIDs.Insert(0, player_list[index].myID);
+                                        player_list[index] = null;
+                                        isSorted = false;
+                                        Logger.Success($"[Connection Update - Disconnected] The disconnecting client has been delt with successfully!");
+                                    }
+                                    else
+                                    {
+                                        Logger.Failure($"[Connection Update - Disconnected.ERROR] There seems to have been a problem actually locating the player in the array. Uh oh!");
+                                    }
+                                    
+                                    /*
                                     short plr = getPlayerArrayIndex(msg.SenderConnection);
                                     if (plr != -1)
                                     {
@@ -117,14 +138,16 @@ namespace WCSARS
                                         Logger.Success("[Connection Update - Disconnected] Dealt with disconnected player successfully");
                                         isSorted = false;
                                     }
-                                    else { Logger.Failure("Well that is awfully strange. No one was found."); }
+                                    else {
+                                    Logger.Failure("Well that is awfully strange. No one was found.");
+                                    }*/
                                     break;
                                 case NetConnectionStatus.Disconnecting:
                                     Logger.Warn($"[Connection Update - Disconnecting] A client is attempting to disconnect.");
                                     break;
                             }
                             break;
-                        case NetIncomingMessageType.ConnectionApproval: // absolutely NO CLUE why this doesn't do anything anymore.
+                        case NetIncomingMessageType.ConnectionApproval: // must enable MessageType ConnectionApproval for this to work
                             Logger.Header("[Connection Approval] A new connection is awaiting approval!");
                             string clientKey = msg.ReadString();
                             Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
@@ -138,7 +161,7 @@ namespace WCSARS
                                 else
                                 {
                                     Logger.Failure("[Connection Approval] Incoming connection had the right key, however the match was in progress. Connection denied.");
-                                    msg.SenderConnection.Deny($"The match has already begun, sorry!");
+                                    msg.SenderConnection.Deny($"The match you are trying to join is already in progress. Sorry!");
                                 }
                             }
                             else
@@ -164,7 +187,7 @@ namespace WCSARS
                                 Logger.Basic($"  -> Average Round Time: {msg.SenderConnection.AverageRoundtripTime}");
                                 try
                                 {
-                                    player_list[getPlayerArrayIndex(msg.SenderConnection)].lastPingTime = pingTime; //not actually ping whoopsies
+                                    player_list[getPlayerArrayIndex(msg.SenderConnection)].LastPingTime = pingTime; //not actually ping whoopsies
                                 }
                                 catch
                                 {
@@ -275,7 +298,7 @@ namespace WCSARS
                 if (player_list[i] != null)
                 {
                     playerUpdate.Write(player_list[i].myID);
-                    playerUpdate.Write(player_list[i].mouseAngle);
+                    playerUpdate.Write(player_list[i].MouseAngle);
                     playerUpdate.Write(player_list[i].position_X);
                     playerUpdate.Write(player_list[i].position_Y);
                 }
@@ -299,11 +322,11 @@ namespace WCSARS
                         if (player_list[i] != null)
                         {
                             msg.Write(player_list[i].myID);
-                            msg.Write(player_list[i].hp);
+                            msg.Write(player_list[i].HP);
                             msg.Write(player_list[i].ArmorTier);
-                            msg.Write(player_list[i].armorTapes);
+                            msg.Write(player_list[i].ArmorTapes);
                             msg.Write(player_list[i].WalkMode);
-                            msg.Write(player_list[i].drinkies);
+                            msg.Write(player_list[i].Drinkies);
                             msg.Write(player_list[i].Tapies);
                         }
                         else { break; }
@@ -333,7 +356,7 @@ namespace WCSARS
                     for (int j = 0; j < i; j++)
                     {
                         pings.Write(player_list[j].myID);
-                        pings.Write((short)(player_list[j].lastPingTime * 1000f)); //this appears to be correct.
+                        pings.Write((short)(player_list[j].LastPingTime * 1000f)); //this appears to be correct.
                     }
                     break;
                 }
@@ -347,31 +370,31 @@ namespace WCSARS
             {
                 if (player_list[i] != null && player_list[i].isDrinking)
                 {
-                    if (player_list[i].drinkies > 0)
+                    if (player_list[i].Drinkies > 0)
                     {
                         byte ToDrink = 5;
-                        if ((player_list[i].drinkies - 5) < 0) // If we'll go into the negatives then let's just get all that we can instead
+                        if ((player_list[i].Drinkies - 5) < 0) // If we'll go into the negatives then let's just get all that we can instead
                         {
-                            ToDrink = (byte)(5 - player_list[i].drinkies);
+                            ToDrink = (byte)(5 - player_list[i].Drinkies);
                         }
-                        if ((player_list[i].hp + ToDrink) >= 100)
+                        if ((player_list[i].HP + ToDrink) >= 100)
                         {
-                            ToDrink = (byte)(100 - player_list[i].hp); // store needed difference somewhere
-                            player_list[i].hp += ToDrink;
-                            player_list[i].drinkies -= ToDrink;
+                            ToDrink = (byte)(100 - player_list[i].HP); // store needed difference somewhere
+                            player_list[i].HP += ToDrink;
+                            player_list[i].Drinkies -= ToDrink;
                             player_list[i].isDrinking = false;
                             ServerAMSG_EndedDrinking(player_list[i].myID);
                             break;
                         }
-                        player_list[i].hp += ToDrink;
-                        if (0 >= (player_list[i].drinkies - ToDrink))
+                        player_list[i].HP += ToDrink;
+                        if (0 >= (player_list[i].Drinkies - ToDrink))
                         {
-                            player_list[i].drinkies = 0; // seems a bit redundant if drinkies is going to be 0, but you know in case it won't
+                            player_list[i].Drinkies = 0; // seems a bit redundant if drinkies is going to be 0, but you know in case it won't
                             player_list[i].isDrinking = false;
                             ServerAMSG_EndedDrinking(player_list[i].myID);
                             break;
                         } // if drinkies amount won't go into the negatives or equal 0, then just subtract like normal
-                        player_list[i].drinkies -= ToDrink; 
+                        player_list[i].Drinkies -= ToDrink; 
                         break; // yes, important. prevents running the last part below
                     }
                     player_list[i].isDrinking = false;
@@ -570,7 +593,7 @@ namespace WCSARS
                             {
                                 player_list[i].position_X = actX;
                                 player_list[i].position_Y = actY;
-                                player_list[i].mouseAngle = mAngle;
+                                player_list[i].MouseAngle = mAngle;
                                 player_list[i].WalkMode = currentwalkMode;
                                 break;
                             }
@@ -608,7 +631,7 @@ namespace WCSARS
                     NetOutgoingMessage plrShot = server.CreateMessage();
                     plrShot.Write((byte)17);
                     plrShot.Write(player_list[indexID].myID); //ID of the player who made the shot
-                    plrShot.Write((ushort)(player_list[indexID].lastPingTime * 1000f)); //before it was stated "I don't give a darn!" because ping would always be set to 1. now it's just confuzing as to whether this truly works
+                    plrShot.Write((ushort)(player_list[indexID].LastPingTime * 1000f)); //before it was stated "I don't give a darn!" because ping would always be set to 1. now it's just confuzing as to whether this truly works
                     plrShot.Write(weaponID); //weaponID from shot
                     plrShot.Write(slotIndex); //slotIndex
                     plrShot.Write(attackID); //attackID
@@ -641,7 +664,10 @@ namespace WCSARS
 
                     break;
                 case 18:
-                    serverSendPlayerShoteded(msg);
+                    if (matchStarted)
+                    {
+                        serverSendPlayerShoteded(msg);
+                    }
                     break;
                 case 21: //TODO -- cleanup / fix
                     /* main issue -- client game seems to repeatedly try and claim a loot item. it does this so fast it can claim...
@@ -701,14 +727,14 @@ namespace WCSARS
                                 break;
                             case LootType.Juices:
                                 Logger.Basic($" -> Player found some drinkies. +{m_LootToGive.GiveAmount}");
-                                if (thisPlayer.drinkies + m_LootToGive.GiveAmount > 200)
+                                if (thisPlayer.Drinkies + m_LootToGive.GiveAmount > 200)
                                 {
-                                    m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.drinkies);
-                                    thisPlayer.drinkies += (byte)(200 - thisPlayer.drinkies);
+                                    m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.Drinkies);
+                                    thisPlayer.Drinkies += (byte)(200 - thisPlayer.Drinkies);
                                     _extraLootMSG = MakeNewDrinkLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
                                     break;
                                 }
-                                thisPlayer.drinkies += m_LootToGive.GiveAmount;
+                                thisPlayer.Drinkies += m_LootToGive.GiveAmount;
                                 break;
                             case LootType.Tape:
                                 Logger.Basic(" -> Player found some tape.");
@@ -725,14 +751,14 @@ namespace WCSARS
                                 Logger.Basic($" -> Player got some armor. Tier{m_LootToGive.ItemRarity} - Ticks: {m_LootToGive.GiveAmount}");
                                 if (thisPlayer.ArmorTier != 0)
                                 {
-                                    _extraLootMSG = MakeNewArmorLootItem(thisPlayer.armorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                    _extraLootMSG = MakeNewArmorLootItem(thisPlayer.ArmorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
                                     // Update the player's armor.
                                     thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
-                                    thisPlayer.armorTapes = m_LootToGive.GiveAmount;
+                                    thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
                                     break;
                                 }
                                 thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
-                                thisPlayer.armorTapes = m_LootToGive.GiveAmount;
+                                thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
                                 break;
 
                             // TODO - make sure server tracks ammo not just spawns it and stuff.
@@ -925,8 +951,16 @@ namespace WCSARS
                     ServerMSG_SendPerformedEmote(player_list[getPlayerArrayIndex(msg.SenderConnection)], msg);
                     break;
 
-                case 72: // CLIENT_DESTORY_DOODAD
+                //case 72: // CLIENT_DESTORY_DOODAD // TODO - Make this actually work/do something.
                          // TODO - make doodads real.
+                    /*
+                    float destructX = msg.ReadInt32();
+                    float destructY = msg.ReadInt32();
+                    short projectileID = msg.ReadInt16();
+
+                    Logger.Header("[Doodad Destroyed]");
+                    Logger.Basic($"Position: ({destructX}, {destructY})\nProjectile ID: {projectileID}"); */
+
 
                     //short descXthing = msg.ReadInt16(); //x
                     //short descYthing = msg.ReadInt16(); //y
@@ -934,7 +968,7 @@ namespace WCSARS
                     //descBroke.Write(msg.ReadInt16()); //xSpot
                     //descBroke.Write(msg.ReadInt16()); //ySpot -- next read will be optionalProjectileID
 
-
+                    /*
                     NetOutgoingMessage descBroke = server.CreateMessage();
                     descBroke.Write((byte)73); //SERVER_DESTROY_DOODAD
                     descBroke.Write((short)0); // serves literally no purpose other than the fact the game expects this.
@@ -949,7 +983,7 @@ namespace WCSARS
                     descBroke.Write((byte)1);
                     descBroke.Write((short)4);
 
-                    server.SendToAll(descBroke, NetDeliveryMethod.ReliableOrdered);
+                    server.SendToAll(descBroke, NetDeliveryMethod.ReliableOrdered); */
 
                     /* goes to: GameServerSentDoodadDestroyed
                      * GameServerSentDoodadDestroyed(desctructX, destructY,
@@ -957,7 +991,7 @@ namespace WCSARS
                      * List[short] : damaged player IDs)
                      * 
                      */
-                    break;
+                    //break;
 
                 case 74: // Client - Sent Attack Windup
                     Logger.testmsg("\nAttack Windup used.\nIf you notice this say something.");
@@ -978,12 +1012,12 @@ namespace WCSARS
                     server.SendToAll(plrCancelReloadMsg, NetDeliveryMethod.ReliableSequenced);
                     break;
 
-                case 97: // Client - Dummy  -- Periodically sent. If you get this... That's not a good thing. Only supposed to be sent whilst experiencing lag.
+                case 97: // Client - Dummy  -- Periodically sent. If you get this... That's not a good thing.
                     NetOutgoingMessage dummyMsg = server.CreateMessage();
                     dummyMsg.Write((byte)97);
                     server.SendMessage(dummyMsg, msg.SenderConnection, NetDeliveryMethod.Unreliable);
                     break;
-                case 98: // Client - I want to Tape-Up [ Request Duct Taping 8]
+                case 98: // Client - I want to Tape-Up [ Request Duct Taping ]
                     serverSendPlayerStartedTaping(msg.SenderConnection, msg.ReadFloat(), msg.ReadFloat());
                     break;
 
@@ -1099,7 +1133,6 @@ namespace WCSARS
                 }
             }
         }
-
         private void sendClientMatchInfo2Connect(short sendingID, NetConnection receiver)
         {
             // send a message back to the connecting player... \\
@@ -1198,18 +1231,128 @@ namespace WCSARS
                     sendPlayerPosition.Write((short)450);                               // Player Level          |   Short
                     sendPlayerPosition.Write((byte)0);                                  // Amount of Teammates   |   Byte
                     //sendPlayerPosition.Write((short)25);                              // Teammate ID           |   Short
-
                 }
                 else { break; }
             }
             Logger.Success("Going to be sending new player all other player positions.");
             server.SendToAll(sendPlayerPosition, NetDeliveryMethod.ReliableSequenced);
         }
-
+        /// <summary>
+        /// Sends a message to all connected clients that a player had been killed. 
+        /// </summary>
+        private void ServerAMSG_KillAnnouncement(short aOffedID, float aGraveX, float aGraveY, short aKillerID, short aWeaponID)
+        {
+            NetOutgoingMessage deathMsg = server.CreateMessage();
+            deathMsg.Write((byte)15);    // Header                  | Byte
+            deathMsg.Write(aOffedID);    // Deceased ID             | Short
+            deathMsg.Write(aGraveX);     // Deceased Gravestone X   | Float
+            deathMsg.Write(aGraveY);     // Deceased Gravestone Y   | Float
+            deathMsg.Write(aKillerID);   // Killing PlayerID        | Short  // -3 = Banan; -2 = Gas; -1 = Nothing??; 0+ = Player; 
+            deathMsg.Write(aWeaponID);   // WeaponID                | Short  // -1/-4 = Nothing?; -3 = Explosion; -2 = Hamsterball; 0+ Weapon
+            server.SendToAll(deathMsg, NetDeliveryMethod.ReliableOrdered);
+        }
 
         //18 > 19
-        private void serverSendPlayerShoteded(NetIncomingMessage message)
+        private void serverSendPlayerShoteded(NetIncomingMessage aMsg) // todo - make sure player wasn't lying
         {
+            try // TOOD -- cleanup
+            {
+                //Player target;
+                //Weapon weapon;
+                short targetID = aMsg.ReadInt16();
+                short weaponID = aMsg.ReadInt16();
+                try // remove when not needed anymore...
+                {
+                    Logger.Warn($"Shot weapon ID: {weaponID}\nShot Weapon WeaponName if WeaponID is index in WeaponArray: {s_WeaponsList[weaponID].Name}");
+                }
+                catch
+                {
+                    Logger.Failure($"[Player Shot - ERROR] Shot WeaponID \"{weaponID}\" is NOT in the WeaponArray.");
+                }
+                short projectileID = aMsg.ReadInt16() ;
+                float hitX = aMsg.ReadFloat();
+                float hitY = aMsg.ReadFloat();
+                if (tryFindIndexByID(targetID, out int index)) // likely tryFindPlayerByID would be better for this.
+                {
+                    Player target = player_list[index];
+                    Weapon weapon = s_WeaponsList[weaponID];
+
+                    // figure out weapon data here
+                    byte armorDamage = weapon.ArmorDamage;
+                    if (weapon.ArmorDamageOverride > 0 )
+                    {
+                        Logger.Warn($"ArmorDamageOverride is real. Override: {weapon.ArmorDamageOverride}");
+                    }
+                    Logger.Warn($"Player {target.myID} ({target.myName}) Hit:\nArmorTier: {target.ArmorTier}\nArmorTapes: {target.ArmorTapes}\nDesired Tick-Removal Base: {armorDamage}\n\"Corrected\" Tick-Removal: {target.ArmorTapes - armorDamage}");
+                    //Logger.Warn($"Player's ArmorTicks - Original Wanted Armor Damage: {target.ArmorTapes - armorDamage}");
+                    if ((target.ArmorTapes - armorDamage) < 0)
+                    {
+                        armorDamage = target.ArmorTapes;
+                    }
+                    Logger.Warn($"True Tick-Removal Correction: {armorDamage}");
+
+                    // just because we're still messing with this trying to make it better....
+                    NetOutgoingMessage msg = server.CreateMessage();
+                    msg.Write((byte)19);
+                    msg.Write(getPlayerID(aMsg.SenderConnection));
+                    msg.Write(targetID);
+                    msg.Write(projectileID);
+                    msg.Write(armorDamage); // Amount of ArmorTicks to remove. Before was weapon.Damage but that was caused some... isues
+                    msg.Write((short)-1); // VehcileID >> adds another byte write if has ID
+                    // Not sure when the PlayerShot message is called, but there's a specific "hamsterball damaged" message. so, why here too?
+                    server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+                    // Remove this whole section when this handle shot message is completed...
+
+                    //
+
+                    if (target.ArmorTapes == 0 || weapon.WeaponType == WeaponType.Melee)
+                    {
+                        if (weapon.WeaponType == WeaponType.Melee)
+                        {
+                            target.ArmorTapes -= armorDamage;
+                        }
+                        if ((target.HP - weapon.Damage) <= 0) // go do damage. find out if doing damage kills player
+                        {
+                            target.HP = 0;
+                            target.isAlive = false;
+                            shouldUpdateAliveCount = true;
+                            ServerAMSG_KillAnnouncement(targetID, target.position_X, target.position_Y, getPlayerID(aMsg.SenderConnection), weaponID);
+                            /*
+                            NetOutgoingMessage kill = server.CreateMessage();
+                            kill.Write((byte)15);           // Message Type 15  | Byte -- Death Message
+                            kill.Write(targetID);           // Dying player ID  | Short
+                            kill.Write(target.position_X);  // Dying Player X   | Float
+                            kill.Write(target.position_Y);  // Dying Player Y   | Float
+                            kill.Write(player_list[getPlayerArrayIndex(aMsg.SenderConnection)].myID);     //Killer's Player ID | Short
+                            kill.Write(weaponID);              // Killer's Weapon ID | Short
+                            server.SendToAll(kill, NetDeliveryMethod.ReliableSequenced); */
+                            return; // exit out of this
+                        }
+                        target.HP -= (byte)weapon.Damage;
+                        return;
+                    } // Clearly have no armor/ not a melee weapon. Therefore is gun so just remove armor
+                    target.ArmorTapes -= armorDamage; // If you want to see some funny stuff, replace "target.ArmorTapes" with "target.ArmorTier".
+                    /*
+                    Already account for this I think?
+                    If (ArmorTicks - WantedRemovedTicks) is negative then
+                        NewTickDamage = CurrentArmorTicks << Which if we have no armor ticks then NewTickDamage = 0
+                                                             If this somehow turns negative however... I don't even know
+                    if ((target.armorTapes - armorDamage) < 0)
+                    {
+                        target.armorTapes = 0;
+                        return;
+                    }*/
+                    //target.ArmorTier -= armorDamage; // bruh
+                }
+                else
+                {
+                    throw new Exception("Target PlayerID could not be found in the player list!");
+                }
+            } catch (Exception smsgEx)
+            {
+                Logger.Failure($"There was an error handling shot player message.\n{smsgEx}");
+            }
+            /*
             short hitPlayerID = message.ReadInt16();
             short wepID = message.ReadInt16();
             short projID = message.ReadInt16();
@@ -1237,6 +1380,7 @@ namespace WCSARS
              * like client for the most part just sends weaponIDs / vehicleIDs, expecting the server to know which is which
              * however, this server does not know which is which. figure that out later I guess.
              */
+            /*
             try
             {
                 Player shotPlayer;
@@ -1282,14 +1426,14 @@ namespace WCSARS
             catch (Exception exc)
             {
                 Logger.Failure(exc.ToString());
-            }
+            } */
         }
 
         /// <summary>
         /// Handles a chat message the server has received.
         /// </summary>
         /// <param name="message"></param>
-        private void serverHandleChatMessage(NetIncomingMessage message)
+        private void serverHandleChatMessage(NetIncomingMessage message) // TODO - Fix/redo or remove the """Command""" feature
         {
             Logger.Header("Chat message. Wonderful!");
             //this is terrible. we are aware. have fun.
@@ -1356,10 +1500,10 @@ namespace WCSARS
                             {
                                 id = short.Parse(command[1]);
                                 amount = short.Parse(command[2]);
-                                if (amount - player_list[id].hp <= 0)
+                                if (amount - player_list[id].HP <= 0)
                                 {
-                                    player_list[id].hp += (byte)amount;
-                                    if (player_list[id].hp > 100) { player_list[id].hp = 100; }
+                                    player_list[id].HP += (byte)amount;
+                                    if (player_list[id].HP > 100) { player_list[id].HP = 100; }
                                     responseMsg = $"Healed player {id} ({player_list[id].myName} by {amount})";
                                 }
                                 else
@@ -1382,7 +1526,7 @@ namespace WCSARS
                                 id = short.Parse(command[1]);
                                 amount = short.Parse(command[2]);
                                 if (amount > 100) { amount = 100; }
-                                player_list[id].hp = (byte)amount;
+                                player_list[id].HP = (byte)amount;
                                 responseMsg = $"Set player {id} ({player_list[id].myName})'s health to {amount}";
                             }
                             catch
@@ -1650,7 +1794,7 @@ namespace WCSARS
                         {
                             if (tryFindPlayerIDbyName(command[1], out short sPlayerID) || short.TryParse(command[1], out sPlayerID))
                             {
-                                if (tryFindArrayIndexByID(sPlayerID, out int index))
+                                if (tryFindIndexByID(sPlayerID, out int index))
                                 {
                                     Player killPlayer = player_list[index]; //is this worth it?
                                     NetOutgoingMessage kill = server.CreateMessage();
@@ -1722,7 +1866,7 @@ namespace WCSARS
                             {
                                 id = short.Parse(command[1]);
                                 amount = short.Parse(command[2]);
-                                player_list[id].drinkies = (byte)amount;
+                                player_list[id].Drinkies = (byte)amount;
                                 responseMsg = $"done {amount}";
                             }
                             catch
@@ -1734,7 +1878,7 @@ namespace WCSARS
                             try
                             {
                                 drinkiesAmount = byte.Parse(command[1]);
-                                player_list[getPlayerArrayIndex(message.SenderConnection)].drinkies = drinkiesAmount;
+                                player_list[getPlayerArrayIndex(message.SenderConnection)].Drinkies = drinkiesAmount;
                                 responseMsg = $"Set your drink amount to {drinkiesAmount}.";
                             }
                             catch
@@ -1751,7 +1895,7 @@ namespace WCSARS
                             {
                                 id = short.Parse(command[1]);
                                 amount = short.Parse(command[2]);
-                                player_list[id].armorTapes = (byte)amount;
+                                player_list[id].ArmorTapes = (byte)amount;
                                 responseMsg = $"done {amount}";
                             }
                             catch
@@ -1917,10 +2061,10 @@ namespace WCSARS
         private void serverSendCoconutEaten(NetIncomingMessage message)
         {
             Player client = player_list[getPlayerArrayIndex(message.SenderConnection)];
-            if (client.hp < 200)
+            if (client.HP < 200)
             {
-                client.hp += 5;
-                if (client.hp > 200) { client.hp = 200; }
+                client.HP += 5;
+                if (client.HP > 200) { client.HP = 200; }
             }
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)52);
@@ -2413,9 +2557,9 @@ namespace WCSARS
         }
 
         /// <summary>
-        /// Traverses the Server's Player list in search of the provided SearchString.
+        /// Traverses the Server's Player list in search of the provided String
         /// </summary>
-        /// <returns>True if SearchString is found in the array; False if otherwise.</returns>
+        /// <returns>True if the String is found in the array; False if otherwise.</returns>
         private bool tryFindPlayerIDbyName(string searchName, out short outID)
         {
             searchName = searchName.ToLower(); // This may bring up some problems?
@@ -2434,7 +2578,7 @@ namespace WCSARS
         /// Traverses the player list array in search of the index which the provided Player ID is located.
         /// </summary>
         /// <returns>True if ID is found in the array; False if otherwise.</returns>
-        private bool tryFindArrayIndexByID(int searchID, out int returnedIndex)
+        private bool tryFindIndexByID(int searchID, out int returnedIndex)
         {
             for (int i = 0; i < player_list.Length; i++)
             {
@@ -2447,11 +2591,28 @@ namespace WCSARS
             returnedIndex = -1;
             return false;
         }
+        /// <summary>
+        /// Traverses the player list in search of a Player with the provided PlayerID.
+        /// </summary>
+        /// <returns>True if the ID is found; False if otherwise.</returns>
+        private bool tryFindPlayerByID(int searchID, out Player returnedPlayer)
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null && player_list[i].myID == searchID) //searchID is int, myID is short.
+                {
+                    returnedPlayer = player_list[i];
+                    return true;
+                }
+            }
+            returnedPlayer = null;
+            return false;
+        }
 
-        //Helper Functions to get playerID
         /// <summary>
         /// Finds the ID of a player with a given name. Returns the first found instance. Returns -1 if the player cannot be found.
         /// </summary>
+        /// How sad would you be if I were to tell you this is just a worse version of TryFindIDbyUsername?
         private short getPlayerIDwithUsername(string searchName)
         {
             short retID = -1;
@@ -2465,22 +2626,38 @@ namespace WCSARS
             return retID;
         }
         /// <summary>
-        /// Finds the array index of a user with the provided ID. Returns -1 if the player cannot be found.
+        /// Traverses the Server's Player list array in search of the Index at which the provided NetConnection occurrs.
         /// </summary>
-        private int findArrayIndexWithID(short searchID)
+        /// <returns>True if the NetConnection is found; False if otherwise.</returns>
+        private bool tryFindIndexbyConnection(NetConnection netConnection, out int returnedIndex)
         {
-            int retID = -1;
-            Logger.Success("working... 1");
             for (int i = 0; i < player_list.Length; i++)
             {
-                if (player_list[i] != null && player_list[i].myID == searchID) //searchID is int, myID is short.
+                if (player_list[i] != null && player_list[i].sender == netConnection) // searchID is int, myID is short.
                 {
-                    retID = player_list[i].myID;
-                    break;
+                    returnedIndex = player_list[i].myID;
+                    return true;
                 }
             }
-            if (retID == -1) { Logger.Failure("NO ONE WAS FOUND WITH THAT INDEX. RET ID IS -1 (NO ONE FOUND)"); }
-            return retID;
+            returnedIndex = -1; // putting this above does like the same thing. just this looks... better?
+            return false;
+        }
+        /// <summary>
+        /// Traverses the Server's Player list array in search of a Player with the provided NetConnection.
+        /// </summary>
+        /// <returns>True if the NetConnection is found; False if otherwise.</returns>
+        private bool tryFindPlayerbyConnection(NetConnection netConnection, out Player retPlayer)
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null && player_list[i].sender == netConnection) // searchID is int, myID is short.
+                {
+                    retPlayer = player_list[i];
+                    return true;
+                }
+            }
+            retPlayer = null;
+            return false;
         }
 
         /// <summary>
