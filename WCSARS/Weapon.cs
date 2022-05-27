@@ -14,8 +14,8 @@ namespace WCSARS
         public byte AmmoSpawnAmount;
         public int Damage;
         public int DamageIncrease;
-        public int ArmorDamage;
-        public int ArmorDamageOverride;
+        public byte ArmorDamage;
+        public byte ArmorDamageOverride;
         public bool PenetratesArmor;
         public byte RarityMaxVal;
         public byte RarityMinVal;
@@ -65,11 +65,11 @@ namespace WCSARS
             }
             if (data["breaksArmorAmount"])
             {
-                ArmorDamage = data["breaksArmorAmount"].AsInt;
+                ArmorDamage = (byte)data["breaksArmorAmount"].AsInt;
             }
             if (data["overrideBreaksVehicleAmount"]) // applies to sniper for sure and should apply to magnum as well but IT DOESN'T IN THIS FUCKING UPDATE
             {
-                ArmorDamageOverride = data["overrideBreaksVehicleAmount"].AsInt;
+                ArmorDamageOverride = (byte)data["overrideBreaksVehicleAmount"].AsInt;
             }
             if (data["damageThroughArmor"]) // applies to dartgun for sure- likely bow/crossbow as well
             {
