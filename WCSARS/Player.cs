@@ -4,7 +4,7 @@ namespace WCSARS
 {
     class Player
     {
-        // Make Some Empty Variables! \\
+        // Player Data Stuff! :O
         public NetConnection sender;
         public short myID;
         public string myName = "愛子";
@@ -23,8 +23,8 @@ namespace WCSARS
         public byte[] gunskinValue; // Gunskin3 IDK //value
 
         //Updated Regularly...
-        public float lastPingTime = 0f;
-        public float mouseAngle = 0f;
+        public float LastPingTime = 0f;
+        public float MouseAngle = 0f;
         public float position_X = 508.7f;
         public float position_Y = 496.7f;
 
@@ -33,7 +33,7 @@ namespace WCSARS
         public float EmoteDuration;
         public bool isDancing = false;
 
-
+        // Others... ?
         public byte WalkMode = 0;
         public byte ActiveSlot = 0;
         public LootItem[] MyLootItems = new LootItem[3];
@@ -45,15 +45,17 @@ namespace WCSARS
         //public short equip3 = -1;
         //public byte equip1_rarity = 0;
         //public byte equip2_rarity = 0;
-        public byte curEquipIndex = 0;
         public short vehicleID = -1;
 
-        // Player Health-Replated
-        public byte hp = 100;
+        // Health Related
+        public byte HP = 100;
         public byte ArmorTier = 0;
-        public byte armorTapes = 0;
-        public byte drinkies = 200;
+        public byte ArmorTapes = 0;
+        public byte Drinkies = 200;
         public byte Tapies = 0;
+        public bool isDrinking = false;
+        public bool isTaping = false;
+        public bool isAlive = true;
 
         // Color Bools
         public bool isDev = false;
@@ -62,9 +64,8 @@ namespace WCSARS
 
         //Booleans
         public bool isReloading = false;
-        public bool isDrinking = false;
-        public bool isTaping = false;
-        public bool isAlive = true;
+
+        // Create
         public Player(short assignedID, short characterID, short parasollID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, NetConnection senderAddress)
         {
             this.myName = thisName;
