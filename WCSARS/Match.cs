@@ -123,24 +123,6 @@ namespace WCSARS
                                     {
                                         Logger.Failure($"[Connection Update - Disconnected.ERROR] There seems to have been a problem actually locating the player in the array. Uh oh!");
                                     }
-                                    
-                                    /*
-                                    short plr = getPlayerArrayIndex(msg.SenderConnection);
-                                    if (plr != -1)
-                                    {
-                                        NetOutgoingMessage playerLeft = server.CreateMessage();
-                                        playerLeft.Write((byte)46);
-                                        playerLeft.Write(player_list[plr].myID);
-                                        playerLeft.Write(false); // Is Ghosting (you know, like a hidden mod or some junk.)
-                                        server.SendToAll(playerLeft, NetDeliveryMethod.ReliableOrdered);
-                                        availableIDs.Insert(0, player_list[plr].myID);
-                                        player_list[plr] = null;
-                                        Logger.Success("[Connection Update - Disconnected] Dealt with disconnected player successfully");
-                                        isSorted = false;
-                                    }
-                                    else {
-                                    Logger.Failure("Well that is awfully strange. No one was found.");
-                                    }*/
                                     break;
                                 case NetConnectionStatus.Disconnecting:
                                     Logger.Warn($"[Connection Update - Disconnecting] A client is attempting to disconnect.");
@@ -520,31 +502,15 @@ namespace WCSARS
         //TODO : Make this better :3
         private void sendStartGame()
         {
-            NetOutgoingMessage I = server.CreateMessage();
-            I.Write((byte)6);
-            I.Write((byte)1);
-            I.Write((short)14);
-            I.Write((short)(45 * 100));
-            I.Write((byte)1);
-            I.Write((short)14);
-            I.Write((short)(45 * 100));
-            server.SendToAll(I, NetDeliveryMethod.ReliableUnordered);
-            /*
-            NetOutgoingMessage startMsg = server.CreateMessage();
-            startMsg.Write((byte)6); //Header
-            startMsg.Write(20f); //x1
-            startMsg.Write(30f); //y1case 
-            startMsg.Write(40f); //x2
-            startMsg.Write(50f); //y2
-            startMsg.Write((byte)1); //b4 -- one loop
-            startMsg.Write((short)30); //readInt16
-            startMsg.Write((short)600); // readInt16 -- percentage
-            startMsg.Write((byte)1);//b5 -- one loop 
-            startMsg.Write((short)120); //snowtime... something tells me reading ints is purposefully complicated...
-            startMsg.Write((short)600);
-
-            //Send message out
-            server.SendToAll(startMsg, NetDeliveryMethod.ReliableOrdered);*/
+            NetOutgoingMessage smsg = server.CreateMessage();
+            smsg.Write((byte)6);
+            smsg.Write((byte)1);
+            smsg.Write((short)14);
+            smsg.Write((short)(45 * 100));
+            smsg.Write((byte)1);
+            smsg.Write((short)14);
+            smsg.Write((short)(45 * 100));
+            server.SendToAll(smsg, NetDeliveryMethod.ReliableUnordered);
         }
         #endregion
 
