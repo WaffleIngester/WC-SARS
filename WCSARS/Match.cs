@@ -216,13 +216,10 @@ namespace WCSARS
             Logger.Success("Server update thread started.");
             GenerateItemLootList(sv_LootSeed); // Loot Generation Seed
             GenerateHamsterballs(sv_VehicleSeed);
-
             if (!doWinCheck)
             {
-                Logger.Warn("\nWARNING -- doWinCheck is set to FALSE. The server will NOT check for a winner without intervention.");
-                Logger.Warn("Use '/togglewin' to reactivate the check.\n");
+                Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"doWinCheck\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
             }
-
             //lobby
             while (!matchStarted)
             {
@@ -256,7 +253,7 @@ namespace WCSARS
                 send_dummy();
 
                 //check for win
-                if (shouldUpdateAliveCount && doWinCheck) { update_checkAliveorWin(); }
+                if (shouldUpdateAliveCount && doWinCheck) { svu_Wincheck(); }
 
                 //updating player info to all people in the match
                 updateEveryoneOnPlayerPositions();
@@ -403,7 +400,7 @@ namespace WCSARS
             }
         }
 
-        private void update_checkAliveorWin()
+        private void svu_Wincheck()
         {
             shouldUpdateAliveCount = false;
             List<short> aIDs = new List<short>(player_list.Length);
@@ -523,6 +520,16 @@ namespace WCSARS
         //TODO : Make this better :3
         private void sendStartGame()
         {
+            NetOutgoingMessage I = server.CreateMessage();
+            I.Write((byte)6);
+            I.Write((byte)1);
+            I.Write((short)14);
+            I.Write((short)(45 * 100));
+            I.Write((byte)1);
+            I.Write((short)14);
+            I.Write((short)(45 * 100));
+            server.SendToAll(I, NetDeliveryMethod.ReliableUnordered);
+            /*
             NetOutgoingMessage startMsg = server.CreateMessage();
             startMsg.Write((byte)6); //Header
             startMsg.Write(20f); //x1
@@ -537,7 +544,7 @@ namespace WCSARS
             startMsg.Write((short)600);
 
             //Send message out
-            server.SendToAll(startMsg, NetDeliveryMethod.ReliableOrdered);
+            server.SendToAll(startMsg, NetDeliveryMethod.ReliableOrdered);*/
         }
         #endregion
 
@@ -669,133 +676,20 @@ namespace WCSARS
                         serverSendPlayerShoteded(msg);
                     }
                     break;
-                case 21: //TODO -- cleanup / fix
-                    /* main issue -- client game seems to repeatedly try and claim a loot item. it does this so fast it can claim...
-                    ...the same loot item the server is already dealing with. duping it, and also taking another. glitches mostly drinks and tape
-                    */
-                    Logger.Header("Player Looted Item");
-                    try
+                case 21: // TODO - make give lobby weapons and junk
+                    if (matchStarted)
                     {
-                        Player thisPlayer = player_list[getPlayerArrayIndex(msg.SenderConnection)];
-                        NetOutgoingMessage _extraLootMSG = null; // Extra loot message to send after telling everyone about loot and junk
-                        short m_LootID = (short)msg.ReadInt32();
-                        byte m_PlayerSlot = msg.ReadByte();
-                        LootItem m_LootToGive = ItemList[m_LootID];
-
-                        switch (m_LootToGive.LootType)
-                        {
-                            case LootType.Weapon: // Stupidity
-                                Logger.Basic($" -> Player found a weapon.\n{m_LootToGive.LootName}");
-                                if (m_PlayerSlot == 1 || m_PlayerSlot == 0) // Weapon 1 or 2 | Not Melee
-                                {
-                                    if (thisPlayer.MyLootItems[m_PlayerSlot].WeaponType != WeaponType.NotWeapon) // means there's already something here
-                                    {
-                                        // So problem, can also dupe weapons. Might need to put a cooldown on when a player can pick them up again...
-                                        LootItem oldLoot = thisPlayer.MyLootItems[m_PlayerSlot];
-                                        _extraLootMSG = MakeNewGunLootItem(oldLoot.LootName, (short)oldLoot.IndexInList, oldLoot.ItemRarity, oldLoot.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                        thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
-                                    }
-                                    thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
-                                    //Logger.Failure("  -> WARNING NOT YET FULLY HANDLED");
-                                    break;
-                                }
-                                if (m_PlayerSlot != 3) // Slot 3 = Throwables. Slot 2 can't be used; and so anything other than 0, 1, and 3 just skip.
-                                {
-                                    Logger.Failure("  -> Player has found a weapon. However, none of the slot it claims to be accessing are valid here.");
-                                    break;
-                                }
-
-                                // Throwable / Slot_3 | PlayerSlot 4 | so... m_PlayerSlot-1 = 2 >> right array index
-                                if (thisPlayer.MyLootItems[2].WeaponType != WeaponType.NotWeapon) // Player has throwable here already
-                                {
-                                    // uuuh how do we figure this out ?????
-                                    Logger.DebugServer($"Throwable LootName Test: Plr: {thisPlayer.MyLootItems[2].LootName}\nThis new loot: {m_LootToGive.LootName}");
-                                    if (thisPlayer.MyLootItems[2].LootName == m_LootToGive.LootName) // Has this throwable-type already
-                                    {
-                                        thisPlayer.MyLootItems[2].GiveAmount += m_LootToGive.GiveAmount;
-                                        Logger.Basic($"{thisPlayer.MyLootItems[2].LootName} - Amount: {thisPlayer.MyLootItems[2].GiveAmount}");
-                                        break;
-                                    }
-                                    // Else = Player has a throwable, BUT it is a different type so we need to re-spawn the old one
-                                    _extraLootMSG = MakeNewThrowableLootItem((short)thisPlayer.MyLootItems[2].IndexInList, thisPlayer.MyLootItems[2].GiveAmount, thisPlayer.MyLootItems[2].LootName, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                    // Go give player the loot item.
-                                    thisPlayer.MyLootItems[2] = m_LootToGive;
-                                    break;
-                                }
-                                // Player doesn't have a throwable
-                                thisPlayer.MyLootItems[2] = m_LootToGive;
-                                break;
-                            case LootType.Juices:
-                                Logger.Basic($" -> Player found some drinkies. +{m_LootToGive.GiveAmount}");
-                                if (thisPlayer.Drinkies + m_LootToGive.GiveAmount > 200)
-                                {
-                                    m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.Drinkies);
-                                    thisPlayer.Drinkies += (byte)(200 - thisPlayer.Drinkies);
-                                    _extraLootMSG = MakeNewDrinkLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                    break;
-                                }
-                                thisPlayer.Drinkies += m_LootToGive.GiveAmount;
-                                break;
-                            case LootType.Tape:
-                                Logger.Basic(" -> Player found some tape.");
-                                if ((thisPlayer.Tapies + m_LootToGive.GiveAmount) > 5)
-                                {
-                                    m_LootToGive.GiveAmount -= (byte)(5 - thisPlayer.Tapies);
-                                    thisPlayer.Tapies += (byte)(5 - thisPlayer.Tapies);
-                                    _extraLootMSG = MakeNewTapeLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                    break;
-                                }
-                                thisPlayer.Tapies += m_LootToGive.GiveAmount;
-                                break;
-                            case LootType.Armor:
-                                Logger.Basic($" -> Player got some armor. Tier{m_LootToGive.ItemRarity} - Ticks: {m_LootToGive.GiveAmount}");
-                                if (thisPlayer.ArmorTier != 0)
-                                {
-                                    _extraLootMSG = MakeNewArmorLootItem(thisPlayer.ArmorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                    // Update the player's armor.
-                                    thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
-                                    thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
-                                    break;
-                                }
-                                thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
-                                thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
-                                break;
-
-                            // TODO - make sure server tracks ammo not just spawns it and stuff.
-                            case LootType.Ammo: // Ammo Type is stored in LootItem.ItemRarity
-                                Logger.Basic($" -> Ammo Loot: AmmoType:Ammount -- {m_LootToGive.ItemRarity}:{m_LootToGive.GiveAmount}");
-                                // I can't be bothered right now
-                                break;
-                        }
-                        NetOutgoingMessage testMessage = server.CreateMessage();
-                        testMessage.Write((byte)22); // Header / Packet ID
-                        testMessage.Write(thisPlayer.myID); // Player ID
-                        testMessage.Write((int)m_LootID); // Loot Item ID
-                        testMessage.Write(m_PlayerSlot); // Player Slot to update
-                        if (!matchStarted) // Write Forced Rarity
-                        {
-                            testMessage.Write((byte)4); // Only matters in a lobby
-                        }
-                        testMessage.Write((byte)0);
-                        server.SendToAll(testMessage, NetDeliveryMethod.ReliableSequenced);
-                        if (_extraLootMSG != null)
-                        {
-                            server.SendToAll(_extraLootMSG, NetDeliveryMethod.ReliableSequenced);
-                        }
+                        ServerH_PlayerLoot(msg);
+                        // need to add break statement when done orms etomthinge
                     }
-                    catch (Exception Except)
-                    {
-                        Logger.Failure(Except.ToString());
-                    }
+                    // gibe lobby weapno :)
                     break;
-
 
                 case 25:
                     serverHandleChatMessage(msg);
                     break;
 
-                //clientSentSelectedSlot
-                case 27:
+                case 27: // Client Slot Update
                     serverSendSlotUpdate(msg.SenderConnection, msg.ReadByte());
                     break;
 
@@ -887,13 +781,13 @@ namespace WCSARS
                     break;
 
                 case 62: // Client - My Hamsterball Hit a Wall
-                    try
+                    if (tryFindPlayerbyConnection(msg.SenderConnection, out Player fPlayer))
                     {
-                        ServerMSG_PlayerHamsterballBounce(player_list[getPlayerArrayIndex(msg.SenderConnection)]);
+                        ServerMSG_PlayerHamsterballBounce(fPlayer);
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Logger.Failure($"[Receive Message 62 ERROR] - {ex}");
+                        Logger.Failure($"[Receive Message 62 ERROR] - Could NOT find player with the provided NetConnection... NOT GOOD");
                     }
                     break;
 
@@ -2113,6 +2007,130 @@ namespace WCSARS
             server.SendToAll(vehicleHit, NetDeliveryMethod.ReliableOrdered);
         }
 
+        /// <summary>
+        /// Server Handle Player Loot - Handles incoming Looted message
+        /// </summary>
+        private void ServerH_PlayerLoot(NetIncomingMessage msg)
+        {
+            //TODO -- cleanup / fix
+            /* main issue -- client game seems to repeatedly try and claim a loot item. it does this so fast it can claim...
+            ...the same loot item the server is already dealing with. duping it, and also taking another. glitches mostly drinks and tape
+            */
+            Logger.Header("Player Looted Item");
+            try
+            {
+                Player thisPlayer = player_list[getPlayerArrayIndex(msg.SenderConnection)];
+                NetOutgoingMessage _extraLootMSG = null; // Extra loot message to send after telling everyone about loot and junk
+                short m_LootID = (short)msg.ReadInt32();
+                byte m_PlayerSlot = msg.ReadByte();
+                LootItem m_LootToGive = ItemList[m_LootID];
+
+                switch (m_LootToGive.LootType)
+                {
+                    case LootType.Weapon: // Stupidity
+                        Logger.Basic($" -> Player found a weapon.\n{m_LootToGive.LootName}");
+                        if (m_PlayerSlot == 1 || m_PlayerSlot == 0) // Weapon 1 or 2 | Not Melee
+                        {
+                            if (thisPlayer.MyLootItems[m_PlayerSlot].WeaponType != WeaponType.NotWeapon) // means there's already something here
+                            {
+                                // So problem, can also dupe weapons. Might need to put a cooldown on when a player can pick them up again...
+                                LootItem oldLoot = thisPlayer.MyLootItems[m_PlayerSlot];
+                                _extraLootMSG = MakeNewGunLootItem(oldLoot.LootName, (short)oldLoot.IndexInList, oldLoot.ItemRarity, oldLoot.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
+                            }
+                            thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
+                            //Logger.Failure("  -> WARNING NOT YET FULLY HANDLED");
+                            break;
+                        }
+                        if (m_PlayerSlot != 3) // Slot 3 = Throwables. Slot 2 can't be used; and so anything other than 0, 1, and 3 just skip.
+                        {
+                            Logger.Failure("  -> Player has found a weapon. However, none of the slot it claims to be accessing are valid here.");
+                            break;
+                        }
+
+                        // Throwable / Slot_3 | PlayerSlot 4 | so... m_PlayerSlot-1 = 2 >> right array index
+                        if (thisPlayer.MyLootItems[2].WeaponType != WeaponType.NotWeapon) // Player has throwable here already
+                        {
+                            // uuuh how do we figure this out ?????
+                            Logger.DebugServer($"Throwable LootName Test: Plr: {thisPlayer.MyLootItems[2].LootName}\nThis new loot: {m_LootToGive.LootName}");
+                            if (thisPlayer.MyLootItems[2].LootName == m_LootToGive.LootName) // Has this throwable-type already
+                            {
+                                thisPlayer.MyLootItems[2].GiveAmount += m_LootToGive.GiveAmount;
+                                Logger.Basic($"{thisPlayer.MyLootItems[2].LootName} - Amount: {thisPlayer.MyLootItems[2].GiveAmount}");
+                                break;
+                            }
+                            // Else = Player has a throwable, BUT it is a different type so we need to re-spawn the old one
+                            _extraLootMSG = MakeNewThrowableLootItem((short)thisPlayer.MyLootItems[2].IndexInList, thisPlayer.MyLootItems[2].GiveAmount, thisPlayer.MyLootItems[2].LootName, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                            // Go give player the loot item.
+                            thisPlayer.MyLootItems[2] = m_LootToGive;
+                            break;
+                        }
+                        // Player doesn't have a throwable
+                        thisPlayer.MyLootItems[2] = m_LootToGive;
+                        break;
+                    case LootType.Juices:
+                        Logger.Basic($" -> Player found some drinkies. +{m_LootToGive.GiveAmount}");
+                        if (thisPlayer.Drinkies + m_LootToGive.GiveAmount > 200)
+                        {
+                            m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.Drinkies);
+                            thisPlayer.Drinkies += (byte)(200 - thisPlayer.Drinkies);
+                            _extraLootMSG = MakeNewDrinkLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                            break;
+                        }
+                        thisPlayer.Drinkies += m_LootToGive.GiveAmount;
+                        break;
+                    case LootType.Tape:
+                        Logger.Basic(" -> Player found some tape.");
+                        if ((thisPlayer.Tapies + m_LootToGive.GiveAmount) > 5)
+                        {
+                            m_LootToGive.GiveAmount -= (byte)(5 - thisPlayer.Tapies);
+                            thisPlayer.Tapies += (byte)(5 - thisPlayer.Tapies);
+                            _extraLootMSG = MakeNewTapeLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                            break;
+                        }
+                        thisPlayer.Tapies += m_LootToGive.GiveAmount;
+                        break;
+                    case LootType.Armor:
+                        Logger.Basic($" -> Player got some armor. Tier{m_LootToGive.ItemRarity} - Ticks: {m_LootToGive.GiveAmount}");
+                        if (thisPlayer.ArmorTier != 0)
+                        {
+                            _extraLootMSG = MakeNewArmorLootItem(thisPlayer.ArmorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                            // Update the player's armor.
+                            thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
+                            thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
+                            break;
+                        }
+                        thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
+                        thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
+                        break;
+
+                    // TODO - make sure server tracks ammo not just spawns it and stuff.
+                    case LootType.Ammo: // Ammo Type is stored in LootItem.ItemRarity
+                        Logger.Basic($" -> Ammo Loot: AmmoType:Ammount -- {m_LootToGive.ItemRarity}:{m_LootToGive.GiveAmount}");
+                        // I can't be bothered right now
+                        break;
+                }
+                NetOutgoingMessage testMessage = server.CreateMessage();
+                testMessage.Write((byte)22); // Header / Packet ID
+                testMessage.Write(thisPlayer.myID); // Player ID
+                testMessage.Write((int)m_LootID); // Loot Item ID
+                testMessage.Write(m_PlayerSlot); // Player Slot to update
+                if (!matchStarted) // Write Forced Rarity
+                {
+                    testMessage.Write((byte)4); // Only matters in a lobby
+                }
+                testMessage.Write((byte)0);
+                server.SendToAll(testMessage, NetDeliveryMethod.ReliableSequenced);
+                if (_extraLootMSG != null)
+                {
+                    server.SendToAll(_extraLootMSG, NetDeliveryMethod.ReliableSequenced);
+                }
+            }
+            catch (Exception Except)
+            {
+                Logger.Failure(Except.ToString());
+            }
+        }
         /// <summary>
         /// Sends a message to all clients connected to the server telling them that a Player in a certain Vehicle bounced off a wall.
         /// </summary>
