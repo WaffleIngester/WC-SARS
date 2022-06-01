@@ -51,8 +51,6 @@ namespace WCSARS
                 }
             }
             // eat my shorts
-            // but whyyyyyyyyyyyyy
-            // yum
             if (data["minRarity"])
             {
                 RarityMinVal = (byte)data["minRarity"].AsInt;
@@ -80,12 +78,10 @@ namespace WCSARS
             if (data["addedDamagePerRarity"])
             {
                 DamageIncrease = data["addedDamagePerRarity"].AsInt;
-                //Logger.Basic(DamageIncrease.ToString());
             }
             if (data["clipSize"])
             {
                 ClipSize = data["clipSize"].AsInt;
-                //Logger.Basic(ClipSize.ToString());
             }
             if (data["spawnRatioRelativeToOthers"])
             {
@@ -114,8 +110,7 @@ namespace WCSARS
                 string ReadData = File.ReadAllText(dir);
                 JSONArray jArray = (JSONArray)JSON.Parse(ReadData);
                 m_WeaponListGame = new Weapon[jArray.Count];
-                //Logger.Success(jArray.Count.ToString());
-
+                //Logger.Success(jArray.Count.ToString()); // for counting entries to double-check if it is correct
                 for (int i = 0; i < jArray.Count; i++)
                 {
                     m_WeaponListGame[i] = new Weapon(jArray[i], (short)i);
