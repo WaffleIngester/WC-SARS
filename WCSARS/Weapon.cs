@@ -51,6 +51,8 @@ namespace WCSARS
                 }
             }
             // eat my shorts
+            // but whyyyyyyyyyyyyy
+            // yum
             if (data["minRarity"])
             {
                 RarityMinVal = (byte)data["minRarity"].AsInt;
