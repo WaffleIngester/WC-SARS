@@ -22,7 +22,7 @@ namespace WCSARS
         //private Dictionary<int, VAL> CoconutList;
         private Dictionary<int, Vehicle> HamsterballList;
 
-        private JSONArray s_PlayerDataJSON;
+        private JSONArray svd_PlayerDataJSON;
         private int sv_TotalLootCounter, sv_LootSeed, sv_CoconutSeed, sv_VehicleSeed; // Spawnable Item Generation Seeds
         private int slpTime, prevTime, prevTimeA, matchTime;
         private bool matchStarted, matchFull;
@@ -63,7 +63,7 @@ namespace WCSARS
             if (File.Exists(Directory.GetCurrentDirectory() + @"\playerdata.json"))
             {
                 JSONNode PlayerDataJSON = JSON.Parse(File.ReadAllText(Directory.GetCurrentDirectory() + @"\playerdata.json"));
-                s_PlayerDataJSON = (JSONArray)PlayerDataJSON["PlayerData"];
+                svd_PlayerDataJSON = (JSONArray)PlayerDataJSON["PlayerData"];
             }
             else
             {
@@ -259,8 +259,54 @@ namespace WCSARS
             sTimeMsg.Write(timeUntilStart);
             server.SendToAll(sTimeMsg, NetDeliveryMethod.ReliableOrdered);
         }
-        private void updateEveryoneOnPlayerPositions()
+        private void updateEveryoneOnPlayerPositions() // TODO -- 1. Make Send like Client should actually receive 2. Use only in Lobby instead of all the time.
         {
+            /* format
+             * H - 11
+             * Byte -- List Length / times to loop
+             * 
+             * For Each Person in the list
+             * Short
+             * SByte - Mouse Angle or whatever
+             * Short - PosX
+             * Short - Pos Y
+             * 
+             * How to determine these values
+             * Mouse Angle Convert1 = (int)(ReadSByte)*2
+             * Mouse Angle = PI * (float)(Mouse Angle Convert1) / 180f;
+             * 
+             * PosX and PosY = (float)ReadShort / 6f;
+             */
+            NetOutgoingMessage msg = server.CreateMessage(); // changed as of 6/1/22
+            msg.Write((byte)11); // I think this is working?
+            //find list length of players
+            if (!isSorted)
+            {
+                sortPlayersListNull();
+            }
+            for (byte i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] == null)
+                {
+                    msg.Write(i);
+                    break;
+                }
+            }
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    msg.Write(player_list[i].myID);
+                    sbyte whatthefrick = (sbyte)((180f * player_list[i].MouseAngle / 3.141592f) / 2);
+                    //msg.Write((sbyte)((player_list[i].MouseAngle / 3.141592f * 180f) / 2));
+                    msg.Write(whatthefrick);
+                    msg.Write((ushort)(player_list[i].position_X * 6f));
+                    msg.Write((ushort)(player_list[i].position_Y * 6f));
+                } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
+            }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+
+            /*
             // TODO - start using match position packet when match starts instead of lobby for lobby.
             NetOutgoingMessage playerUpdate = server.CreateMessage();
             playerUpdate.Write((byte)11); // Header -- Basic Update Info
@@ -283,7 +329,7 @@ namespace WCSARS
                 }
                 else { break; } //exits
             }
-            server.SendToAll(playerUpdate, NetDeliveryMethod.ReliableSequenced);
+            server.SendToAll(playerUpdate, NetDeliveryMethod.ReliableSequenced);*/
         }
         private void updateEveryoneOnPlayerInfo()
         {
@@ -319,7 +365,6 @@ namespace WCSARS
         {
             NetOutgoingMessage dummy = server.CreateMessage();
             dummy.Write((byte)97);
-            //dummy.Write("a dummy makes money off a dummy");
             server.SendToAll(dummy, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -506,10 +551,10 @@ namespace WCSARS
             smsg.Write((byte)6);
             smsg.Write((byte)1);
             smsg.Write((short)14);
-            smsg.Write((short)(45 * 100));
+            smsg.Write((short)(5 * 100)); // 45 = DEATH
             smsg.Write((byte)1);
             smsg.Write((short)14);
-            smsg.Write((short)(45 * 100));
+            smsg.Write((short)(5 * 100));
             server.SendToAll(smsg, NetDeliveryMethod.ReliableUnordered);
         }
         #endregion
@@ -549,43 +594,55 @@ namespace WCSARS
                     Logger.Warn($"Player ID {ejectedPlayer.myID} ({ejectedPlayer.myName}) has ejected!\nX, Y: ({ejectedPlayer.position_X}, {ejectedPlayer.position_Y})");
                     break;
 
-                case 14:
+                case 14: // TODO - cleanup / update to use the new TryFindPlayer methods :] (this is a very old method)
                     //this isn't accurate entirely. everything aside from mAngle is normal I think?
-                    float mAngle = msg.ReadFloat();
-                    float actX = msg.ReadFloat();
-                    float actY = msg.ReadFloat();
-                    byte currentwalkMode = msg.ReadByte();
-
-                    // short angle = (short)(mouseAngle * 57.295776f);
-
-                    for (short i = 0; i < player_list.Length; i++)
+                    try
                     {
-                        if ((player_list[i] != null))
+                        //short shortMAngle = msg.ReadInt16();
+                        //Logger.Success($"Got the mouse angle. As a short it is \"{shortMAngle}\"");
+                        float mAngle = msg.ReadInt16() / 57.295776f; // changed as of 6/1/22
+                        //Logger.Warn($"The corrected angle should be: \"{mAngle}\"");
+                        float actX = msg.ReadFloat();
+                        float actY = msg.ReadFloat();
+                        //Logger.Success($"Got the positions as well. Read positions: {actX}, {actY}");
+                        byte currentwalkMode = msg.ReadByte();
+                        //Logger.Success($"Walkmode: {currentwalkMode}");
+
+                        // short angle = (short)(mouseAngle * 57.295776f);
+
+                        for (short i = 0; i < player_list.Length; i++)
                         {
-                            if (player_list[i].sender == msg.SenderConnection)
+                            if ((player_list[i] != null))
                             {
-                                player_list[i].position_X = actX;
-                                player_list[i].position_Y = actY;
-                                player_list[i].MouseAngle = mAngle;
-                                player_list[i].WalkMode = currentwalkMode;
-                                break;
+                                if (player_list[i].sender == msg.SenderConnection)
+                                {
+                                    player_list[i].position_X = actX;
+                                    player_list[i].position_Y = actY;
+                                    player_list[i].MouseAngle = mAngle;
+                                    player_list[i].WalkMode = currentwalkMode;
+                                    break;
+                                }
                             }
+                            else { break; }
                         }
-                        else { break; }
+                        if (ANOYING_DEBUG1)
+                        {
+                            Logger.Warn($"Mouse Angle: {mAngle}");
+                            Logger.Warn($"playerX: {actX}");
+                            Logger.Warn($"playerY: {actY}");
+                            Logger.Basic($"player WalkMode: {currentwalkMode}");
+                        }
                     }
-                    if (ANOYING_DEBUG1)
+                    catch (Exception WHAT)
                     {
-                        Logger.Warn($"Mouse Angle: {mAngle}");
-                        Logger.Warn($"playerX: {actX}");
-                        Logger.Warn($"playerY: {actY}");
-                        Logger.Basic($"player WalkMode: {currentwalkMode}");
+                        Logger.Failure($"Blunder Case 14: {WHAT}");
                     }
                     break;
-                case 16: //no clue how true to the actual this is
+                case 16: //no clue how true to the actual this is // changed 6/1/22 -- >> aimAngle & shotAngle to SHORT source as opposed to custom-read float
                     // TODO - Actually Fixup ?
                     short weaponID = msg.ReadInt16(); //short -- WeaponId
                     byte slotIndex = msg.ReadByte();//byte -- slotIndex
-                    float aimAngle = (msg.ReadFloat() / 57.295776f); //no clue if dividing actually gets to the correct angle or not (found in game)
+                    float aimAngle = (msg.ReadInt16() / 57.295776f); // should be correct angle -- fixed as of 6/1/22; used custom-read Float instead of Short
                     float spawnPoint_X = msg.ReadFloat();//float -- spawnPoint.X
                     float spawnPoint_Y = msg.ReadFloat();//float -- spawnPoint.Y
                     bool shotPointValid = msg.ReadBoolean();//bool -- shotPointValid
@@ -608,7 +665,8 @@ namespace WCSARS
                     plrShot.Write(weaponID); //weaponID from shot
                     plrShot.Write(slotIndex); //slotIndex
                     plrShot.Write(attackID); //attackID
-                    plrShot.Write(aimAngle); //angle
+                    plrShot.Write((short)(3.1415927f / aimAngle * 180f)); // I think this still makes stars?
+                    // ^^^ angle // I think this was problem for 6/1/22 update? should be done like this not simple send
                     plrShot.Write(spawnPoint_X);
                     plrShot.Write(spawnPoint_Y);
                     plrShot.Write(shotPointValid);
@@ -617,7 +675,9 @@ namespace WCSARS
                     {
                         for (int i = 0; i < sendProjectileAnglesArrayLength; i++)
                         {
-                            plrShot.Write(msg.ReadFloat() / 57.295776f);
+                            float recalc1 = (msg.ReadInt16() / 57.295776f);
+                            //plrShot.Write(msg.ReadInt16() / 57.295776f); // fixed as of 6/1/22; was custom-reading Float instead of Short
+                            plrShot.Write( (short)(recalc1 / 3.1415927f * 180f));
                             plrShot.Write(msg.ReadInt16());
                             plrShot.Write(msg.ReadBoolean());
                         }
@@ -650,7 +710,6 @@ namespace WCSARS
                     }
                     // gibe lobby weapno :)
                     break;
-
                 case 25:
                     serverHandleChatMessage(msg);
                     break;
@@ -880,6 +939,9 @@ namespace WCSARS
                 case 98: // Client - I want to Tape-Up [ Request Duct Taping ]
                     serverSendPlayerStartedTaping(msg.SenderConnection, msg.ReadFloat(), msg.ReadFloat());
                     break;
+                //case 108: // Player Request DiveMode update / Parachute mode update idrk...
+                    // unused as of yet...
+                    //break;
 
                 default:
                     Logger.missingHandle($"Message appears to be missing handle. ID: {b}");
@@ -918,7 +980,7 @@ namespace WCSARS
         private void serverHandlePlayerConnection(NetIncomingMessage msg)
         {
             //Read the player's character info and stuff
-            ulong steamID = msg.ReadUInt64();     // only comes from modified client
+            //ulong steamID = msg.ReadUInt64();     // only comes from modified client -->> removed for 6/1/22 update
             string steamName = msg.ReadString();  // only comes from modified client
             short charID = msg.ReadInt16();
             short umbrellaID = msg.ReadInt16();
@@ -962,11 +1024,11 @@ namespace WCSARS
                     {
                         string _ThisPlayFabID = IncomingConnectionsList[msg.SenderConnection];
                         JSONObject _PlayerJSONData;
-                        for (int p = 0; p < s_PlayerDataJSON.Count; p++)
+                        for (int p = 0; p < svd_PlayerDataJSON.Count; p++)
                         {
-                            if (s_PlayerDataJSON[p] != null && s_PlayerDataJSON[p]["PlayerID"] == _ThisPlayFabID)
+                            if (svd_PlayerDataJSON[p] != null && svd_PlayerDataJSON[p]["PlayerID"] == _ThisPlayFabID)
                             {
-                                _PlayerJSONData = (JSONObject)s_PlayerDataJSON[p];
+                                _PlayerJSONData = (JSONObject)svd_PlayerDataJSON[p];
                                 //Logger.Basic($"PlayerDataJSON for this Player:\n{_PlayerJSONData}");
                                 // It would seem that not only does this check for if the key exists, but also its bool value. Probably wrong though lol
                                 if (_PlayerJSONData["Admin"])
@@ -1052,7 +1114,7 @@ namespace WCSARS
             {
                 if (player_list[i] != null)
                 {
-                    sendPlayerPosition.Write((short)i);                                 // MyAssignedID          |   Short
+                    sendPlayerPosition.Write(player_list[i].myID);                      // MyAssignedID          |   Short  -- fixed as of 6/1/22 -- for some reason was just writing I as a short even though player IDs get mixed????
                     sendPlayerPosition.Write(player_list[i].charID);                    // CharacterID           |   Short
                     sendPlayerPosition.Write(player_list[i].umbrellaID);                // UmbrellaID            |   Short
                     sendPlayerPosition.Write(player_list[i].gravestoneID);              // GravestoneID          |   Short
@@ -1528,25 +1590,45 @@ namespace WCSARS
                     case "/divemode":
                         if (command.Length > 1)
                         {
-                            bool isDive;
-                            if (bool.TryParse(command[1], out isDive))
+                            if (short.TryParse(command[1], out short diveID))
                             {
-                                NetOutgoingMessage cParaMsg = server.CreateMessage();
-                                cParaMsg.Write((byte)109);
-                                cParaMsg.Write(getPlayerID(message.SenderConnection));
-                                //cParaMsg.Write((short)0);
-                                cParaMsg.Write(isDive);
-                                server.SendToAll(cParaMsg, NetDeliveryMethod.ReliableOrdered);
-                                responseMsg += $"Parachute Mode Changed. Dive: {isDive}";
+                                if (tryFindPlayerByID(diveID, out Player diver))
+                                {
+                                    if (command.Length > 2 && bool.TryParse(command[2], out bool givenMode))
+                                    {
+                                        diver.isDiving = givenMode;
+                                        ServerAMSG_ParachuteUpdate(diver.myID, diver.isDiving);
+                                        responseMsg = $"Parachute mode for {diver.myName} (ID: {diver.myID}) set to: {diver.isDiving}";
+                                    }
+                                    else
+                                    {
+                                        diver.isDiving = !diver.isDiving;
+                                        ServerAMSG_ParachuteUpdate(diver.myID, diver.isDiving);
+                                        responseMsg = $"Parachute mode for {diver.myName} (ID: {diver.myID}) set to: {diver.isDiving}";
+                                    }
+                                }
+                                else
+                                {
+                                    responseMsg = $"Could not locate a player with the ID \"{diveID}\"";
+                                }
                             }
                             else
                             {
-                                responseMsg = $"Provided value '{command[1]}' is not a true/false value. Please try again.";
+                                responseMsg = $"Could not locate a player with the ID \"{command[1]}\"";
                             }
                         }
                         else
                         {
-                            responseMsg = $"Insufficient amount of arguments provided. This command takes 1. Given: {command.Length - 1}.";
+                            if (tryFindPlayerbyConnection(message.SenderConnection, out Player diver))
+                            {
+                                diver.isDiving = !diver.isDiving;
+                                ServerAMSG_ParachuteUpdate(diver.myID, diver.isDiving);
+                                responseMsg = $"Parachute mode for Player {diver.myID}({diver.myName}) set to {diver.isDiving.ToString().ToUpper()}";
+                            }
+                            else
+                            {
+                                responseMsg = $"There was an error locating the player who used dive mode for some reason...";
+                            }
                         }
                         break;
                     case "/startshow":
@@ -1563,7 +1645,7 @@ namespace WCSARS
                             }
                             else
                             {
-                                responseMsg = $"Provided value '{command[1]}' is not valid. Please try again. (Valid values include: 0, 1, and 2)";
+                                responseMsg = $"Provided value '{command[1]}' is not a valid show.\nValid shows IDs: [0, 1, 2]";
                             }
                         }
                         else
@@ -1715,7 +1797,7 @@ namespace WCSARS
                         break;
                     case "/togglewin":
                         doWinCheck = !doWinCheck;
-                        responseMsg = $"server var, doWinCheck = {doWinCheck}";
+                        responseMsg = $"SERVER_VAR \"doWinCheck\" set to \n{doWinCheck.ToString().ToUpper()}\n";
                         break;
                     case "/drink":
                         Logger.Success("drink command");
@@ -1951,8 +2033,69 @@ namespace WCSARS
         }
 
         //send 61
-        private void serverSendVehicleHitPlayer(NetIncomingMessage message)
+        private void serverSendVehicleHitPlayer(NetIncomingMessage aMsg) // TODO: needs updating/cleanup
         {
+            Logger.Header("[Vehicle Hit Player] Packet Received");
+            if (tryFindPlayerbyConnection(aMsg.SenderConnection, out Player _attacker))
+            {
+                if (_attacker.vehicleID != -1) // make sure the player is actually in a vehicle?
+                {
+                    try
+                    {
+                        short _targetID = aMsg.ReadInt16();
+                        float _speed = aMsg.ReadFloat();
+                        Logger.Basic($"[Vehicle Hit Player - Calculations] Attacker ID: {_attacker}; Target ID: {_targetID}; Hamsterball Speed: {_speed}");
+                        if (tryFindPlayerByID(_targetID, out Player _target))
+                        {
+                            NetOutgoingMessage msg = server.CreateMessage();
+                            msg.Write((byte)61);
+                            msg.Write(_attacker.myID); // person who is attacking
+                            msg.Write(_targetID); // person who got hit
+                            msg.Write(false); // has killed
+                            msg.Write((short)0); // vehicle ID
+                            msg.Write((byte)0); // no clue
+                            msg.Write((byte)2); // no clue
+
+                            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Vehicle Hit Player - Error] Could not locate Player object for found _targetID. Search ID: {_targetID}");
+                        }
+                    }
+                    catch (Exception vhpEx)
+                    {
+                        Logger.Failure($"[Vehicle Hit Player - Error] There was an error processing this packet. Wrong header or malformed data?\n{vhpEx}");
+                    }
+                }
+                else
+                {
+                    Logger.Failure("[Vehicle Hit Player - Error] The player doesn't even have an assigned VehicleID. Request ignored. Check *why* this player could do this without being in a vehicle.");
+                }
+            }
+            else
+            {
+                Logger.Failure("[Vehicle Hit Player - Error] Packet Received, however sent PlayerID is nonexistent in Player List. (Ignoring the rest of the request.)");
+            }
+            /*
+            try
+            {
+                short _attacker = getPlayerID(aMsg.SenderConnection);
+                short _target = aMsg.ReadInt16();
+                float _speed = aMsg.ReadFloat();
+
+                NetOutgoingMessage msg = server.CreateMessage();
+                msg.Write((byte)61);
+                msg.Write(_attacker); // person who is attacking
+                msg.Write(_target); // person who got hit
+                msg.Write(false); // has killed
+                msg.Write((short)0); // vehicle ID
+                msg.Write((byte)0); // no clue
+                msg.Write((byte)2); // no clue
+
+                server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+            }*/
+            /*
             Logger.Header("--  Vehicle Hit Player  --");
             Logger.Basic($"Target Player ID: {message.ReadInt16()}\nSpeed: {message.ReadFloat()}");
             Player plrA = player_list[getPlayerArrayIndex(message.SenderConnection)];
@@ -1970,7 +2113,7 @@ namespace WCSARS
             vehicleHit.Write((byte)0); //idk
             vehicleHit.Write((byte)2);
 
-            server.SendToAll(vehicleHit, NetDeliveryMethod.ReliableOrdered);
+            server.SendToAll(vehicleHit, NetDeliveryMethod.ReliableOrdered);*/
         }
 
         /// <summary>
@@ -2209,6 +2352,17 @@ namespace WCSARS
             msg.Write((byte)99);
             msg.Write(plr.myID);
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+        /// <summary>
+        /// Sends an announcement message to ALL connected NetClients that a particular Player's Parachute Mode has been updated. Neat!
+        /// </summary>
+        private void ServerAMSG_ParachuteUpdate(short aID, bool aIsDiving) // Server Announcement Message - Someone Ended Drinking
+        {
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)109); // Byte Header -- Message Type 109 >> Update Parachute Mode
+            msg.Write(aID); // Short PlayerID >> ID of the Player to be updated
+            msg.Write(aIsDiving); // Bool IsDiving >> Whether or not the person is Parachuting or diving (is actually flipped --> dive = false; chute = true)
+            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
         /// <summary>
