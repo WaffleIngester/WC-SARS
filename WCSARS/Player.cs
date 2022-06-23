@@ -18,9 +18,9 @@ namespace WCSARS
         public short beardID; // Beard
         public short clothesID; // Clothes
         public short meleeID; // Melee
-        public byte gunSkinCount; // Gunskin1
-        public short[] gunskinKey; // Gunskin2 IDK //key
-        public byte[] gunskinValue; // Gunskin3 IDK //value
+        public byte gunSkinCount; // Gunskin1 --> Amount of GunSkins
+        public short[] gunskinKey; // Gunskin2 IDK //key  --> Gun... ID?
+        public byte[] gunskinValue; // Gunskin3 IDK //value --> SkinKey for GunID ?
 
         //Updated Regularly...
         public float LastPingTime = 0f;
@@ -30,7 +30,7 @@ namespace WCSARS
 
         // Dance Stuff
         public short currenteEmote = -1;
-        public float EmoteDuration;
+        public float EmoteDuration = -1f;
         public bool isDancing = false;
 
         // Others... ?
@@ -64,6 +64,8 @@ namespace WCSARS
 
         //Booleans
         public bool isReloading = false;
+        public bool isFalling = false;
+        public bool isDiving = false;
 
         // Create
         public Player(short assignedID, short characterID, short parasollID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, NetConnection senderAddress)
