@@ -39,6 +39,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.IO;
 
 namespace SimpleJSON
 {
@@ -57,6 +58,16 @@ namespace SimpleJSON
     {
         Compact,
         Indent
+    }
+    public enum JSONBinaryTag // had to add this bc wasn't in the current public version available - Aiko 6/25/22
+    {
+        Array = 1, // is probably required :I
+        Class,
+        Value,
+        IntValue,
+        DoubleValue,
+        BoolValue,
+        FloatValue
     }
 
     public abstract partial class JSONNode
@@ -714,6 +725,63 @@ namespace SimpleJSON
             return ctx;
         }
 
+        // LoadFromFile junk... idk when this ever existed but had to add... - Aiko 6/25/22
+        public static JSONNode LoadFromFile(string aFileName)
+        {
+            JSONNode result;
+            using (FileStream fileStream = File.OpenRead(aFileName))
+            {
+                result = LoadFromStream(fileStream);
+            }
+            return result;
+        }
+        public static JSONNode LoadFromStream(Stream aStream)
+        {
+            JSONNode result;
+            using (BinaryReader binaryReader = new BinaryReader(aStream))
+            {
+                result = Deserialize(binaryReader);
+            }
+            return result;
+        }
+        public static JSONNode Deserialize(BinaryReader aReader)
+        {
+            JSONBinaryTag jsonBinaryTag = (JSONBinaryTag)aReader.ReadByte();
+            switch (jsonBinaryTag)
+            {
+                case JSONBinaryTag.Array:
+                    int arrayLength = aReader.ReadInt32();
+                    JSONArray jsonArray = new JSONArray();
+                    for (int i = 0; i < arrayLength; i++)
+                    {
+                        jsonArray.Add(Deserialize(aReader));
+                    }
+                    return jsonArray;
+                case JSONBinaryTag.Class:
+                    int classLength = aReader.ReadInt32();
+                    JSONObject jsonClass = new JSONObject();
+                    // was supposed to be JSONClass but I think JSONObject is the same. no clue never checked :3
+                    for (int i = 0; i < classLength; i++)
+                    {
+                        string classKey = aReader.ReadString();
+                        JSONNode jsonNodeItem = Deserialize(aReader);
+                        jsonClass.Add(classKey, jsonNodeItem);
+                    }
+                    return jsonClass;
+                case JSONBinaryTag.Value:
+                    return new JSONString(aReader.ReadString());
+                case JSONBinaryTag.IntValue:
+                    return new JSONNumber(aReader.ReadInt32());
+                case JSONBinaryTag.DoubleValue:
+                    return new JSONNumber(aReader.ReadDouble());
+                case JSONBinaryTag.BoolValue:
+                    return new JSONBool(aReader.ReadBoolean());
+                case JSONBinaryTag.FloatValue:
+                    return new JSONNumber(aReader.ReadSingle());
+                default:
+                    throw new Exception($"There was an error deserializing the JSON file. Encountered an unknown tag \"{jsonBinaryTag}\"");
+            }
+        }
     }
     // End of JSONNode
 
