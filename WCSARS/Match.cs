@@ -10,6 +10,28 @@ namespace WCSARS
 {
     class Match
     {
+        // Here's a little guide for naming variables.
+
+        /* svd_ prefix
+         * This prefix means "Server Data"
+         * ServerData is anything that is well... SERVER DATA!
+         * ServerData, in this instance, are things which will NOT be changed often- if ever.
+         * LootItemTiles, for instance, only needs to be set once to be used
+         * The LootItem seed also is ServerData. It only needs to be set once.
+         */
+
+        /* sv_ prefix
+         * This is the opposite of ServerData! These are just ServerVariables
+         * Think of these more like sv_cheats 1. You can mess with these all you want and it doesn't affect anything too major
+         * The side-effects which'll probably occur are probably mostly intentional. Volitile variables maybe for testing and such!
+         */
+
+        /* No prefix, just name
+         * Probably similar to svd_ prefix. Maybe one-use or just bools that are kind of obvious as to what they do.
+         * I would like it, however; if there weren't many single-name stuff without prefixes.
+         * Everything having a category would be quite nice I think.
+         */
+
         private NetPeerConfiguration config;
         public NetServer server;
         public Player[] player_list;
@@ -20,14 +42,28 @@ namespace WCSARS
         private Dictionary<NetConnection, string> IncomingConnectionsList;
         private Dictionary<int, LootItem> ItemList;
         //private Dictionary<int, VAL> CoconutList;
+        private List<int> CoconutList;
         private Dictionary<int, Vehicle> HamsterballList;
 
         private JSONArray svd_PlayerDataJSON;
         private int sv_TotalLootCounter, sv_LootSeed, sv_CoconutSeed, sv_VehicleSeed; // Spawnable Item Generation Seeds
-        private int slpTime, prevTime, prevTimeA, matchTime;
+        private int slpTime, prevTime, prevTimeA, matchTime; //TODO -- probably should make server more tick-based
         private bool matchStarted, matchFull;
         private bool isSorting, isSorted;
         public double timeUntilStart, gasAdvanceTimer, gasAdvanceLength;
+
+        // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
+        //private List<short> svd_LootGenTilesR; // normal loot tiles
+        //private List<short> svd_LootGenTitlesG; // "better" loot tiles
+        //private List<short> svd_LootGenTitlesB; // loot tiles for... bot loot???
+        private int svd_LootGenTilesR = 0; // normal tiles
+        private int svd_LootGenTilesG = 0; // better tiles
+        private int svd_LootGenTilesB = 0; // bot tiles
+        //private int svd_CoconutCount = 0;
+        private int svd_VehicleCount = 0;
+        private List<Doodad> svd_Doodads;
+
+        private bool svd_LevelLoaded = false;
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm
         public bool ANOYING_DEBUG1;
@@ -70,6 +106,8 @@ namespace WCSARS
                 Logger.Failure("No such file 'PlayerData.json'");
                 Environment.Exit(2);
             }
+
+            LoadSARLevel();
 
             // NetServer Initialization and starting
             config = new NetPeerConfiguration("BR2D");
@@ -196,8 +234,8 @@ namespace WCSARS
         {
             // TODO - cleanese.
             Logger.Success("Server update thread started.");
-            GenerateItemLootList(sv_LootSeed); // Loot Generation Seed
-            GenerateHamsterballs(sv_VehicleSeed);
+            //GenerateItemLootList(sv_LootSeed); // Loot Generation Seed << refer to bottom
+            //GenerateHamsterballs(sv_VehicleSeed); << this is now done within the method "Load SAR Level" (spaces so doesn't show in Ctrl+F lol)
             if (!doWinCheck)
             {
                 Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"doWinCheck\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
@@ -870,47 +908,80 @@ namespace WCSARS
                     ServerMSG_SendPerformedEmote(player_list[getPlayerArrayIndex(msg.SenderConnection)], msg);
                     break;
 
-                //case 72: // CLIENT_DESTORY_DOODAD // TODO - Make this actually work/do something.
+                case 72: // CLIENT_DESTORY_DOODAD // TODO - Make this actually work/do something.
                          // TODO - make doodads real.
-                    /*
-                    float destructX = msg.ReadInt32();
-                    float destructY = msg.ReadInt32();
+                    int checkX = msg.ReadInt32();
+                    int checkY = msg.ReadInt32();
                     short projectileID = msg.ReadInt16();
-
-                    Logger.Header("[Doodad Destroyed]");
-                    Logger.Basic($"Position: ({destructX}, {destructY})\nProjectile ID: {projectileID}"); */
-
-
-                    //short descXthing = msg.ReadInt16(); //x
-                    //short descYthing = msg.ReadInt16(); //y
-
-                    //descBroke.Write(msg.ReadInt16()); //xSpot
-                    //descBroke.Write(msg.ReadInt16()); //ySpot -- next read will be optionalProjectileID
-
-                    /*
-                    NetOutgoingMessage descBroke = server.CreateMessage();
-                    descBroke.Write((byte)73); //SERVER_DESTROY_DOODAD
-                    descBroke.Write((short)0); // serves literally no purpose other than the fact the game expects this.
-                    descBroke.Write(msg.ReadInt16()); //x 
-                    descBroke.Write(msg.ReadInt16()); //y
-
-
-                    descBroke.Write((short)1); // how many collision points to change, this may fluctuate
-                    descBroke.Write((short)5); //was descX
-                    descBroke.Write((short)6); //was descY
-                    descBroke.Write((byte)0);
-                    descBroke.Write((byte)1);
-                    descBroke.Write((short)4);
-
-                    server.SendToAll(descBroke, NetDeliveryMethod.ReliableOrdered); */
-
-                    /* goes to: GameServerSentDoodadDestroyed
-                     * GameServerSentDoodadDestroyed(desctructX, destructY,
-                     * L[IntPoints]:Points to Change, CollisionType : collisionTOChangeTO,
-                     * List[short] : damaged player IDs)
-                     * 
-                     */
-                    //break;
+                    Logger.Basic(" : Doodad Destroyed : "
+                        + $"X: {checkX}"
+                        + $"Y: {checkY}"
+                        + $"ProjectileID: {projectileID}");
+                    int _doodadCount = svd_Doodads.Count;
+                    Int32Point hitCoords = new Int32Point(checkX, checkY);
+                    for (int i = 0; i < _doodadCount; i++)
+                    {
+                        bool flipper = false;
+                        /*if (svd_Doodads[i].OffsetCollisionPoints != null)
+                        {
+                            int ptsCount = svd_Doodads[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
+                            for (int j = 0; j < ptsCount; j++)
+                            {
+                                if (svd_Doodads[i].OffsetCollisionPoints[j] == hitCoords)
+                                {
+                                    Logger.Success("Found a valid point...");
+                                    flipper = true;
+                                }
+                            }
+                        }*/
+                        if (svd_Doodads[i].X == checkX && svd_Doodads[i].Y == checkY && !flipper)
+                        {
+                            Logger.Success("wahoo!");
+                            flipper = true;
+                        }
+                        if (svd_Doodads[i].OffsetCollisionPoints2 != null && !flipper)
+                        {
+                            int ptsCount = svd_Doodads[i].OffsetCollisionPoints2.Count; // for whatever reason, .Count is slower than caching
+                            for (int j = 0; j < ptsCount; j++)
+                            {
+                                if (svd_Doodads[i].OffsetCollisionPoints2[j] == hitCoords)
+                                {
+                                    Logger.Success("Found a valid point...2");
+                                    flipper = true;
+                                }
+                            }
+                        }
+                        if (flipper)
+                        {
+                            NetOutgoingMessage test = server.CreateMessage();
+                            test.Write((byte)73);
+                            test.Write((short)420);
+                            test.Write((short)svd_Doodads[i].X);
+                            test.Write((short)svd_Doodads[i].Y);
+                            List<Int32Point> pts = svd_Doodads[i].DoodadType.MoveCollisionPoints;
+                            List<Int32Point> pts2 = svd_Doodads[i].DoodadType.MoveSightCollisionPoints;
+                            Logger.Warn($"Count MoveR: {pts.Count}; Count MoveS: {pts2.Count}");
+                            test.Write((short)(pts.Count + pts2.Count));
+                            for (int m = 0; m < pts.Count; m++)
+                            {
+                                test.Write((short)(pts[m].x + svd_Doodads[i].X));
+                                test.Write((short)(pts[m].y + svd_Doodads[i].Y));
+                                test.Write((byte)CollisionType.None);
+                            }
+                            for (int mm = 0; mm < pts2.Count; mm++)
+                            {
+                                test.Write((short)(pts2[mm].x + svd_Doodads[i].X));
+                                test.Write((short)(pts2[mm].y + svd_Doodads[i].Y));
+                                test.Write((byte)CollisionType.None);
+                            }
+                            test.Write((byte)0);
+                            server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
+                            svd_Doodads.RemoveAt(i);
+                            break;
+                            //test.Write((short)PLAYERID) << would only use this if someone got hit
+                        }
+                    }
+                    break;
 
                 case 74: // Client - Sent Attack Windup
                     Logger.testmsg("\nAttack Windup used.\nIf you notice this say something.");
@@ -2463,12 +2534,142 @@ namespace WCSARS
             return msg;
         }
 
+        #region LEVEL_GENERATION_METHODS
+        /// <summary>
+        /// Attempts to load all level-data related files and such to fill the server's own level-data related variables.
+        /// </summary>
+        private void LoadSARLevel() // This will become quite the mess.
+        {
+            Logger.Header("[LoadSARLevel] Attempting to Load SAR LevelData!");
+            if (svd_LevelLoaded) // Has this method already been called?
+            {
+                throw new Exception("LoadSARLevel has already been called. You cannot call this method multiple times.");
+            }
+            //JSONNode
+            if (!File.Exists(Directory.GetCurrentDirectory() + @"\datafiles\EarlyAccessMap1.txt"))
+            {
+                throw new Exception("Could not locate \"EarlyAccessMap1.txt\" in the \\datafiles folder!");
+            }
+
+            JSONNode LevelJSON = JSONNode.LoadFromFile(Directory.GetCurrentDirectory() + @"\datafiles\EarlyAccessMap1.txt");
+            Logger.Success("[LoadSARLevel] Successfully located LevelData file!");
+            // use this if you wanna print out all the keys for whatever reason
+            /*foreach (string JSONKey in LevelJSON.Keys)
+            {
+                Logger.testmsg(JSONKey);
+            }*/
+
+            // Item Loot Tiles
+            Logger.Warn("[LoadSARLevel] Attempting to read item loot spawn tiles keys...");
+            if (LevelJSON["lootSpawns"] != null && LevelJSON["lootSpawns"].Count > 0)
+            {
+                svd_LootGenTilesB = LevelJSON["lootSpawns"].Count;
+            }
+            if (LevelJSON["lootSpawnsGood"] != null && LevelJSON["lootSpawnsGood"].Count > 0)
+            {
+                svd_LootGenTilesB = LevelJSON["lootSpawnsGood"].Count;
+            }
+            if (LevelJSON["lootSpawnsNoBot"] != null && LevelJSON["lootSpawnsNoBot"].Count > 0)
+            {
+                Logger.Header("[LoadSARLevel] The lootSpawnsNoBot key actually has entries for once. This... THIS IS BIG GUYS!!! (not really this is already handled incase anything actually happens...)");
+                svd_LootGenTilesB = LevelJSON["lootSpawnsNoBot"].Count;
+            }
+            else
+            {
+                Logger.Warn("[LoadSARLevel] Checked lootSpawnsNoBot << usual emptiness.");
+            }
+            Logger.Success("[LoadSARLevel] Successfully read and loaded item loot spawn tiles.");
+
+            // Load Coconuts
+            Logger.Warn("[LoadSARLevel] Attempting to load coconut data and generate coconut list...");
+            Logger.Warn("[LoadSARLevel] The coconut list as a whole needs a rework. Does not track coco positions...");
+            if (LevelJSON["coconuts"] == null || LevelJSON["coconuts"].Count < 1)
+            {
+                throw new Exception("It would seem that the \"coconuts\" is null in this data set or there are no entries.");
+            }
+            int cocoCount = LevelJSON["coconuts"].Count;
+            CoconutList = new List<int>(cocoCount);
+            MersenneTwister cocoTwist = new MersenneTwister((uint)sv_CoconutSeed);
+            for (int i = 0; i < cocoCount; i++) // while for Hamsterballs they HAVE to be in sequential order, here this is fine I am pretty sure
+            {
+                uint rng = cocoTwist.NextUInt(0U, 100U);
+                if (rng > 65.0)
+                {
+                    CoconutList.Add(i);
+                }
+            }
+            Logger.Success("[LoadSARLevel] Successfully generated coconut list.");
+
+            // Load Vehicles
+            Logger.Header("[LoadSARLevel] Attempting to load hamsterballs list. (key = \"vehicles\"; not to be confused with \"emus\")");
+            if (LevelJSON["vehicles"] == null || LevelJSON["vehicles"] == 0)
+            {
+                throw new Exception("Missing key \"vehicles\" in LevelJSON file or key \"vehicles\" has no entries.\nEither create this key or add entries. However, if this key doesn't exist you're probably doing something wrong.");
+            }
+            Logger.Basic("[LoadSARLevel] The \"vehicle\" key does exist so we are able to attempt to generate the hammerballs list.");
+           
+            JSONNode vehicleNode = LevelJSON["vehicles"];
+            MersenneTwister hampterTwist = new MersenneTwister((uint)sv_VehicleSeed);
+            int hampterballs = vehicleNode.Count; // so apparently it is actually
+            int hTrueID = 0; // keeps track of the TO-assign HamsterballID so Hamsterballs are all sequentially ordered and stuff
+            HamsterballList = new Dictionary<int, Vehicle>(hampterballs);
+            Logger.Warn("[LoadSARLevel] Attempting to populate server Hamsterball list now...");
+            for (int i = 0; i < hampterballs; i++)
+            {
+                if (hampterTwist.NextUInt(0U, 100U) > 55.0)
+                {
+                    HamsterballList.Add(hTrueID, new Vehicle( (byte)3, (short)hTrueID, vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat) );
+                    hTrueID++; // once again, this just is so Hammers only exist in sequential order
+                }
+            }
+            Logger.Success("[LoadSARLevel] Successfully generated the hamsterball list.");
+
+            // Load Doodads
+            Logger.Header("[LoadSARLevel] Attempting to load doodad data");
+            Dictionary<int, DoodadType> doodadTypeList = DoodadType.GetAllDoodadTypes(); // this is where we get the data lol
+            Logger.Success("LoadSARLevel] We were able to populate the DoodadTypes data list successfully.");
+
+            Logger.Warn("[LoadSARLevel] Attempting to now locate whether or not the LevelJSON has the key \"doodads\"");
+            if (LevelJSON["doodads"] == null || LevelJSON["doodads"] == 0)
+            {
+                throw new Exception("Missing key \"doodads\" in LevelJSON file or key \"doodads\" has no entries.");
+            }
+            // time to read le list
+            JSONNode doodadJSON = LevelJSON["doodads"];
+            int doodadCount = doodadJSON.Count;
+            Logger.Warn($"[LoadSARLevel] There are about {doodadCount} different doodad entries in this list. Attempting to read this now, but expect some delay due to the sheer length and calculations required.");
+            svd_Doodads = new List<Doodad>();
+            for (int i = 0; i < doodadCount; i++)
+            {
+                if (!doodadTypeList.ContainsKey(doodadJSON[i]["i"].AsInt)){
+                    Logger.Failure("FRICK");
+                }
+                if (doodadTypeList[doodadJSON[i]["i"].AsInt].Destructible)
+                {
+                    svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
+                }
+                // was just this bottom stuff...
+                //svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
+            }
+            Logger.Success("[LoadSARLevel] We were able to load the doodad section without failure! This is actually really big! Nice!");
+
+            // End of Loading in Files
+
+            // Use loaded data and such to do some other stuff!
+            GenerateItemLootList(sv_LootSeed); // this NEEDS to be worked on
+
+            // Only do this at the end
+            svd_LevelLoaded = true; // Pretty obvious. just a little flag saying we indeed are finished with all this.
+            Logger.Success("[LoadSARLevel] Finished everything within this method without any errors. Success up to your interpretation. Good luck!");
+        }
+
         /// <summary>
         /// Fills the server's LootItem list using the provided seed.
         /// </summary>
         private void GenerateItemLootList(int seed)
         {
             // TODO - Find out how to get a list of all Item spawn tiles.
+            Logger.testmsg("THIS ITEM LOOT GENERATION IS NOT YET COMPELTED- MUST USE ITEM TILES");
             Logger.Warn("Attempting to Generate ItemList");
             sv_TotalLootCounter = 0;
             MersenneTwister MerTwist = new MersenneTwister((uint)seed);
@@ -2605,6 +2806,7 @@ namespace WCSARS
             //Logger.Success($"Successfully generated the ItemList.Count:LootIDCount {ItemList.Keys.Count}:{LootID + 1}");
             //Logger.Success($"ItemList.Count:LootIDCount -- {ItemList.Keys.Count}:{sv_TotalLootCounter}");
         }
+        /*
         /// <summary>
         /// Fills the server's hammerball list using the provided seed. 
         /// </summary>
@@ -2622,7 +2824,8 @@ namespace WCSARS
                     num++;
                 }
             }
-        }
+        }*/
+        #endregion LEVEL_GENERATION_METHODS
 
 
         #region player list methods
