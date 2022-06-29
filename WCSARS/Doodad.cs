@@ -41,10 +41,11 @@ namespace WCSARS
             }
         }
     }
+    /*
     public enum CollisionType : byte
     {
         Movement,
         None,
         MovementAndSight
-    }
+    }*/
 }
