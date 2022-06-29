@@ -1,4 +1,6 @@
-﻿namespace WCSARS
+﻿using System;
+using System.Numerics;
+namespace WCSARS
 {
     public enum VehicleType
     {
@@ -7,12 +9,16 @@
     }
     internal class Vehicle
     {
+        public readonly short VehicleID;
         public byte HP;
-        public short VehicleID;
-        public Vehicle(byte hp, short vehicleid)
+        public float PositionX;
+        public float PositionY;
+        public Vehicle(byte hp, short vehicleid, float x, float y)
         {
-            HP = hp;
             VehicleID = vehicleid;
+            HP = hp;
+            PositionX = x;
+            PositionY = y;
         }
     }
 }
