@@ -43,7 +43,7 @@ namespace WCSARS
         private Dictionary<int, LootItem> ItemList;
         //private Dictionary<int, VAL> CoconutList;
         private List<int> CoconutList;
-        private Dictionary<int, Vehicle> HamsterballList;
+        private Dictionary<int, Hampterball> HamsterballList;
 
         private JSONArray svd_PlayerDataJSON;
         private int sv_TotalLootCounter, sv_LootSeed, sv_CoconutSeed, sv_VehicleSeed; // Spawnable Item Generation Seeds
@@ -922,18 +922,18 @@ namespace WCSARS
                     for (int i = 0; i < _doodadCount; i++)
                     {
                         bool flipper = false;
-                        /*if (svd_Doodads[i].OffsetCollisionPoints != null)
+                        if (svd_Doodads[i].OffsetCollisionPoints != null)
                         {
                             int ptsCount = svd_Doodads[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
                             for (int j = 0; j < ptsCount; j++)
                             {
                                 if (svd_Doodads[i].OffsetCollisionPoints[j] == hitCoords)
                                 {
-                                    Logger.Success("Found a valid point...");
+                                    Logger.Success("This is the original point checker. Once in a while it worky");
                                     flipper = true;
                                 }
                             }
-                        }*/
+                        }
                         if (svd_Doodads[i].X == checkX && svd_Doodads[i].Y == checkY && !flipper)
                         {
                             Logger.Success("wahoo!");
@@ -966,13 +966,13 @@ namespace WCSARS
                             {
                                 test.Write((short)(pts[m].x + svd_Doodads[i].X));
                                 test.Write((short)(pts[m].y + svd_Doodads[i].Y));
-                                test.Write((byte)CollisionType.None);
+                                test.Write((byte)1);
                             }
                             for (int mm = 0; mm < pts2.Count; mm++)
                             {
                                 test.Write((short)(pts2[mm].x + svd_Doodads[i].X));
                                 test.Write((short)(pts2[mm].y + svd_Doodads[i].Y));
-                                test.Write((byte)CollisionType.None);
+                                test.Write((byte)1);
                             }
                             test.Write((byte)0);
                             server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
@@ -2612,13 +2612,13 @@ namespace WCSARS
             MersenneTwister hampterTwist = new MersenneTwister((uint)sv_VehicleSeed);
             int hampterballs = vehicleNode.Count; // so apparently it is actually
             int hTrueID = 0; // keeps track of the TO-assign HamsterballID so Hamsterballs are all sequentially ordered and stuff
-            HamsterballList = new Dictionary<int, Vehicle>(hampterballs);
+            HamsterballList = new Dictionary<int, Hampterball>(hampterballs);
             Logger.Warn("[LoadSARLevel] Attempting to populate server Hamsterball list now...");
             for (int i = 0; i < hampterballs; i++)
             {
                 if (hampterTwist.NextUInt(0U, 100U) > 55.0)
                 {
-                    HamsterballList.Add(hTrueID, new Vehicle( (byte)3, (short)hTrueID, vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat) );
+                    HamsterballList.Add(hTrueID, new Hampterball( (byte)3, (short)hTrueID, vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat) );
                     hTrueID++; // once again, this just is so Hammers only exist in sequential order
                 }
             }
