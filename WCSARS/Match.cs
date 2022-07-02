@@ -52,23 +52,25 @@ namespace WCSARS
         private bool isSorting, isSorted;
         public double timeUntilStart, gasAdvanceTimer, gasAdvanceLength;
 
+        private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
+        private bool sv_isGasReal = false;
+
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
         //private List<short> svd_LootGenTilesR; // normal loot tiles
         //private List<short> svd_LootGenTitlesG; // "better" loot tiles
         //private List<short> svd_LootGenTitlesB; // loot tiles for... bot loot???
-        private int svd_LootGenTilesR = 0; // normal tiles
-        private int svd_LootGenTilesG = 0; // better tiles
-        private int svd_LootGenTilesB = 0; // bot tiles
         //private int svd_CoconutCount = 0;
-        private int svd_VehicleCount = 0;
+        //private int svd_VehicleCount = 0;
         private List<Doodad> svd_Doodads;
 
         private bool svd_LevelLoaded = false;
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm
         public bool ANOYING_DEBUG1;
-        private bool doWinCheck = false;
+        private bool sv_doWins = false;
         private bool shouldUpdateAliveCount = true;
+        //private const int TICK_RATE = 24;
+        private const int MS_PER_TICK = 1000 / 24;
 
         public Match(int port, string ip, bool db, bool annoying)
         {
@@ -236,9 +238,9 @@ namespace WCSARS
             Logger.Success("Server update thread started.");
             //GenerateItemLootList(sv_LootSeed); // Loot Generation Seed << refer to bottom
             //GenerateHamsterballs(sv_VehicleSeed); << this is now done within the method "Load SAR Level" (spaces so doesn't show in Ctrl+F lol)
-            if (!doWinCheck)
+            if (!sv_doWins)
             {
-                Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"doWinCheck\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
+                Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"sv_doWins\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
             }
             //lobby
             while (!matchStarted)
@@ -273,7 +275,7 @@ namespace WCSARS
                 send_dummy();
 
                 //check for win
-                if (shouldUpdateAliveCount && doWinCheck) { svu_Wincheck(); }
+                if (shouldUpdateAliveCount && sv_doWins) { svu_Wincheck(); }
 
                 //updating player info to all people in the match
                 updateEveryoneOnPlayerPositions();
@@ -285,6 +287,10 @@ namespace WCSARS
 
                 advanceTimeAndEventCheck();
                 checkGasTime();
+                if (sv_isGasReal)
+                {
+                    checkSkunkGas();
+                }
 
                 Thread.Sleep(slpTime); // ~1ms delay
             }
@@ -343,31 +349,6 @@ namespace WCSARS
                 } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-
-            /*
-            // TODO - start using match position packet when match starts instead of lobby for lobby.
-            NetOutgoingMessage playerUpdate = server.CreateMessage();
-            playerUpdate.Write((byte)11); // Header -- Basic Update Info
-            for (byte i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] == null)
-                {
-                    playerUpdate.Write(i);
-                    break;
-                }
-            }
-            for (int i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] != null)
-                {
-                    playerUpdate.Write(player_list[i].myID);
-                    playerUpdate.Write(player_list[i].MouseAngle);
-                    playerUpdate.Write(player_list[i].position_X);
-                    playerUpdate.Write(player_list[i].position_Y);
-                }
-                else { break; } //exits
-            }
-            server.SendToAll(playerUpdate, NetDeliveryMethod.ReliableSequenced);*/
         }
         private void updateEveryoneOnPlayerInfo()
         {
@@ -575,6 +556,10 @@ namespace WCSARS
             gasMsg.Write(time); // Time until approachment 
             server.SendToAll(gasMsg, NetDeliveryMethod.ReliableOrdered);
             gasAdvanceTimer = time;
+            sv_safeX = x2;
+            sv_safeY = y2;
+            sv_safeRadius = r2;
+            sv_isGasReal = true;
         }
 
         private void checkForWinnerWinnerChickenDinner()
@@ -594,6 +579,34 @@ namespace WCSARS
             smsg.Write((short)14);
             smsg.Write((short)(5 * 100));
             server.SendToAll(smsg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        private void checkSkunkGas()
+        {
+            float playerX, playerY;
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    playerX = player_list[i].position_X;
+                    playerY = player_list[i].position_Y;
+                    float dX = playerX - sv_safeX;
+                    float dY = playerY - sv_safeY;
+
+                    bool isCircle = Math.Sqrt(dX*dX + dY*dY) <= sv_safeRadius;
+                    Logger.testmsg($"Gas Check -- Player {i}({player_list[i].myName}): {isCircle}");
+                    Logger.Warn($"safezoneX: {sv_safeX}\nsafezoneY:{sv_safeY}\nsafeRadius{sv_safeRadius}");
+                    Logger.Warn($"playerX: {playerX}\nplayerY: {playerY}\ndX: {dX}\ndY: {dY}\n");
+                    if (!isCircle)
+                    {
+                        if ( (player_list[i].HP - 2) > 0 )
+                        {
+                            player_list[i].HP -= 2;
+                        }
+                    }
+
+                }
+            }
         }
         #endregion
 
@@ -689,6 +702,7 @@ namespace WCSARS
                     short destructCollisionPoint_Y = 0; //short -- destruct.CollisionPoint.y
                     if (didHitADestruct)
                     {
+                        Logger.testmsg("Yes, this is actually used at some point.");
                         destructCollisionPoint_X = msg.ReadInt16();
                         destructCollisionPoint_Y = msg.ReadInt16();
                     }
@@ -1638,6 +1652,10 @@ namespace WCSARS
 
                                 server.SendToAll(gCircCmdMsg, NetDeliveryMethod.ReliableOrdered);
                                 gasAdvanceTimer = (double)gtime;
+                                sv_safeX = gx2;
+                                sv_safeY = gy2;
+                                sv_safeRadius = gr2;
+                                sv_isGasReal = true;
                                 responseMsg = $"Started Gas Warning:\nCirlce Major:\nCenter: ({gx1}, {gy1})\nRadius: {gr1}\nCirlce Minor:\nCenter: ({gx2}, {gy2})\nRadius: {gr2}\n\nTime Until Incoming: ~{gtime} seconds";
 
                             }
@@ -1867,8 +1885,8 @@ namespace WCSARS
                         }
                         break;
                     case "/togglewin":
-                        doWinCheck = !doWinCheck;
-                        responseMsg = $"SERVER_VAR \"doWinCheck\" set to \n{doWinCheck.ToString().ToUpper()}\n";
+                        sv_doWins = !sv_doWins;
+                        responseMsg = $"sv_doWins set to \"{sv_doWins.ToString().ToUpper()}\"";
                         break;
                     case "/drink":
                         Logger.Success("drink command");
@@ -1967,6 +1985,42 @@ namespace WCSARS
                             }
                         }
                         else { responseMsg = "Insufficient amount of arguments provided. usage: /spawntape {amount}, {X}, {Y}"; }
+                        break;
+                    case "/advancetimer":
+                        Logger.Success("gas advance timer set command");
+                        if (command.Length > 1)
+                        {
+                            try
+                            {
+                                double time = double.Parse(command[1]);
+                                gasAdvanceLength = time;
+                            }
+                            catch
+                            {
+                                responseMsg = $"Invalid double \"{command[1]}\".";
+                            }
+                        }
+                        else { responseMsg = "Insufficient amount of arguments provided. usage: /advancetimer (SECONDS)"; }
+                        break;
+                    case "/gascheck":
+                        Logger.Success("Toggle Gas-Check command used.");
+                        if (command.Length > 1)
+                        {
+                            if (bool.TryParse(command[1], out bool newset))
+                            {
+                                sv_isGasReal = newset;
+                                responseMsg = $"sv_isGasReal set to \"{sv_isGasReal}\".";
+                            }
+                            else
+                            {
+                                responseMsg = $"Unabled to parse provided argument \"{command[1]}\" as a BOOL value.";
+                            }
+                        }
+                        else
+                        {
+                            sv_isGasReal = !sv_isGasReal;
+                            responseMsg = $"sv_isGasReal set to \"{sv_isGasReal}\".";
+                        }
                         break;
                     default:
                         Logger.Failure("Invalid command used.");
@@ -2534,7 +2588,7 @@ namespace WCSARS
             return msg;
         }
 
-        #region LEVEL_GENERATION_METHODS
+        #region Level Data Loading Method
         /// <summary>
         /// Attempts to load all level-data related files and such to fill the server's own level-data related variables.
         /// </summary>
@@ -2560,19 +2614,24 @@ namespace WCSARS
             }*/
 
             // Item Loot Tiles
+            // TOOD - update LootItem generation section because it is very old. Also probably overhaul LootItems in general because they are a mess.
+            #region Loot
+            int _sNormal = 0;
+            int _sGood = 0;
+            int _sBot = 0;
             Logger.Warn("[LoadSARLevel] Attempting to read item loot spawn tiles keys...");
             if (LevelJSON["lootSpawns"] != null && LevelJSON["lootSpawns"].Count > 0)
             {
-                svd_LootGenTilesB = LevelJSON["lootSpawns"].Count;
+                _sNormal = LevelJSON["lootSpawns"].Count;
             }
             if (LevelJSON["lootSpawnsGood"] != null && LevelJSON["lootSpawnsGood"].Count > 0)
             {
-                svd_LootGenTilesB = LevelJSON["lootSpawnsGood"].Count;
+                _sGood = LevelJSON["lootSpawnsGood"].Count;
             }
             if (LevelJSON["lootSpawnsNoBot"] != null && LevelJSON["lootSpawnsNoBot"].Count > 0)
             {
                 Logger.Header("[LoadSARLevel] The lootSpawnsNoBot key actually has entries for once. This... THIS IS BIG GUYS!!! (not really this is already handled incase anything actually happens...)");
-                svd_LootGenTilesB = LevelJSON["lootSpawnsNoBot"].Count;
+                _sBot = LevelJSON["lootSpawnsNoBot"].Count;
             }
             else
             {
@@ -2580,99 +2639,11 @@ namespace WCSARS
             }
             Logger.Success("[LoadSARLevel] Successfully read and loaded item loot spawn tiles.");
 
-            // Load Coconuts
-            Logger.Warn("[LoadSARLevel] Attempting to load coconut data and generate coconut list...");
-            Logger.Warn("[LoadSARLevel] The coconut list as a whole needs a rework. Does not track coco positions...");
-            if (LevelJSON["coconuts"] == null || LevelJSON["coconuts"].Count < 1)
-            {
-                throw new Exception("It would seem that the \"coconuts\" is null in this data set or there are no entries.");
-            }
-            int cocoCount = LevelJSON["coconuts"].Count;
-            CoconutList = new List<int>(cocoCount);
-            MersenneTwister cocoTwist = new MersenneTwister((uint)sv_CoconutSeed);
-            for (int i = 0; i < cocoCount; i++) // while for Hamsterballs they HAVE to be in sequential order, here this is fine I am pretty sure
-            {
-                uint rng = cocoTwist.NextUInt(0U, 100U);
-                if (rng > 65.0)
-                {
-                    CoconutList.Add(i);
-                }
-            }
-            Logger.Success("[LoadSARLevel] Successfully generated coconut list.");
-
-            // Load Vehicles
-            Logger.Header("[LoadSARLevel] Attempting to load hamsterballs list. (key = \"vehicles\"; not to be confused with \"emus\")");
-            if (LevelJSON["vehicles"] == null || LevelJSON["vehicles"] == 0)
-            {
-                throw new Exception("Missing key \"vehicles\" in LevelJSON file or key \"vehicles\" has no entries.\nEither create this key or add entries. However, if this key doesn't exist you're probably doing something wrong.");
-            }
-            Logger.Basic("[LoadSARLevel] The \"vehicle\" key does exist so we are able to attempt to generate the hammerballs list.");
-           
-            JSONNode vehicleNode = LevelJSON["vehicles"];
-            MersenneTwister hampterTwist = new MersenneTwister((uint)sv_VehicleSeed);
-            int hampterballs = vehicleNode.Count; // so apparently it is actually
-            int hTrueID = 0; // keeps track of the TO-assign HamsterballID so Hamsterballs are all sequentially ordered and stuff
-            HamsterballList = new Dictionary<int, Hampterball>(hampterballs);
-            Logger.Warn("[LoadSARLevel] Attempting to populate server Hamsterball list now...");
-            for (int i = 0; i < hampterballs; i++)
-            {
-                if (hampterTwist.NextUInt(0U, 100U) > 55.0)
-                {
-                    HamsterballList.Add(hTrueID, new Hampterball( (byte)3, (short)hTrueID, vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat) );
-                    hTrueID++; // once again, this just is so Hammers only exist in sequential order
-                }
-            }
-            Logger.Success("[LoadSARLevel] Successfully generated the hamsterball list.");
-
-            // Load Doodads
-            Logger.Header("[LoadSARLevel] Attempting to load doodad data");
-            Dictionary<int, DoodadType> doodadTypeList = DoodadType.GetAllDoodadTypes(); // this is where we get the data lol
-            Logger.Success("LoadSARLevel] We were able to populate the DoodadTypes data list successfully.");
-
-            Logger.Warn("[LoadSARLevel] Attempting to now locate whether or not the LevelJSON has the key \"doodads\"");
-            if (LevelJSON["doodads"] == null || LevelJSON["doodads"] == 0)
-            {
-                throw new Exception("Missing key \"doodads\" in LevelJSON file or key \"doodads\" has no entries.");
-            }
-            // time to read le list
-            JSONNode doodadJSON = LevelJSON["doodads"];
-            int doodadCount = doodadJSON.Count;
-            Logger.Warn($"[LoadSARLevel] There are about {doodadCount} different doodad entries in this list. Attempting to read this now, but expect some delay due to the sheer length and calculations required.");
-            svd_Doodads = new List<Doodad>();
-            for (int i = 0; i < doodadCount; i++)
-            {
-                if (!doodadTypeList.ContainsKey(doodadJSON[i]["i"].AsInt)){
-                    Logger.Failure("FRICK");
-                }
-                if (doodadTypeList[doodadJSON[i]["i"].AsInt].Destructible)
-                {
-                    svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
-                }
-                // was just this bottom stuff...
-                //svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
-            }
-            Logger.Success("[LoadSARLevel] We were able to load the doodad section without failure! This is actually really big! Nice!");
-
-            // End of Loading in Files
-
-            // Use loaded data and such to do some other stuff!
-            GenerateItemLootList(sv_LootSeed); // this NEEDS to be worked on
-
-            // Only do this at the end
-            svd_LevelLoaded = true; // Pretty obvious. just a little flag saying we indeed are finished with all this.
-            Logger.Success("[LoadSARLevel] Finished everything within this method without any errors. Success up to your interpretation. Good luck!");
-        }
-
-        /// <summary>
-        /// Fills the server's LootItem list using the provided seed.
-        /// </summary>
-        private void GenerateItemLootList(int seed)
-        {
-            // TODO - Find out how to get a list of all Item spawn tiles.
+            #region LootItemList generation
             Logger.testmsg("THIS ITEM LOOT GENERATION IS NOT YET COMPELTED- MUST USE ITEM TILES");
             Logger.Warn("Attempting to Generate ItemList");
             sv_TotalLootCounter = 0;
-            MersenneTwister MerTwist = new MersenneTwister((uint)seed);
+            MersenneTwister MerTwist = new MersenneTwister((uint)sv_LootSeed);
             ItemList = new Dictionary<int, LootItem>();
             int LootID;
             bool YesMakeBetter;
@@ -2691,18 +2662,18 @@ namespace WCSARS
                 }
             }
             // Generate Loot \\
-            //i < ( [Ammount of Regular Loot Spawns] + [Amount of Special Loot Spawns] + [Amount of 'no-bot' Loot Spawns]
-            // found stuff: Regular: 1447; Better Odds: 390; Bot Spawn: 0
-            for (int i = 0; i < 1837; i++)
+            //i < ( [Ammount of Regular Loot Spawns] + [Amount of Special Loot Spawns] + [Amount of 'no-bot' Loot Spawns] )
+            int _total = _sNormal + _sGood + _sBot;
+            Logger.testmsg($"Total: {_total}\nNormal Tile Count: {_sNormal}\nGood Tile Count: {_sGood}\nBot Tile Count: {_sBot}\n");
+            for (int i = 0; i < _total; i++)
             {
                 //LootID++; -- > LootID++ after completing a loop. sorta.
                 LootID = sv_TotalLootCounter;
                 sv_TotalLootCounter++;
                 MinGenValue = 0U;
                 YesMakeBetter = false;
-                //if (i >= 1447) YesMakeBetter = true;
-                //if (YesMakeBetter) MinGenValue = 20U;
-                if (i >= 1447)
+
+                if (i >= _sNormal) // once we reach the end of the normal tile list let's move onto the better tiles...
                 {
                     YesMakeBetter = true;
                     MinGenValue = 20U;
@@ -2755,17 +2726,15 @@ namespace WCSARS
                         if (num <= 60.0) // Skip ??
                         {
                         }
-                        else if (num <= 66.0) // Tape
+                        else if (num > 60.0 && num <= 66.0) // Tape
                         {
                             ItemList.Add(LootID, new LootItem(LootID, LootType.Tape, WeaponType.NotWeapon, "Tape", 0, 1));
                         }
                         else // Weapon Generation
                         {
-                            // WARNING | These gun creations have the potential to make the RNG go out of sync due to the more random nature of this item type generation
-                            // If anything goes wrong with RNG... well it might be this but it also might not. But most changes to WeaponData WILL have an effect here
-
                             short thisInd = WeaponsToChooseByIndex[(int)MerTwist.NextUInt(0U, (uint)WeaponsToChooseByIndex.Count)];
-                            Weapon GeneratedWeapon = s_WeaponsList[thisInd];
+                            Weapon GeneratedWeapon = s_WeaponsList[thisInd]; // Any change to the WeaponList will have an impact on WeaponLoot generation
+                            // therefore, this is another section which'll have huge consequences if something is out of sync
                             if (GeneratedWeapon.WeaponType == WeaponType.Gun)
                             {
                                 byte ItemRarity = 0;
@@ -2805,27 +2774,93 @@ namespace WCSARS
             }
             //Logger.Success($"Successfully generated the ItemList.Count:LootIDCount {ItemList.Keys.Count}:{LootID + 1}");
             //Logger.Success($"ItemList.Count:LootIDCount -- {ItemList.Keys.Count}:{sv_TotalLootCounter}");
-        }
-        /*
-        /// <summary>
-        /// Fills the server's hammerball list using the provided seed. 
-        /// </summary>
-        private void GenerateHamsterballs(int seed) // TODO - find list of every single hammerballs and its location. then, you know- use it?
-        {
-            Logger.Warn("Generating Hamsterballs...");
-            MersenneTwister rng = new MersenneTwister((uint)seed);
-            HamsterballList = new Dictionary<int, Vehicle>();
-            int num = 0;
-            for (int i = 0; i < 89; i++) // at this moment, we are aware there are 89 total spots. not *where* though, which comes with the data. oh well.
+        #endregion // end of actual loot generation section
+        #endregion
+
+            // Load Coconuts
+            #region Coconuts
+            Logger.Warn("[LoadSARLevel] Attempting to load coconut data and generate coconut list...");
+            Logger.Warn("[LoadSARLevel] The coconut list as a whole needs a rework. Does not track coco positions...");
+            if (LevelJSON["coconuts"] == null || LevelJSON["coconuts"].Count < 1)
             {
-                if (rng.NextUInt(0U, 100U) > 55.0)
+                throw new Exception("It would seem that the \"coconuts\" is null in this data set or there are no entries.");
+            }
+            int cocoCount = LevelJSON["coconuts"].Count;
+            CoconutList = new List<int>(cocoCount);
+            MersenneTwister cocoTwist = new MersenneTwister((uint)sv_CoconutSeed);
+            for (int i = 0; i < cocoCount; i++) // while for Hamsterballs they HAVE to be in sequential order, here this is fine I am pretty sure
+            {
+                uint rng = cocoTwist.NextUInt(0U, 100U);
+                if (rng > 65.0)
                 {
-                    HamsterballList.Add(num, new Vehicle((byte)3, (short)num));
-                    num++;
+                    CoconutList.Add(i);
                 }
             }
-        }*/
-        #endregion LEVEL_GENERATION_METHODS
+            Logger.Success("[LoadSARLevel] Successfully generated coconut list.");
+            #endregion
+
+            // Load Vehicles
+            #region Hamsterballs
+            Logger.Header("[LoadSARLevel] Attempting to load hamsterballs list. (key = \"vehicles\"; not to be confused with \"emus\")");
+            if (LevelJSON["vehicles"] == null || LevelJSON["vehicles"] == 0)
+            {
+                throw new Exception("Missing key \"vehicles\" in LevelJSON file or key \"vehicles\" has no entries.\nEither create this key or add entries. However, if this key doesn't exist you're probably doing something wrong.");
+            }
+            Logger.Basic("[LoadSARLevel] The \"vehicle\" key does exist so we are able to attempt to generate the hammerballs list.");
+           
+            JSONNode vehicleNode = LevelJSON["vehicles"];
+            MersenneTwister hampterTwist = new MersenneTwister((uint)sv_VehicleSeed);
+            int hampterballs = vehicleNode.Count; // so apparently it is actually
+            int hTrueID = 0; // keeps track of the TO-assign HamsterballID so Hamsterballs are all sequentially ordered and stuff
+            HamsterballList = new Dictionary<int, Hampterball>(hampterballs);
+            Logger.Warn("[LoadSARLevel] Attempting to populate server Hamsterball list now...");
+            for (int i = 0; i < hampterballs; i++)
+            {
+                if (hampterTwist.NextUInt(0U, 100U) > 55.0)
+                {
+                    HamsterballList.Add(hTrueID, new Hampterball( (byte)3, (short)hTrueID, vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat) );
+                    hTrueID++; // once again, this just is so Hammers only exist in sequential order
+                }
+            }
+            Logger.Success("[LoadSARLevel] Successfully generated the hamsterball list.");
+            #endregion
+
+            // Load Doodads
+            #region Doodads
+            Logger.Header("[LoadSARLevel] Attempting to load doodad data");
+            Dictionary<int, DoodadType> doodadTypeList = DoodadType.GetAllDoodadTypes(); // this is where we get the data lol
+            Logger.Success("LoadSARLevel] Successfully populated [LIST]DoodadTypes with every DoodadType");
+
+            Logger.Warn("[LoadSARLevel] Attempting to now locate whether or not the LevelJSON has the key \"doodads\"");
+            if (LevelJSON["doodads"] == null || LevelJSON["doodads"] == 0)
+            {
+                throw new Exception("Missing key \"doodads\" in LevelJSON file or key \"doodads\" has no entries.");
+            }
+            // time to read le list
+            JSONNode doodadJSON = LevelJSON["doodads"];
+            int doodadCount = doodadJSON.Count;
+            Logger.Warn($"[LoadSARLevel] There are about {doodadCount} different doodad entries in this list. Attempting to read this now, but expect some delay due to the sheer length and calculations required.");
+            svd_Doodads = new List<Doodad>();
+            for (int i = 0; i < doodadCount; i++)
+            {
+                if (!doodadTypeList.ContainsKey(doodadJSON[i]["i"].AsInt)){
+                    Logger.Failure("FRICK");
+                }
+                if (doodadTypeList[doodadJSON[i]["i"].AsInt].Destructible)
+                {
+                    svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
+                }
+                // was just this bottom stuff...
+                //svd_Doodads.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
+            }
+            Logger.Success("[LoadSARLevel] We were able to load the doodad section without failure! This is actually really big! Nice!");
+            #endregion
+
+            // End of Loading in Files
+            svd_LevelLoaded = true; // Pretty obvious. just a little flag saying we indeed are finished with all this.
+            Logger.Success("[LoadSARLevel] Finished everything within this method without any errors. Success up to your interpretation. Good luck!");
+        }
+        #endregion
 
 
         #region player list methods
