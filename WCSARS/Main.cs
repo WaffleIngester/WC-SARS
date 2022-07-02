@@ -12,7 +12,7 @@ namespace WCSARS
             Logger.Header("Super Animal Royale Version: 0.90.2\n");
             if (args.Length > 0)
             {
-                Match m = new Match(int.Parse(args[1]), args[0], false, false);
+                Match m = new Match(int.Parse(args[1]), args[0]);
             }
             else if (File.Exists(Directory.GetCurrentDirectory() + @"\config.json"))
             {
@@ -20,7 +20,7 @@ namespace WCSARS
                 JSONNode config = JSON.Parse(File.ReadAllText(Directory.GetCurrentDirectory() + @"\config.json"));
                 if (config["ServerIP"] != null && config["ServerPort"] != null)
                 {
-                    Match configuredMatch = new Match(config["ServerPort"].AsInt, config["ServerIP"], false, false);
+                    Match configuredMatch = new Match(config["ServerPort"].AsInt, config["ServerIP"]);
                 }
                 else
                 {
@@ -38,12 +38,12 @@ namespace WCSARS
                         case ConsoleKey.Y:
                             Logger.Basic("attempting to start a server! (port: 4206; local address: 192.168.1.13)");
                             runSetup = false;
-                            Match match2 = new Match(4206, "192.168.1.13", false, false);
+                            Match match2 = new Match(4206, "192.168.1.13");
                             break;
                         case ConsoleKey.N:
                             Logger.Basic("attempting to start a server! (port: 42896; local address: 192.168.1.198)");
                             runSetup = false;
-                            Match match1 = new Match(42896, "192.168.1.198", false, false);
+                            Match match1 = new Match(42896, "192.168.1.198");
                             break;
                         default:
                             Logger.Failure($"Invalid key. Please try again");

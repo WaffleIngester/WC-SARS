@@ -72,7 +72,7 @@ namespace WCSARS
         //private const int TICK_RATE = 24;
         private const int MS_PER_TICK = 1000 / 24;
 
-        public Match(int port, string ip, bool db, bool annoying)
+        public Match(int port, string ip)
         {
             sv_TotalLootCounter = 0;
 
@@ -95,7 +95,6 @@ namespace WCSARS
             gasAdvanceTimer = -1;
             prevTime = DateTime.Now.Second;
             updateThread = new Thread(serverUpdateThread);
-            ANOYING_DEBUG1 = annoying;
 
             // Initializing JSON stuff
             if (File.Exists(Directory.GetCurrentDirectory() + @"\playerdata.json"))
@@ -675,13 +674,6 @@ namespace WCSARS
                                 }
                             }
                             else { break; }
-                        }
-                        if (ANOYING_DEBUG1)
-                        {
-                            Logger.Warn($"Mouse Angle: {mAngle}");
-                            Logger.Warn($"playerX: {actX}");
-                            Logger.Warn($"playerY: {actY}");
-                            Logger.Basic($"player WalkMode: {currentwalkMode}");
                         }
                     }
                     catch (Exception WHAT)
