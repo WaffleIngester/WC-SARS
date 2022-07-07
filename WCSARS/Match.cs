@@ -121,112 +121,123 @@ namespace WCSARS
             server.Start();
             updateThread.Start();
             NetIncomingMessage msg;
+            DateTime _nextTick = DateTime.Now;
             while (true)
             {
-                while ((msg = server.ReadMessage()) != null)
+                //_nextTick = DateTime.Now;
+                while (_nextTick < DateTime.Now)
                 {
-                    switch (msg.MessageType)
+                    while ( (msg = server.ReadMessage() ) != null)
                     {
-                        case NetIncomingMessageType.Data:
-                            HandleMessage(msg);
-                            break;
-                        case NetIncomingMessageType.StatusChanged:
-                            Logger.Header("~-- { Status Change} --~");
-                            switch (msg.SenderConnection.Status)
-                            {
-                                case NetConnectionStatus.Connected:
-                                    Logger.Success($"A new client has connected successfuly! Sender Address: {msg.SenderConnection}");
-                                    NetOutgoingMessage acceptMsgg = server.CreateMessage();
-                                    acceptMsgg.Write((byte)0);
-                                    acceptMsgg.Write(true);
-                                    server.SendMessage(acceptMsgg, msg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
-                                    isSorted = false;
-                                    break;
-                                case NetConnectionStatus.Disconnected:
-                                    Logger.Warn($"[Connection Update - Disconnected] A client has disconnected (message: {msg.ReadString()}). Attempting to remove their data from server...");
-                                    if (tryFindIndexbyConnection(msg.SenderConnection, out int index))
-                                    {
-                                        NetOutgoingMessage msg_disconnect = server.CreateMessage();
-                                        msg_disconnect.Write((byte)46);
-                                        msg_disconnect.Write(player_list[index].myID); // player left ID
-                                        msg_disconnect.Write(false); // no clue? IsVanish? [as in, moderator ghosting like MC]
-                                        server.SendToAll(msg_disconnect, NetDeliveryMethod.ReliableOrdered);
-
-                                        // TODO - Major Problem 1 - Handling incoming Player IDs is a bit messy, and calls for this convoluted solution
-                                        availableIDs.Insert(0, player_list[index].myID);
-                                        player_list[index] = null;
+                        switch (msg.MessageType)
+                        {
+                            case NetIncomingMessageType.Data:
+                                HandleMessage(msg);
+                                break;
+                            case NetIncomingMessageType.StatusChanged:
+                                Logger.Header("~-- { Status Change} --~");
+                                switch (msg.SenderConnection.Status)
+                                {
+                                    case NetConnectionStatus.Connected:
+                                        Logger.Success($"A new client has connected successfuly! Sender Address: {msg.SenderConnection}");
+                                        NetOutgoingMessage acceptMsgg = server.CreateMessage();
+                                        acceptMsgg.Write((byte)0);
+                                        acceptMsgg.Write(true);
+                                        server.SendMessage(acceptMsgg, msg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
                                         isSorted = false;
-                                        Logger.Success($"[Connection Update - Disconnected] The disconnecting client has been delt with successfully!");
+                                        break;
+                                    case NetConnectionStatus.Disconnected:
+                                        Logger.Warn($"[Connection Update - Disconnected] A client has disconnected (message: {msg.ReadString()}). Attempting to remove their data from server...");
+                                        if (tryFindIndexbyConnection(msg.SenderConnection, out int index))
+                                        {
+                                            NetOutgoingMessage msg_disconnect = server.CreateMessage();
+                                            msg_disconnect.Write((byte)46);
+                                            msg_disconnect.Write(player_list[index].myID); // player left ID
+                                            msg_disconnect.Write(false); // no clue? IsVanish? [as in, moderator ghosting like MC]
+                                            server.SendToAll(msg_disconnect, NetDeliveryMethod.ReliableOrdered);
+
+                                            // TODO - Major Problem 1 - Handling incoming Player IDs is a bit messy, and calls for this convoluted solution
+                                            availableIDs.Insert(0, player_list[index].myID);
+                                            player_list[index] = null;
+                                            isSorted = false;
+                                            Logger.Success($"[Connection Update - Disconnected] The disconnecting client has been delt with successfully!");
+                                        }
+                                        else
+                                        {
+                                            Logger.Failure($"[Connection Update - Disconnected.ERROR] There seems to have been a problem actually locating the player in the array. Uh oh!");
+                                        }
+                                        break;
+                                    case NetConnectionStatus.Disconnecting:
+                                        Logger.Warn($"[Connection Update - Disconnecting] A client is attempting to disconnect.");
+                                        break;
+                                }
+                                break;
+                            case NetIncomingMessageType.ConnectionApproval: // must enable MessageType ConnectionApproval for this to work
+                                Logger.Header("[Connection Approval] A new connection is awaiting approval!");
+                                string clientKey = msg.ReadString();
+                                Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
+                                if (clientKey == "flwoi51nawudkowmqqq")
+                                {
+                                    if (!matchStarted)
+                                    {
+                                        Logger.Success("[Connection Approval] Incoming connection's key was the same as the server's. Connection approved.");
+                                        msg.SenderConnection.Approve();
                                     }
                                     else
                                     {
-                                        Logger.Failure($"[Connection Update - Disconnected.ERROR] There seems to have been a problem actually locating the player in the array. Uh oh!");
+                                        Logger.Failure("[Connection Approval] Incoming connection had the right key, however the match was in progress. Connection denied.");
+                                        msg.SenderConnection.Deny($"The match you are trying to join is already in progress. Sorry!");
                                     }
-                                    break;
-                                case NetConnectionStatus.Disconnecting:
-                                    Logger.Warn($"[Connection Update - Disconnecting] A client is attempting to disconnect.");
-                                    break;
-                            }
-                            break;
-                        case NetIncomingMessageType.ConnectionApproval: // must enable MessageType ConnectionApproval for this to work
-                            Logger.Header("[Connection Approval] A new connection is awaiting approval!");
-                            string clientKey = msg.ReadString();
-                            Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
-                            if (clientKey == "flwoi51nawudkowmqqq")
-                            {
-                                if (!matchStarted)
-                                {
-                                    Logger.Success("[Connection Approval] Incoming connection's key was the same as the server's. Connection approved.");
-                                    msg.SenderConnection.Approve();
                                 }
                                 else
                                 {
-                                    Logger.Failure("[Connection Approval] Incoming connection had the right key, however the match was in progress. Connection denied.");
-                                    msg.SenderConnection.Deny($"The match you are trying to join is already in progress. Sorry!");
+                                    msg.SenderConnection.Deny($"Your client version key is incorrect.\n\nYour version key: {clientKey}");
+                                    Logger.Failure($"[Connection Approval] Incoming connection {msg.SenderEndPoint}'s sent key was incorrect. Connection denied.");
                                 }
-                            }
-                            else
-                            {
-                                msg.SenderConnection.Deny($"Your client version key is incorrect.\n\nYour version key: {clientKey}");
-                                Logger.Failure($"[Connection Approval] Incoming connection {msg.SenderEndPoint}'s sent key was incorrect. Connection denied.");
-                            }
-                            break;
-                        case NetIncomingMessageType.DebugMessage:
-                            Logger.DebugServer(msg.ReadString());
-                            break;
-                        case NetIncomingMessageType.WarningMessage:
-                        case NetIncomingMessageType.ErrorMessage:
-                            Logger.Failure("EPIC BLUNDER! " + msg.ReadString());
-                            break;
-                        case NetIncomingMessageType.ConnectionLatencyUpdated:
-                            Logger.Header("--> ConnectionLatencyUpdated:");
-                            try
-                            {
-                                float pingTime = msg.ReadFloat();
-                                Logger.Basic($"  -> Ping time: {pingTime}");
-                                Logger.Basic($"  -> Remote Time Offset: {msg.SenderConnection.RemoteTimeOffset}");
-                                Logger.Basic($"  -> Average Round Time: {msg.SenderConnection.AverageRoundtripTime}");
+                                break;
+                            case NetIncomingMessageType.DebugMessage:
+                                Logger.DebugServer(msg.ReadString());
+                                break;
+                            case NetIncomingMessageType.WarningMessage:
+                            case NetIncomingMessageType.ErrorMessage:
+                                Logger.Failure("EPIC BLUNDER! " + msg.ReadString());
+                                break;
+                            case NetIncomingMessageType.ConnectionLatencyUpdated:
+                                Logger.Header("--> ConnectionLatencyUpdated:");
                                 try
                                 {
-                                    player_list[getPlayerArrayIndex(msg.SenderConnection)].LastPingTime = pingTime; //not actually ping whoopsies
+                                    float pingTime = msg.ReadFloat();
+                                    Logger.Basic($"  -> Ping time: {pingTime}");
+                                    Logger.Basic($"  -> Remote Time Offset: {msg.SenderConnection.RemoteTimeOffset}");
+                                    Logger.Basic($"  -> Average Round Time: {msg.SenderConnection.AverageRoundtripTime}");
+                                    try
+                                    {
+                                        player_list[getPlayerArrayIndex(msg.SenderConnection)].LastPingTime = pingTime; //not actually ping whoopsies
+                                    }
+                                    catch
+                                    {
+                                        Logger.Failure($"  -> Connection {msg.SenderEndPoint} does not exist. Cannot write their last ping time. (likely not yet fully connected)");
+                                    }
                                 }
                                 catch
                                 {
-                                    Logger.Failure($"  -> Connection {msg.SenderEndPoint} does not exist. Cannot write their last ping time. (likely not yet fully connected)");
+                                    Logger.Failure("ConnectionLatencyUpdated -- Error:: No float to read");
                                 }
-                            }
-                            catch
-                            {
-                                Logger.Failure("ConnectionLatencyUpdated -- Error:: No float to read");
-                            }
-                            break;
-                        default:
-                            Logger.Failure("Unhandled type: " + msg.MessageType);
-                            break;
+                                break;
+                            default:
+                                Logger.Failure("Unhandled type: " + msg.MessageType);
+                                break;
+                        }
+                        server.Recycle(msg);
                     }
-                    server.Recycle(msg);
+                    _nextTick = _nextTick.AddMilliseconds(MS_PER_TICK);
+                    if (_nextTick > DateTime.Now)
+                    {
+                        Thread.Sleep(_nextTick - DateTime.Now);
+                    }
+
                 }
-                Thread.Sleep(slpTime);
+                //Thread.Sleep(slpTime);
             }
         }
         //lots of important things go on in here
@@ -241,57 +252,68 @@ namespace WCSARS
             {
                 Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"sv_doWins\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
             }
+            DateTime nextTick = DateTime.Now;
             //lobby
             while (!matchStarted)
             {
-                if (!isSorted) { sortPlayersListNull(); }
-                if (player_list[player_list.Length - 1] != null && !matchFull)
+                while (nextTick < DateTime.Now)
                 {
-                    matchFull = true;
-                    Logger.Basic("Match seems to be full!");
+                    if (!isSorted) { sortPlayersListNull(); }
+                    if (player_list[player_list.Length - 1] != null && !matchFull)
+                    {
+                        matchFull = true;
+                        Logger.Basic("Match seems to be full!");
+                    }
+                    send_dummy();
+
+                    //check the count down timer
+                    if (!matchStarted && (player_list[0] != null)) { checkStartTime(); }
+                    //inform everyone of new time ^^
+
+
+                    //updating player info to all people in the match
+                    updateEveryoneOnPlayerPositions();
+                    updateEveryoneOnPlayerInfo();
+                    //updateServerTapeCheck(); --similar idea, about as stupid.
+                    nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
+                    if (nextTick > DateTime.Now)
+                    {
+                        Thread.Sleep(nextTick - DateTime.Now);
+                    }
                 }
-                send_dummy();
-
-                //check the count down timer
-                if (!matchStarted && (player_list[0] != null)) { checkStartTime(); }
-                //inform everyone of new time ^^
-
-
-                //updating player info to all people in the match
-                updateEveryoneOnPlayerPositions();
-                updateEveryoneOnPlayerInfo();
-                //updateServerTapeCheck(); --similar idea, about as stupid.
-
-                Thread.Sleep(slpTime); // ~1ms delay
             }
-
-
             //main game
             while (matchStarted)
             {
-                if (!isSorted) { sortPlayersListNull(); }
-
-                send_dummy();
-
-                //check for win
-                if (shouldUpdateAliveCount && sv_doWins) { svu_Wincheck(); }
-
-                //updating player info to all people in the match
-                updateEveryoneOnPlayerPositions();
-                updateEveryoneOnPlayerInfo();
-
-                updateServerDrinkCheck();
-                //updateServerTapeCheck(); --similar idea, about as stupid.
-                updateEveryonePingList();
-
-                advanceTimeAndEventCheck();
-                checkGasTime();
-                if (sv_isGasReal)
+                if (nextTick < DateTime.Now)
                 {
-                    checkSkunkGas();
-                }
+                    if (!isSorted) { sortPlayersListNull(); }
 
-                Thread.Sleep(slpTime); // ~1ms delay
+                    send_dummy();
+
+                    //check for win
+                    if (shouldUpdateAliveCount && sv_doWins) { svu_Wincheck(); }
+
+                    //updating player info to all people in the match
+                    updateEveryoneOnPlayerPositions();
+                    updateEveryoneOnPlayerInfo();
+
+                    updateServerDrinkCheck();
+                    //updateServerTapeCheck(); --similar idea, about as stupid.
+                    updateEveryonePingList();
+
+                    advanceTimeAndEventCheck();
+                    checkGasTime();
+                    if (sv_isGasReal)
+                    {
+                        checkSkunkGas();
+                    }
+                    nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
+                    if (nextTick > DateTime.Now)
+                    {
+                        Thread.Sleep(nextTick - DateTime.Now);
+                    }
+                }
             }
         }
 
@@ -2849,6 +2871,7 @@ namespace WCSARS
             #endregion
 
             // End of Loading in Files
+            GC.Collect();
             svd_LevelLoaded = true; // Pretty obvious. just a little flag saying we indeed are finished with all this.
             Logger.Success("[LoadSARLevel] Finished everything within this method without any errors. Success up to your interpretation. Good luck!");
         }
