@@ -47,7 +47,7 @@ namespace WCSARS
 
         private JSONArray svd_PlayerDataJSON;
         private int sv_TotalLootCounter, sv_LootSeed, sv_CoconutSeed, sv_VehicleSeed; // Spawnable Item Generation Seeds
-        private int slpTime, prevTime, prevTimeA, matchTime; //TODO -- probably should make server more tick-based
+        private int prevTime, prevTimeA, matchTime; //TODO -- probably should make server more tick-based
         private bool matchStarted, matchFull;
         private bool isSorting, isSorted;
         public double timeUntilStart, gasAdvanceTimer, gasAdvanceLength;
@@ -62,7 +62,6 @@ namespace WCSARS
         //private int svd_CoconutCount = 0;
         //private int svd_VehicleCount = 0;
         private List<Doodad> svd_Doodads;
-
         private bool svd_LevelLoaded = false;
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm
@@ -81,7 +80,6 @@ namespace WCSARS
             sv_CoconutSeed = 5328522;
             sv_VehicleSeed = 9037281;
 
-            slpTime = 10;
             matchStarted = false;
             matchFull = false;
             isSorting = false;
@@ -178,7 +176,7 @@ namespace WCSARS
                                 Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
                                 if (clientKey == "flwoi51nawudkowmqqq")
                                 {
-                                    if (!matchStarted)
+                                    if (!matchStarted && timeUntilStart > 5.0)
                                     {
                                         Logger.Success("[Connection Approval] Incoming connection's key was the same as the server's. Connection approved.");
                                         msg.SenderConnection.Approve();
@@ -237,7 +235,6 @@ namespace WCSARS
                     }
 
                 }
-                //Thread.Sleep(slpTime);
             }
         }
         //lots of important things go on in here
@@ -1004,7 +1001,7 @@ namespace WCSARS
                             }
                             test.Write((byte)0);
                             server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
-                            svd_Doodads.RemoveAt(i);
+                            if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
                             break;
                             //test.Write((short)PLAYERID) << would only use this if someone got hit
                         }
@@ -2678,7 +2675,7 @@ namespace WCSARS
             // Generate Loot \\
             //i < ( [Ammount of Regular Loot Spawns] + [Amount of Special Loot Spawns] + [Amount of 'no-bot' Loot Spawns] )
             int _total = _sNormal + _sGood + _sBot;
-            Logger.testmsg($"Total: {_total}\nNormal Tile Count: {_sNormal}\nGood Tile Count: {_sGood}\nBot Tile Count: {_sBot}\n");
+            //Logger.testmsg($"Total: {_total}\nNormal Tile Count: {_sNormal}\nGood Tile Count: {_sGood}\nBot Tile Count: {_sBot}\n");
             for (int i = 0; i < _total; i++)
             {
                 //LootID++; -- > LootID++ after completing a loop. sorta.
