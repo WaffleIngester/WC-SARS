@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using Lidgren.Network;
 using SimpleJSON;
 using SAR_TOOLS;
+using SuperAnimalRoyale.Types;
 
 namespace WCSARS
 {
@@ -54,6 +55,8 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
+        private Dictionary<short, Projectile> _TESTLIST;
+        private int _TESTCOUNT;
 
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
         //private List<short> svd_LootGenTilesR; // normal loot tiles
@@ -701,6 +704,14 @@ namespace WCSARS
                     }
                     break;
                 case 16: //no clue how true to the actual this is // changed 6/1/22 -- >> aimAngle & shotAngle to SHORT source as opposed to custom-read float
+                    try
+                    {
+                        HandlePlayerShotMessage(msg);
+                    } catch (Exception ex)
+                    {
+                        Logger.Failure($"[Player Attack] [ERROR] {ex}");
+                    }
+                    /*
                     // TODO - Actually Fixup ?
                     short weaponID = msg.ReadInt16(); //short -- WeaponId
                     byte slotIndex = msg.ReadByte();//byte -- slotIndex
@@ -757,7 +768,7 @@ namespace WCSARS
                         player_list[indexID].MyLootItems[slotIndex].GiveAmount -= 1;
                         Logger.Warn($"New Player Ammo Count: {player_list[indexID].MyLootItems[slotIndex].GiveAmount}");
                     }
-
+                    */
                     break;
                 case 18:
                     if (matchStarted)
@@ -978,12 +989,15 @@ namespace WCSARS
                         }
                         if (flipper)
                         {
+                            Logger.Success("got to flipper");
                             NetOutgoingMessage test = server.CreateMessage();
                             test.Write((byte)73);
                             test.Write((short)420);
+                            Logger.Success("got to print default stuff");
                             test.Write((short)svd_Doodads[i].X);
                             test.Write((short)svd_Doodads[i].Y);
-                            List<Int32Point> pts = svd_Doodads[i].DoodadType.MoveCollisionPoints;
+                            Logger.Warn("got to write svd_doodads[i].X/Y");
+                            /*List<Int32Point> pts = svd_Doodads[i].DoodadType.MoveCollisionPoints;
                             List<Int32Point> pts2 = svd_Doodads[i].DoodadType.MoveSightCollisionPoints;
                             Logger.Warn($"Count MoveR: {pts.Count}; Count MoveS: {pts2.Count}");
                             test.Write((short)(pts.Count + pts2.Count));
@@ -998,7 +1012,34 @@ namespace WCSARS
                                 test.Write((short)(pts2[mm].x + svd_Doodads[i].X));
                                 test.Write((short)(pts2[mm].y + svd_Doodads[i].Y));
                                 test.Write((byte)1);
+                            }*/
+                            Logger.Warn("Now trying to make pts variable");
+                            List<Int32Point> pts = svd_Doodads[i].OffsetCollisionPoints;
+                            List<Int32Point> pts2 = svd_Doodads[i].OffsetCollisionPoints2;
+                            Logger.DebugServer($"pts2: {pts2.Count}");
+                            Logger.Warn("were able to set pts stuff now trying to get count to loop");
+                            int d_count = pts.Count;
+                            Logger.Warn($"Successfully created d_count: Length: {d_count}");
+                            for (int m = 0; m < d_count; m++)
+                            {
+                                Logger.Warn("Yes");
+                                test.Write((short)(pts[m].x));
+                                Logger.Warn("Yes2");
+                                test.Write((short)(pts[m].y));
+                                Logger.Warn("Yes3");
+                                test.Write((byte)1);
+                                Logger.Warn("End");
                             }
+                            Logger.Success("Loop 1 done:");
+                            d_count = pts2.Count;
+                            Logger.Warn($"Successfully created d_count: Length: {d_count}");
+                            for (int m = 0; m < d_count; m++)
+                            {
+                                test.Write((short)pts2[m].x);
+                                test.Write((short)pts2[m].y);
+                                test.Write((byte)1);
+                            }
+                            Logger.Success("work");
                             test.Write((byte)0);
                             server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
                             if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
@@ -1269,6 +1310,125 @@ namespace WCSARS
             deathMsg.Write(aWeaponID);   // WeaponID                | Short  // -1/-4 = Nothing?; -3 = Explosion; -2 = Hamsterball; 0+ Weapon
             server.SendToAll(deathMsg, NetDeliveryMethod.ReliableOrdered);
         }
+
+        /// <summary>
+        /// Handles a NetIncoming message with the header byte "16"
+        /// </summary>
+        private void HandlePlayerShotMessage(NetIncomingMessage msg)
+        {
+            if (!tryFindPlayerbyConnection(msg.SenderConnection))
+            {
+                throw new Exception("Could not locate ShotPlayer's NetConnection in player_list.");
+            }
+            Player player = getPlayerWithConnection(msg.SenderConnection);
+            short weaponID = msg.ReadInt16(); // short WeaponID << remember this is just the index in the WeaponsList array
+            byte itemSlot = msg.ReadByte();
+            float shotAngle = msg.ReadInt16() / 57.295776f;
+            float spawnX = msg.ReadFloat();
+            float spawnY = msg.ReadFloat();
+            bool isValid = msg.ReadBoolean();
+            bool didHit = msg.ReadBoolean();
+            short hitX = -1; // Hit Destructible CollisionPointX | makes an Int32Point
+            short hitY = -1; // Hit Destructible CollisionPointY | makes an Int32Point
+            if (didHit)
+            {
+                Logger.testmsg("It is indeed possible to hit a destructible with this method...");
+                hitX = msg.ReadInt16();
+                hitY = msg.ReadInt16();
+            }
+            else
+            {
+                Logger.Failure("The bool didHit was read as False. Nothing bad! Everything is all good!");
+            }
+            short attackID = msg.ReadInt16();
+            int projectileAnglesCount = msg.ReadByte(); // WARNING: the count will always be sent as a byte, but for simplicity is stored as int.
+            float[] projectileAngles;
+            short[] projectileIDs;
+            bool[] projectileValids;
+            if (projectileAnglesCount > 0)
+            {
+                projectileAngles = new float[projectileAnglesCount];
+                projectileIDs = new short[projectileAnglesCount];
+                projectileValids = new bool[projectileAnglesCount];
+                for (int i = 0; i < projectileAnglesCount; i++)
+                {
+                    projectileAngles[i] = msg.ReadInt16() / 57.295776f;
+                    projectileIDs[i] = msg.ReadInt16();
+                    projectileValids[i] = msg.ReadBoolean();
+                }
+            }
+            if (weaponID != -1) // melee
+            {
+                if (player.MyLootItems[itemSlot-1].IndexInList == weaponID)
+                {
+                    Logger.Success("YEAAAAAH BOOOOYYYY");
+                }
+                else
+                {
+                    Logger.Warn("NOPE!");
+                    Logger.Warn($"Given Slot: {itemSlot}\nGiven WeaponID: {weaponID}\nItemSlot - 1: {itemSlot-1}\nPlayer LootItems[IS-1].IndexInList: {player.MyLootItems[itemSlot-1].IndexInList}");
+                }
+            }
+
+            /*
+
+            short weaponID = msg.ReadInt16(); //short -- WeaponId
+            byte slotIndex = msg.ReadByte();//byte -- slotIndex
+            float aimAngle = (msg.ReadInt16() / 57.295776f); // should be correct angle -- fixed as of 6/1/22; used custom-read Float instead of Short
+            float spawnPoint_X = msg.ReadFloat();//float -- spawnPoint.X
+            float spawnPoint_Y = msg.ReadFloat();//float -- spawnPoint.Y
+            bool shotPointValid = msg.ReadBoolean();//bool -- shotPointValid
+            bool didHitADestruct = msg.ReadBoolean();//bool -- didHitDestructible
+            short destructCollisionPoint_X = 0; //short -- destructCollisionPoint.X
+            short destructCollisionPoint_Y = 0; //short -- destruct.CollisionPoint.y
+            if (didHitADestruct)
+            {
+                Logger.testmsg("Yes, this is actually used at some point.");
+                destructCollisionPoint_X = msg.ReadInt16();
+                destructCollisionPoint_Y = msg.ReadInt16();
+            }
+            short attackID = msg.ReadInt16();//short -- attackID
+            byte sendProjectileAnglesArrayLength = msg.ReadByte();//byte -- projectileAngles.Length
+
+            int indexID = getPlayerArrayIndex(msg.SenderConnection);
+            NetOutgoingMessage plrShot = server.CreateMessage();
+            plrShot.Write((byte)17);
+            plrShot.Write(player_list[indexID].myID); //ID of the player who made the shot
+            plrShot.Write((ushort)(player_list[indexID].LastPingTime * 1000f)); //before it was stated "I don't give a darn!" because ping would always be set to 1. now it's just confuzing as to whether this truly works
+            plrShot.Write(weaponID); //weaponID from shot
+            plrShot.Write(slotIndex); //slotIndex
+            plrShot.Write(attackID); //attackID
+            plrShot.Write((short)(3.1415927f / aimAngle * 180f)); // I think this still makes stars?
+                                                                  // ^^^ angle // I think this was problem for 6/1/22 update? should be done like this not simple send
+            plrShot.Write(spawnPoint_X);
+            plrShot.Write(spawnPoint_Y);
+            plrShot.Write(shotPointValid);
+            plrShot.Write(sendProjectileAnglesArrayLength);
+            if (sendProjectileAnglesArrayLength > 0)
+            {
+                for (int i = 0; i < sendProjectileAnglesArrayLength; i++)
+                {
+                    float recalc1 = (msg.ReadInt16() / 57.295776f);
+                    //plrShot.Write(msg.ReadInt16() / 57.295776f); // fixed as of 6/1/22; was custom-reading Float instead of Short
+                    plrShot.Write((short)(recalc1 / 3.1415927f * 180f));
+                    plrShot.Write(msg.ReadInt16());
+                    plrShot.Write(msg.ReadBoolean());
+                }
+            }
+            server.SendToAll(plrShot, NetDeliveryMethod.ReliableSequenced);
+
+            if ((slotIndex == 1) || (slotIndex == 0))
+            {
+                if ((player_list[indexID].MyLootItems[slotIndex].GiveAmount - 1) < 0)
+                {
+                    player_list[indexID].MyLootItems[slotIndex].GiveAmount = 0;
+                    break;
+                }
+                player_list[indexID].MyLootItems[slotIndex].GiveAmount -= 1;
+                Logger.Warn($"New Player Ammo Count: {player_list[indexID].MyLootItems[slotIndex].GiveAmount}");
+            }*/
+        }
+
 
         //18 > 19
         private void serverSendPlayerShoteded(NetIncomingMessage aMsg) // todo - make sure player wasn't lying
@@ -3046,6 +3206,28 @@ namespace WCSARS
             }
             retPlayer = null;
             return false;
+        }
+        private bool tryFindPlayerbyConnection(NetConnection aNetConnection) // so you don't HAVE to use a returned Player object
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null && player_list[i].sender == aNetConnection)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        private Player getPlayerWithConnection(NetConnection aNetConnection)
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null && player_list[i].sender == aNetConnection)
+                {
+                    return player_list[i];
+                }
+            }
+            return null;
         }
 
         /// <summary>
