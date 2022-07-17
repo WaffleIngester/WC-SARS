@@ -958,93 +958,52 @@ namespace WCSARS
                     for (int i = 0; i < _doodadCount; i++)
                     {
                         bool flipper = false;
-                        if (svd_Doodads[i].OffsetCollisionPoints != null)
+                        if (!flipper && (svd_Doodads[i].X == checkX) && (svd_Doodads[i].Y == checkY))
+                        {
+                            Logger.DebugServer("[DoodadDestroy] [FOUND] This is the simple check working.");
+                            flipper = true;
+                        }
+                        if (!flipper && (svd_Doodads[i].OffsetCollisionPoints != null))
                         {
                             int ptsCount = svd_Doodads[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
                             for (int j = 0; j < ptsCount; j++)
                             {
                                 if (svd_Doodads[i].OffsetCollisionPoints[j] == hitCoords)
                                 {
-                                    Logger.Success("This is the original point checker. Once in a while it worky");
-                                    flipper = true;
-                                }
-                            }
-                        }
-                        if (svd_Doodads[i].X == checkX && svd_Doodads[i].Y == checkY && !flipper)
-                        {
-                            Logger.Success("wahoo!");
-                            flipper = true;
-                        }
-                        if (svd_Doodads[i].OffsetCollisionPoints2 != null && !flipper)
-                        {
-                            int ptsCount = svd_Doodads[i].OffsetCollisionPoints2.Count; // for whatever reason, .Count is slower than caching
-                            for (int j = 0; j < ptsCount; j++)
-                            {
-                                if (svd_Doodads[i].OffsetCollisionPoints2[j] == hitCoords)
-                                {
-                                    Logger.Success("Found a valid point...2");
+                                    Logger.DebugServer("[DoodadDestroy] [BAD-CHECK] [FOUND] This is the more inefficient method of locating a doodad returning true");
                                     flipper = true;
                                 }
                             }
                         }
                         if (flipper)
                         {
-                            Logger.Success("got to flipper");
                             NetOutgoingMessage test = server.CreateMessage();
                             test.Write((byte)73);
                             test.Write((short)420);
-                            Logger.Success("got to print default stuff");
                             test.Write((short)svd_Doodads[i].X);
                             test.Write((short)svd_Doodads[i].Y);
-                            Logger.Warn("got to write svd_doodads[i].X/Y");
-                            /*List<Int32Point> pts = svd_Doodads[i].DoodadType.MoveCollisionPoints;
-                            List<Int32Point> pts2 = svd_Doodads[i].DoodadType.MoveSightCollisionPoints;
-                            Logger.Warn($"Count MoveR: {pts.Count}; Count MoveS: {pts2.Count}");
-                            test.Write((short)(pts.Count + pts2.Count));
-                            for (int m = 0; m < pts.Count; m++)
+                            //List<Int32Point> pts = svd_Doodads[i].OffsetCollisionPoints;
+                            //int d_count = pts.Count;
+                            int d_count = svd_Doodads[i].OffsetCollisionPoints.Count;
+                            test.Write((short)d_count);
+                            for (int m = 0; m < d_count; m++)
                             {
-                                test.Write((short)(pts[m].x + svd_Doodads[i].X));
-                                test.Write((short)(pts[m].y + svd_Doodads[i].Y));
+                                test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].x);
+                                test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].y);
                                 test.Write((byte)1);
                             }
-                            for (int mm = 0; mm < pts2.Count; mm++)
+                            /*for (int m = 0; m < d_count; m++)
                             {
-                                test.Write((short)(pts2[mm].x + svd_Doodads[i].X));
-                                test.Write((short)(pts2[mm].y + svd_Doodads[i].Y));
+                                test.Write((short)(pts[m].x));
+                                test.Write((short)(pts[m].y));
                                 test.Write((byte)1);
                             }*/
-                            Logger.Warn("Now trying to make pts variable");
-                            List<Int32Point> pts = svd_Doodads[i].OffsetCollisionPoints;
-                            List<Int32Point> pts2 = svd_Doodads[i].OffsetCollisionPoints2;
-                            Logger.DebugServer($"pts2: {pts2.Count}");
-                            Logger.Warn("were able to set pts stuff now trying to get count to loop");
-                            int d_count = pts.Count;
-                            Logger.Warn($"Successfully created d_count: Length: {d_count}");
-                            for (int m = 0; m < d_count; m++)
-                            {
-                                Logger.Warn("Yes");
-                                test.Write((short)(pts[m].x));
-                                Logger.Warn("Yes2");
-                                test.Write((short)(pts[m].y));
-                                Logger.Warn("Yes3");
-                                test.Write((byte)1);
-                                Logger.Warn("End");
-                            }
-                            Logger.Success("Loop 1 done:");
-                            d_count = pts2.Count;
-                            Logger.Warn($"Successfully created d_count: Length: {d_count}");
-                            for (int m = 0; m < d_count; m++)
-                            {
-                                test.Write((short)pts2[m].x);
-                                test.Write((short)pts2[m].y);
-                                test.Write((byte)1);
-                            }
-                            Logger.Success("work");
                             test.Write((byte)0);
+                            //test.Write((short)PLAYERID) << would only use this if someone got hit
                             server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
                             if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
+                            Logger.DebugServer($"[Doodad Destroy] [END] Timer took: {sw.Elapsed}");
                             break;
-                            //test.Write((short)PLAYERID) << would only use this if someone got hit
                         }
                     }
                     break;
