@@ -1002,7 +1002,6 @@ namespace WCSARS
                             //test.Write((short)PLAYERID) << would only use this if someone got hit
                             server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
                             if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
-                            Logger.DebugServer($"[Doodad Destroy] [END] Timer took: {sw.Elapsed}");
                             break;
                         }
                     }
