@@ -55,8 +55,6 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
-        private Dictionary<short, Projectile> _TESTLIST;
-        private int _TESTCOUNT;
 
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
         //private List<short> svd_LootGenTilesR; // normal loot tiles
@@ -1290,108 +1288,76 @@ namespace WCSARS
             short hitY = -1; // Hit Destructible CollisionPointY | makes an Int32Point
             if (didHit)
             {
-                Logger.testmsg("It is indeed possible to hit a destructible with this method...");
+                // TODO -- perhaps make separate doodad hit handle?
+                //Logger.testmsg("It is indeed possible to hit a destructible with this method...");
                 hitX = msg.ReadInt16();
                 hitY = msg.ReadInt16();
             }
-            else
-            {
-                Logger.Failure("The bool didHit was read as False. Nothing bad! Everything is all good!");
-            }
             short attackID = msg.ReadInt16();
+            player.AttackCount++;
+            if (attackID != player.AttackCount)
+            {
+                Logger.Failure($"[ClientSentShot] [ERROR] There was a mis-match with server-side player attack count and the client-side attack count. (received:stored:: {attackID}:{player.AttackCount})");
+                return;
+            }
+            Logger.DebugServer($"Item Slot: {itemSlot}");
             int projectileAnglesCount = msg.ReadByte(); // WARNING: the count will always be sent as a byte, but for simplicity is stored as int.
-            float[] projectileAngles;
-            short[] projectileIDs;
-            bool[] projectileValids;
+            if (projectileAnglesCount < 0) // if we somehow manage to get an invalid value (a negative number less than 0) then we're going to crash anyways
+            {
+                throw new Exception($"Invalid value \"{projectileAnglesCount}\" received when attempting to find Projectile-Count");
+            }
+            float[] projectileAngles = new float[projectileAnglesCount];
+            short[] projectileIDs = new short[projectileAnglesCount];
+            bool[] projectileValids = new bool[projectileAnglesCount]; // because projectileAnglesCount will always be some number 0+
             if (projectileAnglesCount > 0)
             {
-                projectileAngles = new float[projectileAnglesCount];
-                projectileIDs = new short[projectileAnglesCount];
-                projectileValids = new bool[projectileAnglesCount];
+                // Weapon1 = 0; Weapon2 = 1; Melee = 2 (can't encounter under normal conditions); Throwables = 3 (can't encounter under normal conditions)
+                LootItem _weapon = player.MyLootItems[itemSlot]; // there's potential for failure here because ^^
                 for (int i = 0; i < projectileAnglesCount; i++)
                 {
                     projectileAngles[i] = msg.ReadInt16() / 57.295776f;
                     projectileIDs[i] = msg.ReadInt16();
                     projectileValids[i] = msg.ReadBoolean();
-                }
-            }
-            if (weaponID != -1) // melee
-            {
-                if (player.MyLootItems[itemSlot-1].IndexInList == weaponID)
-                {
-                    Logger.Success("YEAAAAAH BOOOOYYYY");
-                }
-                else
-                {
-                    Logger.Warn("NOPE!");
-                    Logger.Warn($"Given Slot: {itemSlot}\nGiven WeaponID: {weaponID}\nItemSlot - 1: {itemSlot-1}\nPlayer LootItems[IS-1].IndexInList: {player.MyLootItems[itemSlot-1].IndexInList}");
+                    if (player.ProjectileList.ContainsKey(projectileIDs[i]))
+                    {
+                        Logger.Failure($"[ClientSentShot] [ERROR] The key {projectileIDs[i]} already exists in the found Player's projectile list. (method exited)");
+                        return;
+                    }
+                    player.ProjectileList.Add(projectileIDs[i], new Projectile(_weapon.IndexInList, _weapon.ItemRarity, spawnX, spawnY, projectileAngles[i])); // unfinished...
                 }
             }
 
-            /*
-
-            short weaponID = msg.ReadInt16(); //short -- WeaponId
-            byte slotIndex = msg.ReadByte();//byte -- slotIndex
-            float aimAngle = (msg.ReadInt16() / 57.295776f); // should be correct angle -- fixed as of 6/1/22; used custom-read Float instead of Short
-            float spawnPoint_X = msg.ReadFloat();//float -- spawnPoint.X
-            float spawnPoint_Y = msg.ReadFloat();//float -- spawnPoint.Y
-            bool shotPointValid = msg.ReadBoolean();//bool -- shotPointValid
-            bool didHitADestruct = msg.ReadBoolean();//bool -- didHitDestructible
-            short destructCollisionPoint_X = 0; //short -- destructCollisionPoint.X
-            short destructCollisionPoint_Y = 0; //short -- destruct.CollisionPoint.y
-            if (didHitADestruct)
+            // this should probably be moved into its own little method, but right now it is fine for this to be here I think
+            NetOutgoingMessage pmsg = server.CreateMessage();
+            pmsg.Write((byte)17);
+            pmsg.Write(player.myID);
+            pmsg.Write((ushort)(player.LastPingTime * 1000f));
+            pmsg.Write(weaponID);
+            pmsg.Write(itemSlot);
+            pmsg.Write(attackID); // I think this is like how the servers deal with it. each player has AttackID/ProjectileIDs attached just to them
+            pmsg.Write((short)(3.1415927f / shotAngle * 180f));
+            pmsg.Write(spawnX);
+            pmsg.Write(spawnY);
+            pmsg.Write(isValid);
+            pmsg.Write((byte)projectileAnglesCount);
+            if (projectileAnglesCount > 0)
             {
-                Logger.testmsg("Yes, this is actually used at some point.");
-                destructCollisionPoint_X = msg.ReadInt16();
-                destructCollisionPoint_Y = msg.ReadInt16();
-            }
-            short attackID = msg.ReadInt16();//short -- attackID
-            byte sendProjectileAnglesArrayLength = msg.ReadByte();//byte -- projectileAngles.Length
-
-            int indexID = getPlayerArrayIndex(msg.SenderConnection);
-            NetOutgoingMessage plrShot = server.CreateMessage();
-            plrShot.Write((byte)17);
-            plrShot.Write(player_list[indexID].myID); //ID of the player who made the shot
-            plrShot.Write((ushort)(player_list[indexID].LastPingTime * 1000f)); //before it was stated "I don't give a darn!" because ping would always be set to 1. now it's just confuzing as to whether this truly works
-            plrShot.Write(weaponID); //weaponID from shot
-            plrShot.Write(slotIndex); //slotIndex
-            plrShot.Write(attackID); //attackID
-            plrShot.Write((short)(3.1415927f / aimAngle * 180f)); // I think this still makes stars?
-                                                                  // ^^^ angle // I think this was problem for 6/1/22 update? should be done like this not simple send
-            plrShot.Write(spawnPoint_X);
-            plrShot.Write(spawnPoint_Y);
-            plrShot.Write(shotPointValid);
-            plrShot.Write(sendProjectileAnglesArrayLength);
-            if (sendProjectileAnglesArrayLength > 0)
-            {
-                for (int i = 0; i < sendProjectileAnglesArrayLength; i++)
+                for (int i = 0; i < projectileAnglesCount; i++)
                 {
-                    float recalc1 = (msg.ReadInt16() / 57.295776f);
-                    //plrShot.Write(msg.ReadInt16() / 57.295776f); // fixed as of 6/1/22; was custom-reading Float instead of Short
-                    plrShot.Write((short)(recalc1 / 3.1415927f * 180f));
-                    plrShot.Write(msg.ReadInt16());
-                    plrShot.Write(msg.ReadBoolean());
+                    pmsg.Write((short) (projectileAngles[i] / 3.1415927f * 180f));
+                    pmsg.Write(projectileIDs[i]);
+                    pmsg.Write(projectileValids[i]);
+
                 }
             }
-            server.SendToAll(plrShot, NetDeliveryMethod.ReliableSequenced);
-
-            if ((slotIndex == 1) || (slotIndex == 0))
-            {
-                if ((player_list[indexID].MyLootItems[slotIndex].GiveAmount - 1) < 0)
-                {
-                    player_list[indexID].MyLootItems[slotIndex].GiveAmount = 0;
-                    break;
-                }
-                player_list[indexID].MyLootItems[slotIndex].GiveAmount -= 1;
-                Logger.Warn($"New Player Ammo Count: {player_list[indexID].MyLootItems[slotIndex].GiveAmount}");
-            }*/
+            server.SendToAll(pmsg, NetDeliveryMethod.ReliableSequenced);
         }
-
 
         //18 > 19
         private void serverSendPlayerShoteded(NetIncomingMessage aMsg) // todo - make sure player wasn't lying
         {
-            try // TOOD -- cleanup
+            // TOOD -- make work using new Projectile system << CLEANUP (REALLY NEEDS ONE)
+            try
             {
                 //Player target;
                 //Weapon weapon;
@@ -1405,7 +1371,9 @@ namespace WCSARS
                 {
                     Logger.Failure($"[Player Shot - ERROR] Shot WeaponID \"{weaponID}\" is NOT in the WeaponArray.");
                 }
-                short projectileID = aMsg.ReadInt16() ;
+                short projectileID = aMsg.ReadInt16();
+                Logger.Warn($"Projectile/Attack ID: {projectileID}");
+
                 float hitX = aMsg.ReadFloat();
                 float hitY = aMsg.ReadFloat();
                 if (tryFindIndexByID(targetID, out int index)) // likely tryFindPlayerByID would be better for this.
