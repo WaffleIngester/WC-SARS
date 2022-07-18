@@ -1,4 +1,6 @@
 ﻿using Lidgren.Network;
+using System.Collections.Generic;
+using SuperAnimalRoyale.Types;
 
 namespace WCSARS
 {
@@ -37,6 +39,9 @@ namespace WCSARS
         public byte WalkMode = 0;
         public byte ActiveSlot = 0;
         public LootItem[] MyLootItems = new LootItem[3];
+        //public Dictionary<short, AttackType> AttackList << well this is only really useful for melee attacks I think so I am not quite sure! D:
+        public short AttackCount = -1; // MUST be set when the lobby starts (joins) and when the match begins.
+        public Dictionary<short, Projectile> ProjectileList = new Dictionary<short, Projectile>();
         //public LootItem EquipSlot1;
         //public LootItem EquipSlot2;
         //public LootItem EquipSlot3;
