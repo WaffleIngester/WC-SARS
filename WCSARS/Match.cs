@@ -665,7 +665,6 @@ namespace WCSARS
         private void HandleMessage(NetIncomingMessage msg)
         {
             byte b = msg.ReadByte();
-
             switch (b)
             {
                 // Request Authentication
@@ -696,44 +695,31 @@ namespace WCSARS
                     Logger.Warn($"Player ID {ejectedPlayer.myID} ({ejectedPlayer.myName}) has ejected!\nX, Y: ({ejectedPlayer.position_X}, {ejectedPlayer.position_Y})");
                     break;
 
-                case 14: // TODO - cleanup / update to use the new TryFindPlayer methods :] (this is a very old method)
-                    //this isn't accurate entirely. everything aside from mAngle is normal I think?
+                case 14: // player sends info about them and junk. pretty neat. seems fine where it is at now
                     try
                     {
-                        //short shortMAngle = msg.ReadInt16();
-                        //Logger.Success($"Got the mouse angle. As a short it is \"{shortMAngle}\"");
-                        float mAngle = msg.ReadInt16() / 57.295776f; // changed as of 6/1/22
-                        //Logger.Warn($"The corrected angle should be: \"{mAngle}\"");
-                        float actX = msg.ReadFloat();
-                        float actY = msg.ReadFloat();
-                        //Logger.Success($"Got the positions as well. Read positions: {actX}, {actY}");
-                        byte currentwalkMode = msg.ReadByte();
-                        //Logger.Success($"Walkmode: {currentwalkMode}");
-
-                        // short angle = (short)(mouseAngle * 57.295776f);
-
-                        for (short i = 0; i < player_list.Length; i++)
+                        float mouseAngle = msg.ReadInt16() / 57.295776f;
+                        float rX = msg.ReadFloat();
+                        float rY = msg.ReadFloat();
+                        byte walkMode = msg.ReadByte();
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player plr))
                         {
-                            if ((player_list[i] != null))
-                            {
-                                if (player_list[i].sender == msg.SenderConnection)
-                                {
-                                    player_list[i].position_X = actX;
-                                    player_list[i].position_Y = actY;
-                                    player_list[i].MouseAngle = mAngle;
-                                    player_list[i].WalkMode = currentwalkMode;
-                                    break;
-                                }
-                            }
-                            else { break; }
+                            plr.position_X = rX;
+                            plr.position_Y = rY;
+                            plr.MouseAngle = mouseAngle;
+                            plr.WalkMode = walkMode;
                         }
-                    }
-                    catch (Exception WHAT)
+                        else
+                        {
+                            msg.SenderConnection.Disconnect("There was an error processing your request. Sorry about that!");
+                            Logger.Failure("[ClientUpdatePlayer] [ERROR] Unable to locate Player with the NetConnection given. Disconnect the connection.");
+                        }
+                    } catch (Exception ex)
                     {
-                        Logger.Failure($"Blunder Case 14: {WHAT}");
+                        Logger.Failure($"[ClientUpdatePlayer] [ERROR] {ex}");
                     }
                     break;
-                case 16: //no clue how true to the actual this is // changed 6/1/22 -- >> aimAngle & shotAngle to SHORT source as opposed to custom-read float
+                case 16:
                     try
                     {
                         HandlePlayerShotMessage(msg);
@@ -741,64 +727,6 @@ namespace WCSARS
                     {
                         Logger.Failure($"[Player Attack] [ERROR] {ex}");
                     }
-                    /*
-                    // TODO - Actually Fixup ?
-                    short weaponID = msg.ReadInt16(); //short -- WeaponId
-                    byte slotIndex = msg.ReadByte();//byte -- slotIndex
-                    float aimAngle = (msg.ReadInt16() / 57.295776f); // should be correct angle -- fixed as of 6/1/22; used custom-read Float instead of Short
-                    float spawnPoint_X = msg.ReadFloat();//float -- spawnPoint.X
-                    float spawnPoint_Y = msg.ReadFloat();//float -- spawnPoint.Y
-                    bool shotPointValid = msg.ReadBoolean();//bool -- shotPointValid
-                    bool didHitADestruct = msg.ReadBoolean();//bool -- didHitDestructible
-                    short destructCollisionPoint_X = 0; //short -- destructCollisionPoint.X
-                    short destructCollisionPoint_Y = 0; //short -- destruct.CollisionPoint.y
-                    if (didHitADestruct)
-                    {
-                        Logger.testmsg("Yes, this is actually used at some point.");
-                        destructCollisionPoint_X = msg.ReadInt16();
-                        destructCollisionPoint_Y = msg.ReadInt16();
-                    }
-                    short attackID = msg.ReadInt16();//short -- attackID
-                    byte sendProjectileAnglesArrayLength = msg.ReadByte();//byte -- projectileAngles.Length
-
-                    int indexID = getPlayerArrayIndex(msg.SenderConnection);
-                    NetOutgoingMessage plrShot = server.CreateMessage();
-                    plrShot.Write((byte)17);
-                    plrShot.Write(player_list[indexID].myID); //ID of the player who made the shot
-                    plrShot.Write((ushort)(player_list[indexID].LastPingTime * 1000f)); //before it was stated "I don't give a darn!" because ping would always be set to 1. now it's just confuzing as to whether this truly works
-                    plrShot.Write(weaponID); //weaponID from shot
-                    plrShot.Write(slotIndex); //slotIndex
-                    plrShot.Write(attackID); //attackID
-                    plrShot.Write((short)(3.1415927f / aimAngle * 180f)); // I think this still makes stars?
-                    // ^^^ angle // I think this was problem for 6/1/22 update? should be done like this not simple send
-                    plrShot.Write(spawnPoint_X);
-                    plrShot.Write(spawnPoint_Y);
-                    plrShot.Write(shotPointValid);
-                    plrShot.Write(sendProjectileAnglesArrayLength);
-                    if (sendProjectileAnglesArrayLength > 0)
-                    {
-                        for (int i = 0; i < sendProjectileAnglesArrayLength; i++)
-                        {
-                            float recalc1 = (msg.ReadInt16() / 57.295776f);
-                            //plrShot.Write(msg.ReadInt16() / 57.295776f); // fixed as of 6/1/22; was custom-reading Float instead of Short
-                            plrShot.Write( (short)(recalc1 / 3.1415927f * 180f));
-                            plrShot.Write(msg.ReadInt16());
-                            plrShot.Write(msg.ReadBoolean());
-                        }
-                    }
-                    server.SendToAll(plrShot, NetDeliveryMethod.ReliableSequenced);
-
-                    if ((slotIndex == 1) || (slotIndex == 0))
-                    {
-                        if ((player_list[indexID].MyLootItems[slotIndex].GiveAmount - 1) < 0)
-                        {
-                            player_list[indexID].MyLootItems[slotIndex].GiveAmount = 0;
-                            break;
-                        }
-                        player_list[indexID].MyLootItems[slotIndex].GiveAmount -= 1;
-                        Logger.Warn($"New Player Ammo Count: {player_list[indexID].MyLootItems[slotIndex].GiveAmount}");
-                    }
-                    */
                     break;
                 case 18:
                     if (matchStarted)
@@ -1391,7 +1319,7 @@ namespace WCSARS
         //18 > 19
         private void serverSendPlayerShoteded(NetIncomingMessage aMsg) // todo - make sure player wasn't lying
         {
-            try // probably could use some more sanity checks lol
+            try // hammer balls being damaged still doesn't really work for some reason
             {
                 short targetID = aMsg.ReadInt16();
                 short weaponID = aMsg.ReadInt16();
@@ -2609,13 +2537,13 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
         /// <summary>
-        /// Sends an announcement message to ALL connected NetClients that a particular Player's Parachute Mode has been updated. Neat!
+        /// Sends an announcement message to ALL connected NetClients that a particular Player's Parachute Mode has been updated.
         /// </summary>
-        private void ServerAMSG_ParachuteUpdate(short aID, bool aIsDiving) // Server Announcement Message - Someone Ended Drinking
+        private void ServerAMSG_ParachuteUpdate(short aID, bool aIsDiving) // Server Announcement Message -- Parachute Mode Update
         {
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)109); // Byte Header -- Message Type 109 >> Update Parachute Mode
-            msg.Write(aID); // Short PlayerID >> ID of the Player to be updated
+            msg.Write(aID);       // Short PlayerID >> ID of the Player to be updated
             msg.Write(aIsDiving); // Bool IsDiving >> Whether or not the person is Parachuting or diving (is actually flipped --> dive = false; chute = true)
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
