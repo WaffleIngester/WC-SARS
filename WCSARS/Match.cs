@@ -55,6 +55,10 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
+        private byte svd_DDGMaxDmgTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
+        private byte svd_DDGTicksToAdd = 4; // the amount of DDG ticks to add with each DDG shot
+        private float svd_DDGTickRate = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
+        private int sv_DDGDamagePerTick = 9;
 
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
         //private List<short> svd_LootGenTilesR; // normal loot tiles
@@ -280,6 +284,15 @@ namespace WCSARS
                     }
                 }
             }
+            // this is to clear player ProjectileList and stuff lol
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    player_list[i].AttackCount = -1;
+                    player_list[i].ProjectileList = new Dictionary<short, Projectile>();
+                }
+            }
             //main game
             while (matchStarted)
             {
@@ -291,7 +304,7 @@ namespace WCSARS
 
                     //check for win
                     if (shouldUpdateAliveCount && sv_doWins) { svu_Wincheck(); }
-
+                    check_DDGTicks(); // TESTING
                     //updating player info to all people in the match
                     updateEveryoneOnPlayerPositions();
                     updateEveryoneOnPlayerInfo();
@@ -624,6 +637,25 @@ namespace WCSARS
                         }
                     }
 
+                }
+            }
+        }
+        private void check_DDGTicks()
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null && player_list[i].DartTicks > 0)
+                {
+                    if (player_list[i].DartNextTime <= DateTime.Now)
+                    {
+                        if ((player_list[i].DartTicks - 1) >= 0)
+                        {
+                            player_list[i].DartTicks -= 1;
+                        }
+                        player_list[i].DartNextTime = DateTime.Now.AddMilliseconds(600);
+                        serverSendShotInfo(player_list[i].LastAttackerID, player_list[i].myID, player_list[i].LastShotID, 0, -1, 0);
+                        test_damagePlayer(player_list[i], sv_DDGDamagePerTick, player_list[i].LastAttackerID, player_list[i].LastWeaponID);
+                    }
                 }
             }
         }
@@ -1039,7 +1071,6 @@ namespace WCSARS
                 default:
                     Logger.missingHandle($"Message appears to be missing handle. ID: {b}");
                     break;
-
             }
         }
         /// <summary>
@@ -1324,6 +1355,10 @@ namespace WCSARS
                         return;
                     }
                     player.ProjectileList.Add(projectileIDs[i], new Projectile(_weapon.IndexInList, _weapon.ItemRarity, spawnX, spawnY, projectileAngles[i])); // unfinished...
+                    Logger.Warn($"Projectile ID: {projectileIDs[i]};\nListCount: {player.ProjectileList.Count}");
+                    Logger.Warn("Amount of ProjectileKeys in this list: " + player.ProjectileList.Keys.Count.ToString());
+                    Logger.testmsg(player.ProjectileList.Keys.ToString());
+                    Logger.testmsg($"keys: {player.ProjectileList.Keys.Count}");
                 }
             }
 
@@ -1356,181 +1391,179 @@ namespace WCSARS
         //18 > 19
         private void serverSendPlayerShoteded(NetIncomingMessage aMsg) // todo - make sure player wasn't lying
         {
-            // TOOD -- make work using new Projectile system << CLEANUP (REALLY NEEDS ONE)
-            try
+            try // probably could use some more sanity checks lol
             {
-                //Player target;
-                //Weapon weapon;
                 short targetID = aMsg.ReadInt16();
                 short weaponID = aMsg.ReadInt16();
-                try // remove when not needed anymore...
-                {
-                    Logger.Warn($"Shot weapon ID: {weaponID}\nShot Weapon WeaponName if WeaponID is index in WeaponArray: {s_WeaponsList[weaponID].Name}");
-                }
-                catch
-                {
-                    Logger.Failure($"[Player Shot - ERROR] Shot WeaponID \"{weaponID}\" is NOT in the WeaponArray.");
-                }
                 short projectileID = aMsg.ReadInt16();
-                Logger.Warn($"Projectile/Attack ID: {projectileID}");
-
                 float hitX = aMsg.ReadFloat();
                 float hitY = aMsg.ReadFloat();
-                if (tryFindIndexByID(targetID, out int index)) // likely tryFindPlayerByID would be better for this.
+                if (tryFindPlayerbyConnection(aMsg.SenderConnection, out Player attacker))
                 {
-                    Player target = player_list[index];
-                    Weapon weapon = s_WeaponsList[weaponID];
-
-                    // figure out weapon data here
-                    byte armorDamage = weapon.ArmorDamage;
-                    if (weapon.ArmorDamageOverride > 0 )
+                    if (tryFindPlayerByID(targetID, out Player target))
                     {
-                        Logger.Warn($"ArmorDamageOverride is real. Override: {weapon.ArmorDamageOverride}");
-                    }
-                    Logger.Warn($"Player {target.myID} ({target.myName}) Hit:\nArmorTier: {target.ArmorTier}\nArmorTapes: {target.ArmorTapes}\nDesired Tick-Removal Base: {armorDamage}\n\"Corrected\" Tick-Removal: {target.ArmorTapes - armorDamage}");
-                    //Logger.Warn($"Player's ArmorTicks - Original Wanted Armor Damage: {target.ArmorTapes - armorDamage}");
-                    if ((target.ArmorTapes - armorDamage) < 0)
-                    {
-                        armorDamage = target.ArmorTapes;
-                    }
-                    Logger.Warn($"True Tick-Removal Correction: {armorDamage}");
-
-                    // just because we're still messing with this trying to make it better....
-                    NetOutgoingMessage msg = server.CreateMessage();
-                    msg.Write((byte)19);
-                    msg.Write(getPlayerID(aMsg.SenderConnection));
-                    msg.Write(targetID);
-                    msg.Write(projectileID);
-                    msg.Write(armorDamage); // Amount of ArmorTicks to remove. Before was weapon.Damage but that was caused some... isues
-                    msg.Write((short)-1); // VehcileID >> adds another byte write if has ID
-                    // Not sure when the PlayerShot message is called, but there's a specific "hamsterball damaged" message. so, why here too?
-                    server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-                    // Remove this whole section when this handle shot message is completed...
-
-                    //
-
-                    if (target.ArmorTapes == 0 || weapon.WeaponType == WeaponType.Melee)
-                    {
-                        if (weapon.WeaponType == WeaponType.Melee)
+                        Logger.testmsg($"Found Target: {target.myName} (ID: {target.myID})");
+                        Logger.testmsg($"Received ProjectileID: {projectileID}");
+                        Logger.testmsg($"Target AttackIDCounts: {attacker.AttackCount}");
+                        Logger.testmsg($"Target ProjectileList Key Count: {attacker.ProjectileList.Keys.Count}");
+                        Logger.testmsg($"IsProjectileID -1: {projectileID == -1}\nProjectile ID: {projectileID}\nContainsKey? {attacker.ProjectileList.ContainsKey(projectileID)}");
+                        if ((projectileID == -1) || attacker.ProjectileList.ContainsKey(projectileID))
                         {
-                            target.ArmorTapes -= armorDamage;
+                            Weapon weapon = s_WeaponsList[weaponID];
+                            target.LastAttackerID = attacker.myID;
+                            target.LastWeaponID = weaponID;
+                            target.LastShotID = projectileID;
+                            if (target.vehicleID == -1)
+                            {
+                                if (target.ArmorTapes == 0)
+                                {
+                                    int damage_c = weapon.Damage;
+                                    Logger.testmsg($"Damage Calculation1: {damage_c}");
+                                    if (projectileID >= 0)
+                                    {
+                                        Projectile p_proj = attacker.ProjectileList[projectileID];
+                                        damage_c = weapon.Damage + (p_proj.WeaponRarity * weapon.DamageIncrease);
+                                        //Logger.testmsg($"Projectile Stats\nRarity: {p_proj.WeaponRarity}\nPID: RID :: {p_proj.WeaponID}:{weapon.JSONIndex}");
+                                        Logger.testmsg($"New Damage Calculation: {damage_c}");
+                                    }
+                                    test_damagePlayer(target, damage_c, attacker.myID, weaponID);
+                                    serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, -1, 0);
+                                    if (weapon.Name == "GunDart")
+                                    {
+                                        bool _reset = (target.DartTicks == 0);
+                                        int ticks_c = svd_DDGTicksToAdd;
+                                        if ((target.DartTicks + ticks_c) > svd_DDGMaxDmgTicks)
+                                        {
+                                            ticks_c = svd_DDGMaxDmgTicks - target.DartTicks;
+                                        }
+                                        target.DartTicks += ticks_c;
+                                        if (_reset)
+                                        {
+                                            target.DartNextTime = DateTime.Now.AddMilliseconds(600);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    Logger.DebugServer($"Weapon Name: {weapon.Name}\nWeapon ADamage: {weapon.ArmorDamage}\nWeapon ADamageOver: {weapon.ArmorDamageOverride}");
+                                    byte dink = weapon.ArmorDamage;
+                                    if (weapon.ArmorDamageOverride > 0)
+                                    {
+                                        dink = weapon.ArmorDamage;
+                                    }
+                                    if (weapon.Name == "GunMagnum")
+                                    {
+                                        Logger.missingHandle("THIS IS JUST TO SAY YEAH THIS MAGNUM CHECK WORKY");
+                                        dink = 2;
+                                    }
+                                    if ((target.ArmorTapes - dink) <= 0)
+                                    {
+                                        target.ArmorTapes = 0;
+                                        dink = target.ArmorTapes;
+                                    }
+                                    else
+                                    {
+                                        target.ArmorTapes -= dink;
+                                    }
+                                    serverSendShotInfo(attacker.myID, target.myID, projectileID, dink, -1, 0);
+                                    if (weapon.PenetratesArmor) // this is another update spot for 2020+ versions. this went from True/False > Percent-Based
+                                    {
+                                        bool _reset = (target.DartTicks == 0);
+                                        int damage_c = weapon.Damage + (attacker.ProjectileList[projectileID].WeaponRarity * weapon.DamageIncrease);
+                                        int ticks_c = svd_DDGTicksToAdd;
+                                        if ( (target.DartTicks + ticks_c) > svd_DDGMaxDmgTicks)
+                                        {
+                                            ticks_c = svd_DDGMaxDmgTicks - target.DartTicks;
+                                        }
+                                        target.DartTicks += ticks_c;
+                                        if (_reset)
+                                        {
+                                            target.DartNextTime = DateTime.Now.AddMilliseconds(600);
+                                        }
+                                        test_damagePlayer(target, damage_c, attacker.myID, weaponID);
+                                        serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, -1, 0);
+                                    }
+                                    else if (weapon.WeaponType == WeaponType.Melee)
+                                    {
+                                        test_damagePlayer(target, (int)Math.Floor(weapon.Damage / 0.5f), attacker.myID, weaponID);
+                                    }
+                                }
+                            }
+                            else // do hammer stuff
+                            {
+                                Hampterball _hammer = HamsterballList[target.vehicleID];
+                                int _balldmg = weapon.ArmorDamage;
+                                if (weapon.ArmorDamageOverride > 0)
+                                {
+                                    _balldmg = weapon.ArmorDamageOverride;
+                                }
+                                if ((_hammer.HP - _balldmg) <= 0)
+                                {
+                                    _hammer.HP = 0;
+                                    NetOutgoingMessage vehiclegone = server.CreateMessage();
+                                    vehiclegone.Write((byte)58);
+                                    vehiclegone.Write(_hammer.VehicleID);
+                                    vehiclegone.Write(target.position_X);
+                                    vehiclegone.Write(target.position_Y);
+                                    server.SendToAll(vehiclegone, NetDeliveryMethod.ReliableOrdered);
+                                    target.vehicleID = -1;
+                                }
+                                else
+                                {
+                                    _hammer.HP = (byte)(_hammer.HP - _balldmg);
+                                }
+                                serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, _hammer.VehicleID, _hammer.HP);
+                            }
                         }
-                        if ((target.HP - weapon.Damage) <= 0) // go do damage. find out if doing damage kills player
+                        else
                         {
-                            target.HP = 0;
-                            target.isAlive = false;
-                            shouldUpdateAliveCount = true;
-                            ServerAMSG_KillAnnouncement(targetID, target.position_X, target.position_Y, getPlayerID(aMsg.SenderConnection), weaponID);
-                            /*
-                            NetOutgoingMessage kill = server.CreateMessage();
-                            kill.Write((byte)15);           // Message Type 15  | Byte -- Death Message
-                            kill.Write(targetID);           // Dying player ID  | Short
-                            kill.Write(target.position_X);  // Dying Player X   | Float
-                            kill.Write(target.position_Y);  // Dying Player Y   | Float
-                            kill.Write(player_list[getPlayerArrayIndex(aMsg.SenderConnection)].myID);     //Killer's Player ID | Short
-                            kill.Write(weaponID);              // Killer's Weapon ID | Short
-                            server.SendToAll(kill, NetDeliveryMethod.ReliableSequenced); */
-                            return; // exit out of this
+                            Logger.Failure($"[PlayerShotHandle] [ERROR] ProjectileID not MeleeID nor in Target's ProjectileList");
                         }
-                        target.HP -= (byte)weapon.Damage;
-                        return;
-                    } // Clearly have no armor/ not a melee weapon. Therefore is gun so just remove armor
-                    target.ArmorTapes -= armorDamage; // If you want to see some funny stuff, replace "target.ArmorTapes" with "target.ArmorTier".
-                    /*
-                    Already account for this I think?
-                    If (ArmorTicks - WantedRemovedTicks) is negative then
-                        NewTickDamage = CurrentArmorTicks << Which if we have no armor ticks then NewTickDamage = 0
-                                                             If this somehow turns negative however... I don't even know
-                    if ((target.armorTapes - armorDamage) < 0)
+                    }
+                    else
                     {
-                        target.armorTapes = 0;
+                        Logger.Failure($"[PlayerShotHandle] [ERROR] Could not locate the desired target player. Skipping out on this method.");
                         return;
-                    }*/
-                    //target.ArmorTier -= armorDamage; // bruh
+                    }
                 }
                 else
                 {
-                    throw new Exception("Target PlayerID could not be found in the player list!");
+                    Logger.Failure("[PlayerShotHandle] [ERROR] Could not locate the sender in player list.");
+                    return;
                 }
-            } catch (Exception smsgEx)
+            } catch (Exception except)
             {
-                Logger.Failure($"There was an error handling shot player message.\n{smsgEx}");
+                Logger.Failure($"[ServerSendPlayerShoted] ERROR\n{except}");
             }
-            /*
-            short hitPlayerID = message.ReadInt16();
-            short wepID = message.ReadInt16();
-            short projID = message.ReadInt16();
-            float hitX = message.ReadFloat();
-            float hitY = message.ReadFloat();
+        }
+        // working on this
+        private void test_damagePlayer(Player aPlayer, int aDamage, short aSourceID, short aWeaponID)
+        {
+            Logger.DebugServer($"Player {aPlayer.myName} (ID: {aPlayer.myID}) Health: {aPlayer.HP}\nDamage Attempt: {aDamage}");
+            if ((aPlayer.HP - aDamage) <= 0)
+            {
+                Logger.DebugServer("This damage attempt resulted in the death of the player.");
+                aPlayer.HP = 0;
+                aPlayer.isAlive = false;
+                shouldUpdateAliveCount = true;
+                ServerAMSG_KillAnnouncement(aPlayer.myID, aPlayer.position_X, aPlayer.position_Y, aSourceID, aWeaponID);
+                return;
+            }
+            aPlayer.HP -= (byte)aDamage;
+            Logger.DebugServer($"Final Health: {aPlayer.HP}");
+        }
 
+        private void serverSendShotInfo(short aMeanie, short aTarget, short aProjectileID, byte aDinkAmount, short aVehicleID, byte aVehicleHP)
+        {
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)19);
-            msg.Write(getPlayerID(message.SenderConnection));
-            msg.Write(hitPlayerID);
-            msg.Write(projID);
-            msg.Write((byte)0);
-            msg.Write((short)-1);
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-
-            // remove when done
-            // testing stuff
-
-            Player Attacker = player_list[getPlayerArrayIndex(message.SenderConnection)];
-            Logger.Warn($"Attacker LootID: {Attacker.MyLootItems[Attacker.curEquipIndex].LootID}\nAttacker Name: {Attacker.MyLootItems[Attacker.curEquipIndex].LootName}\nAttacking Weapon ID: {wepID}");
-
-            //
-
-            /* there needs to be more code and junk to find out how much a person should actually be damaged for.
-             * like client for the most part just sends weaponIDs / vehicleIDs, expecting the server to know which is which
-             * however, this server does not know which is which. figure that out later I guess.
-             */
-            /*
-            try
-            {
-                Player shotPlayer;
-                for (int i = 0; i < player_list.Length; i++)
-                {
-                    if (player_list != null && player_list[i].myID == hitPlayerID)
-                    {
-                        shotPlayer = player_list[i];
-                        Logger.Success($"Located player successfully. ID: {shotPlayer.myID} ({shotPlayer.myName})");
-                        //calculate the distance between the player that was shot, and where it actually hit.
-                        // (SPOILER) this is not a good way of figuring out whether this is a valid shot/to damage
-                        double num = Math.Sqrt(Math.Pow((hitX - shotPlayer.position_X), 2) + Math.Pow((hitY - shotPlayer.position_Y), 2));
-                        Logger.Warn($"Calculated distance: {num}");
-                        if (num <= 20)
-                        {
-                            Logger.Warn($"Shot Player HP: {shotPlayer.hp}");
-                            shotPlayer.hp -= 10;
-
-                            //todo: fix -- edited this 3/17/22
-                            Logger.Warn($"Shot Player NEW HP: {shotPlayer.hp}");
-                            if (shotPlayer.hp == 0)
-                            {
-                                NetOutgoingMessage kill = server.CreateMessage();
-                                kill.Write((byte)15);               // Message Type 15
-
-                                kill.Write(shotPlayer.myID);        //Dying player ID
-                                kill.Write(shotPlayer.position_X);  //Dying Player X
-                                kill.Write(shotPlayer.position_Y);  //Dying Player Y
-
-                                kill.Write((short)-3);              //Killer's Player ID
-                                kill.Write((short)-1);              //Killer's Weapon ID
-
-                                server.SendToAll(kill, NetDeliveryMethod.ReliableSequenced);
-                                shotPlayer.isAlive = false;
-                                shouldUpdateAliveCount = true;
-                            }
-                        }
-                        break;
-                    }
-                }
-                Logger.Failure("Did not find... the player that was hit??");
-            }
-            catch (Exception exc)
-            {
-                Logger.Failure(exc.ToString());
-            } */
+            msg.Write(aMeanie);        // Short | AttackerID
+            msg.Write(aTarget);        // Short | TargetID
+            msg.Write(aProjectileID);  // Short | ProjectileID
+            msg.Write(aDinkAmount);    // Byte  | ArmorDinkCount << How much armor to remove
+            msg.Write(aVehicleID);     // Short | VehicleID << use -1 if there's no vehicle to deal with
+            msg.Write(aVehicleHP);     // Byte  | VehicleHP << I think this just sets it to whatever the value is
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
         /// <summary>
