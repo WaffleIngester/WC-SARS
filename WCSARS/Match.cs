@@ -55,9 +55,10 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
-        private byte svd_DDGMaxDmgTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
-        private byte svd_DDGTicksToAdd = 4; // the amount of DDG ticks to add with each DDG shot
-        private float svd_DDGTickRate = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
+        // Dartgun-Related things
+        private int sv_DDGMaxDmgTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
+        private int  sv_DDGTicksToAdd = 4; // the amount of DDG ticks to add with each DDG shot
+        private float sv_DDGTickRate = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
         private int sv_DDGDamagePerTick = 9;
 
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
@@ -70,7 +71,6 @@ namespace WCSARS
         private bool svd_LevelLoaded = false;
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm
-        public bool ANOYING_DEBUG1;
         private bool sv_doWins = false;
         private bool shouldUpdateAliveCount = true;
         //private const int TICK_RATE = 24;
@@ -248,8 +248,6 @@ namespace WCSARS
         {
             // TODO - cleanese.
             Logger.Success("Server update thread started.");
-            //GenerateItemLootList(sv_LootSeed); // Loot Generation Seed << refer to bottom
-            //GenerateHamsterballs(sv_VehicleSeed); << this is now done within the method "Load SAR Level" (spaces so doesn't show in Ctrl+F lol)
             if (!sv_doWins)
             {
                 Logger.Warn("\n[ServerUpdateThread] [WARNING] Server variable \"sv_doWins\" has been set to false.\nThis means the server will NOT check for a winner.\nIf you wish to reactive the win check, use the command \"/togglewin\" while in a match.\n");
@@ -652,7 +650,7 @@ namespace WCSARS
                         {
                             player_list[i].DartTicks -= 1;
                         }
-                        player_list[i].DartNextTime = DateTime.Now.AddMilliseconds(600);
+                        player_list[i].DartNextTime = DateTime.Now.AddMilliseconds(sv_DDGTickRate * 1000);
                         serverSendShotInfo(player_list[i].LastAttackerID, player_list[i].myID, player_list[i].LastShotID, 0, -1, 0);
                         test_damagePlayer(player_list[i], sv_DDGDamagePerTick, player_list[i].LastAttackerID, player_list[i].LastWeaponID);
                     }
@@ -1359,15 +1357,15 @@ namespace WCSARS
                                     if (weapon.Name == "GunDart")
                                     {
                                         bool _reset = (target.DartTicks == 0);
-                                        int ticks_c = svd_DDGTicksToAdd;
-                                        if ((target.DartTicks + ticks_c) > svd_DDGMaxDmgTicks)
+                                        int ticks_c = sv_DDGTicksToAdd;
+                                        if ((target.DartTicks + ticks_c) > sv_DDGMaxDmgTicks)
                                         {
-                                            ticks_c = svd_DDGMaxDmgTicks - target.DartTicks;
+                                            ticks_c = sv_DDGMaxDmgTicks - target.DartTicks;
                                         }
                                         target.DartTicks += ticks_c;
                                         if (_reset)
                                         {
-                                            target.DartNextTime = DateTime.Now.AddMilliseconds(600);
+                                            target.DartNextTime = DateTime.Now.AddMilliseconds(sv_DDGTickRate * 1000);
                                         }
                                     }
                                 }
@@ -1398,15 +1396,15 @@ namespace WCSARS
                                     {
                                         bool _reset = (target.DartTicks == 0);
                                         int damage_c = weapon.Damage + (attacker.ProjectileList[projectileID].WeaponRarity * weapon.DamageIncrease);
-                                        int ticks_c = svd_DDGTicksToAdd;
-                                        if ( (target.DartTicks + ticks_c) > svd_DDGMaxDmgTicks)
+                                        int ticks_c = sv_DDGTicksToAdd;
+                                        if ( (target.DartTicks + ticks_c) > sv_DDGMaxDmgTicks)
                                         {
-                                            ticks_c = svd_DDGMaxDmgTicks - target.DartTicks;
+                                            ticks_c = sv_DDGMaxDmgTicks - target.DartTicks;
                                         }
                                         target.DartTicks += ticks_c;
                                         if (_reset)
                                         {
-                                            target.DartNextTime = DateTime.Now.AddMilliseconds(600);
+                                            target.DartNextTime = DateTime.Now.AddMilliseconds(sv_DDGTickRate * 1000);
                                         }
                                         test_damagePlayer(target, damage_c, attacker.myID, weaponID);
                                         serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, -1, 0);
