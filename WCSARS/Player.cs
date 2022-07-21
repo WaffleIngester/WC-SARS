@@ -1,4 +1,5 @@
-﻿using Lidgren.Network;
+﻿using System;
+using Lidgren.Network;
 using System.Collections.Generic;
 using SuperAnimalRoyale.Types;
 
@@ -61,6 +62,11 @@ namespace WCSARS
         public bool isDrinking = false;
         public bool isTaping = false;
         public bool isAlive = true;
+        public short LastAttackerID = -1;
+        public short LastWeaponID = -1;
+        public short LastShotID = -1;
+        public int DartTicks = 0;
+        public DateTime DartNextTime;
 
         // Color Bools
         public bool isDev = false;
