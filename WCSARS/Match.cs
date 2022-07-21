@@ -55,6 +55,8 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
+        private float sv_HealAmount = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
+        private float sv_HealTickRate = 0.5f; // 0.5s
         // Dartgun-Related things
         private int sv_DDGMaxDmgTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
         private int  sv_DDGTicksToAdd = 4; // the amount of DDG ticks to add with each DDG shot
@@ -441,37 +443,33 @@ namespace WCSARS
         {
             for (int i = 0; i < player_list.Length; i++)
             {
-                if (player_list[i] != null && player_list[i].isDrinking)
+                if (player_list[i] != null && player_list[i].isDrinking && (player_list[i].NextHealTime < DateTime.Now))
                 {
-                    if (player_list[i].Drinkies > 0)
+                    if ((player_list[i].Drinkies > 0) && (player_list[i].HP < 100)) // in the event we somehow manage to get in this situation
                     {
-                        byte ToDrink = 5;
-                        if ((player_list[i].Drinkies - 5) < 0) // If we'll go into the negatives then let's just get all that we can instead
+                        float _heal = sv_HealAmount;
+                        if ((_heal + player_list[i].HP) > 100) // find Desired HP to Add
                         {
-                            ToDrink = (byte)(5 - player_list[i].Drinkies);
+                            _heal = 100 - player_list[i].HP; // remainder (how much to get to 100)
                         }
-                        if ((player_list[i].HP + ToDrink) >= 100)
+                        if ((player_list[i].Drinkies - _heal) < 0) // check if we can even take our DesiredHP from drinkies!
                         {
-                            ToDrink = (byte)(100 - player_list[i].HP); // store needed difference somewhere
-                            player_list[i].HP += ToDrink;
-                            player_list[i].Drinkies -= ToDrink;
-                            player_list[i].isDrinking = false;
-                            ServerAMSG_EndedDrinking(player_list[i].myID);
-                            break;
+                            _heal = player_list[i].Drinkies; // if we don't have enough drinkies, then that means we can only take what we got!
                         }
-                        player_list[i].HP += ToDrink;
-                        if (0 >= (player_list[i].Drinkies - ToDrink))
+                        player_list[i].HP += (byte)_heal;
+                        player_list[i].Drinkies -= (byte)_heal;
+                        player_list[i].NextHealTime = DateTime.Now.AddSeconds(sv_HealTickRate); // default = 0.5s
+                        if ((player_list[i].HP == 100) || (player_list[i].Drinkies == 0)) // so we don't have to wait an extra tick-loop to check
                         {
-                            player_list[i].Drinkies = 0; // seems a bit redundant if drinkies is going to be 0, but you know in case it won't
-                            player_list[i].isDrinking = false;
                             ServerAMSG_EndedDrinking(player_list[i].myID);
-                            break;
-                        } // if drinkies amount won't go into the negatives or equal 0, then just subtract like normal
-                        player_list[i].Drinkies -= ToDrink; 
-                        break; // yes, important. prevents running the last part below
+                            player_list[i].isDrinking = false;
+                        }
                     }
-                    player_list[i].isDrinking = false;
-                    ServerAMSG_EndedDrinking(player_list[i].myID);
+                    else
+                    {
+                        ServerAMSG_EndedDrinking(player_list[i].myID);
+                        player_list[i].isDrinking = false;
+                    }
                 }
             }
         }
@@ -2499,14 +2497,22 @@ namespace WCSARS
         //client[47] > server[48] -- pretty much a copy of sendingTape and stuff... info inside btw...
         private void serverSendPlayerStartedHealing(NetConnection sender, float posX, float posY)
         {
-            Player plr = player_list[getPlayerArrayIndex(sender)];
-            plr.position_X = posX;
-            plr.position_Y = posY;
-            plr.isDrinking = true;
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)48);
-            msg.Write(plr.myID);
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+            if (tryFindPlayerbyConnection(sender, out Player player))
+            {
+                player.position_X = posX;
+                player.position_Y = posY;
+                player.isDrinking = true;
+                player.NextHealTime = DateTime.Now.AddSeconds(1.2d);
+                NetOutgoingMessage msg = server.CreateMessage();
+                msg.Write((byte)48);
+                msg.Write(player.myID);
+                server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+            }
+            else
+            {
+                Logger.Failure($"[ServerSendPlayerStartedHealing] There was an error while attempting to locate the sender");
+                sender.Disconnect("There was an error while processing your request. We are sorry for the inconvenience");
+            }
         }
 
         //r[87] > s[111]
