@@ -16,7 +16,7 @@ namespace WCSARS
         public int DamageIncrease;
         public byte ArmorDamage;
         public byte ArmorDamageOverride;
-        public bool PenetratesArmor;
+        public bool PenetratesArmor; // this works differently in Modern SAR compared to 2019 SAR. 2019 SAR this is a bool. 2022 (min) is %-based
         public byte RarityMaxVal;
         public byte RarityMinVal;
         public byte SpawnSizeOverworld;
