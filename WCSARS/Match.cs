@@ -912,66 +912,17 @@ namespace WCSARS
                     ServerMSG_SendPerformedEmote(player_list[getPlayerArrayIndex(msg.SenderConnection)], msg);
                     break;
 
-                case 72: // CLIENT_DESTORY_DOODAD // TODO - Make this actually work/do something.
-                         // TODO - make doodads real.
-                    int checkX = msg.ReadInt32();
-                    int checkY = msg.ReadInt32();
-                    short projectileID = msg.ReadInt16();
-                    Logger.Basic(" : Doodad Destroyed : "
-                        + $"X: {checkX}"
-                        + $"Y: {checkY}"
-                        + $"ProjectileID: {projectileID}");
-                    int _doodadCount = svd_Doodads.Count;
-                    Int32Point hitCoords = new Int32Point(checkX, checkY);
-                    for (int i = 0; i < _doodadCount; i++)
+                case 72: // CLIENT_DESTORY_DOODAD
+                    try // todo :: maybe do more with data obtained. maybe don't allocate more variables and stuff if not going to do anything
                     {
-                        bool flipper = false;
-                        if (!flipper && (svd_Doodads[i].X == checkX) && (svd_Doodads[i].Y == checkY))
-                        {
-                            Logger.DebugServer("[DoodadDestroy] [FOUND] This is the simple check working.");
-                            flipper = true;
-                        }
-                        if (!flipper && (svd_Doodads[i].OffsetCollisionPoints != null))
-                        {
-                            int ptsCount = svd_Doodads[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
-                            for (int j = 0; j < ptsCount; j++)
-                            {
-                                if (svd_Doodads[i].OffsetCollisionPoints[j] == hitCoords)
-                                {
-                                    Logger.DebugServer("[DoodadDestroy] [BAD-CHECK] [FOUND] This is the more inefficient method of locating a doodad returning true");
-                                    flipper = true;
-                                }
-                            }
-                        }
-                        if (flipper)
-                        {
-                            NetOutgoingMessage test = server.CreateMessage();
-                            test.Write((byte)73);
-                            test.Write((short)420);
-                            test.Write((short)svd_Doodads[i].X);
-                            test.Write((short)svd_Doodads[i].Y);
-                            //List<Int32Point> pts = svd_Doodads[i].OffsetCollisionPoints;
-                            //int d_count = pts.Count;
-                            int d_count = svd_Doodads[i].OffsetCollisionPoints.Count;
-                            test.Write((short)d_count);
-                            for (int m = 0; m < d_count; m++)
-                            {
-                                test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].x);
-                                test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].y);
-                                test.Write((byte)1);
-                            }
-                            /*for (int m = 0; m < d_count; m++)
-                            {
-                                test.Write((short)(pts[m].x));
-                                test.Write((short)(pts[m].y));
-                                test.Write((byte)1);
-                            }*/
-                            test.Write((byte)0);
-                            //test.Write((short)PLAYERID) << would only use this if someone got hit
-                            server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
-                            if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
-                            break;
-                        }
+                        int checkX = msg.ReadInt32();
+                        int checkY = msg.ReadInt32();
+                        short projectileID = msg.ReadInt16();
+                        serverDoodadDestroy(checkX, checkY);
+                    }
+                    catch (Exception except)
+                    {
+                        Logger.Failure($"[Server Destroy Doodad] ERROR\n{except}");
                     }
                     break;
 
@@ -1268,10 +1219,9 @@ namespace WCSARS
             short hitY = -1; // Hit Destructible CollisionPointY | makes an Int32Point
             if (didHit)
             {
-                // TODO -- perhaps make separate doodad hit handle?
-                //Logger.testmsg("It is indeed possible to hit a destructible with this method...");
                 hitX = msg.ReadInt16();
                 hitY = msg.ReadInt16();
+                serverDoodadDestroy(hitX, hitY); // no clue how badly this messes with the efficiency
             }
             short attackID = msg.ReadInt16();
             player.AttackCount++;
@@ -2500,8 +2450,56 @@ namespace WCSARS
                 Logger.Failure($"Error processing EmoteMsg from Player {aPlayer.myID}({aPlayer.myName}).\n{EX}");
             }
         }
-
-
+        /// <summary>
+        /// Attempts to locate a Doodad at the given Coordinates and then destroys it!
+        /// </summary>
+        private void serverDoodadDestroy(int checkX, int checkY) // todo :: check for explosions
+        {
+            int _doodadCount = svd_Doodads.Count;
+            Int32Point hitCoords = new Int32Point(checkX, checkY);
+            for (int i = 0; i < _doodadCount; i++)
+            {
+                bool flipper = false;
+                if (!flipper && (svd_Doodads[i].X == checkX) && (svd_Doodads[i].Y == checkY))
+                {
+                    Logger.DebugServer("[DoodadDestroy] [FOUND] This is the simple check working.");
+                    flipper = true;
+                }
+                if (!flipper && (svd_Doodads[i].OffsetCollisionPoints != null))
+                {
+                    int ptsCount = svd_Doodads[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
+                    for (int j = 0; j < ptsCount; j++)
+                    {
+                        if (svd_Doodads[i].OffsetCollisionPoints[j] == hitCoords)
+                        {
+                            Logger.DebugServer("[DoodadDestroy] [BAD-CHECK] [FOUND] This is the more inefficient method of locating a doodad returning true");
+                            flipper = true;
+                        }
+                    }
+                }
+                if (flipper)
+                {
+                    NetOutgoingMessage test = server.CreateMessage();
+                    test.Write((byte)73);
+                    test.Write((short)420);
+                    test.Write((short)svd_Doodads[i].X);
+                    test.Write((short)svd_Doodads[i].Y);
+                    int d_count = svd_Doodads[i].OffsetCollisionPoints.Count;
+                    test.Write((short)d_count);
+                    for (int m = 0; m < d_count; m++)
+                    {
+                        test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].x);
+                        test.Write((short)svd_Doodads[i].OffsetCollisionPoints[m].y);
+                        test.Write((byte)1);
+                    }
+                    test.Write((byte)0);
+                    //test.Write((short)PLAYERID) << would only use this if someone got hit
+                    server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
+                    if (matchStarted) svd_Doodads.RemoveAt(i); // only pop from list if match is in progress
+                    break;
+                }
+            }
+        }
         //send 75 -- something with minigun?
         private void ServerMSG_DealWithWindup(NetIncomingMessage aMSG)
         {
