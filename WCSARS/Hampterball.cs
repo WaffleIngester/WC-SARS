@@ -2,16 +2,16 @@
 {
     public class Hampterball
     {
-        public readonly short VehicleID;
+        public short ID;
         public byte HP;
-        public float PositionX;
-        public float PositionY;
+        public float X;
+        public float Y;
         public Hampterball(byte hp, short vehicleid, float x, float y)
         {
-            VehicleID = vehicleid;
+            ID = vehicleid;
             HP = hp;
-            PositionX = x;
-            PositionY = y;
+            X = x;
+            Y = y;
         }
     }
 }
