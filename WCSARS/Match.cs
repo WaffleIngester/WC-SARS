@@ -787,8 +787,8 @@ namespace WCSARS
                                 hampterlol.Write((byte)56);
                                 hampterlol.Write(player.myID);
                                 hampterlol.Write(vehicleID);
-                                hampterlol.Write(player.position_X); // should be the Hamsterball's X-Y and then force the player there
-                                hampterlol.Write(player.position_Y);
+                                hampterlol.Write(HamsterballList[vehicleID].X); // should be the Hamsterball's X-Y and then force the player there
+                                hampterlol.Write(HamsterballList[vehicleID].Y);
                                 player.vehicleID = vehicleID;
                                 server.SendToAll(hampterlol, NetDeliveryMethod.ReliableUnordered);
                             }
@@ -813,6 +813,8 @@ namespace WCSARS
                             nohampter.Write(player.position_X);
                             nohampter.Write(player.position_Y);
                             server.SendToAll(nohampter, NetDeliveryMethod.ReliableUnordered);
+                            HamsterballList[player.vehicleID].X = player.position_X;
+                            HamsterballList[player.vehicleID].Y = player.position_Y;
                             player.vehicleID = -1; // NEVER FORGET THIS
                         }
                     } catch (Exception except)
@@ -1219,6 +1221,17 @@ namespace WCSARS
             Logger.Success("Going to be sending new player all other player positions.");
             server.SendToAll(sendPlayerPosition, NetDeliveryMethod.ReliableSequenced);
         }
+        private void serverForcePosition(short id, float x, float y)
+        {
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)8);
+            msg.Write(id);
+            msg.Write(x);
+            msg.Write(y);
+            msg.Write(false);
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
         /// <summary>
         /// Sends a message to all connected clients that a player had been killed. 
         /// </summary>
@@ -1438,7 +1451,7 @@ namespace WCSARS
                                     _hammer.HP = 0;
                                     NetOutgoingMessage vehiclegone = server.CreateMessage();
                                     vehiclegone.Write((byte)58);
-                                    vehiclegone.Write(_hammer.VehicleID);
+                                    vehiclegone.Write(_hammer.ID);
                                     vehiclegone.Write(target.position_X);
                                     vehiclegone.Write(target.position_Y);
                                     server.SendToAll(vehiclegone, NetDeliveryMethod.ReliableOrdered);
@@ -1448,7 +1461,7 @@ namespace WCSARS
                                 {
                                     _hammer.HP = (byte)(_hammer.HP - _balldmg);
                                 }
-                                serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, _hammer.VehicleID, _hammer.HP);
+                                serverSendShotInfo(attacker.myID, target.myID, projectileID, 0, _hammer.ID, _hammer.HP);
                             }
                         }
                         else
