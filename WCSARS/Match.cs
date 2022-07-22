@@ -602,7 +602,7 @@ namespace WCSARS
             smsg.Write((byte)6);
             smsg.Write((byte)1);
             smsg.Write((short)14);
-            smsg.Write((short)(5 * 100)); // 45 = DEATH
+            smsg.Write((short)(3 * 100)); // 45 = DEATH
             smsg.Write((byte)1);
             smsg.Write((short)14);
             smsg.Write((short)(5 * 100));
@@ -2179,19 +2179,32 @@ namespace WCSARS
         }
 
         //send 51
-        private void serverSendCoconutEaten(NetIncomingMessage message)
+        private void serverSendCoconutEaten(NetIncomingMessage msg) // TODO need to keep track of cocos
         {
-            Player client = player_list[getPlayerArrayIndex(message.SenderConnection)];
-            if (client.HP < 200)
+            try
             {
-                client.HP += 5;
-                if (client.HP > 200) { client.HP = 200; }
+                short cocoID = msg.ReadInt16();
+                if (tryFindPlayerbyConnection(msg.SenderConnection, out Player cocop))
+                {
+                    if (cocop.HP < 100)
+                    {
+                        cocop.HP += 5;
+                        if (cocop.HP > 100) { cocop.HP = 100; }
+                    }
+                    NetOutgoingMessage coco = server.CreateMessage();
+                    coco.Write((byte)52);
+                    coco.Write(cocop.myID);
+                    coco.Write(cocoID);
+                    server.SendToAll(coco, NetDeliveryMethod.ReliableUnordered);
+                }
+                else
+                {
+                    Logger.Failure("[ServerSendCoconutEaten] There was an error while trying to locate a Player with this NetConnection");
+                }
+            } catch (Exception except)
+            {
+                Logger.Failure($"[ServerSendCoconutEaten] [ERROR]\n{except}");
             }
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)52);
-            msg.Write(getPlayerID(message.SenderConnection));
-            msg.Write(message.ReadInt16());
-            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
         // ClientSentCutGrass[53] >> ServerSentCutGrass[54]
