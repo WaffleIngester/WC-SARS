@@ -55,8 +55,11 @@ namespace WCSARS
 
         private float sv_safeX, sv_safeY, sv_safeRadius; // Server Var -- SafeZone.X, SafeZone.Y, SafeZone.Radius
         private bool sv_isGasReal = false;
+
+        // Healing Stuff
         private float sv_HealAmount = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
         private float sv_HealTickRate = 0.5f; // 0.5s
+
         // Dartgun-Related things
         private int sv_DDGMaxDmgTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
         private int  sv_DDGTicksToAdd = 4; // the amount of DDG ticks to add with each DDG shot
@@ -773,40 +776,49 @@ namespace WCSARS
                     break;
 
                 case 55: //Entering a hamball
-                    short vehPlr = getPlayerArrayIndex(msg.SenderConnection);
-                    short enteredVehicleID = msg.ReadInt16();
-                    if (!HamsterballList.ContainsKey(enteredVehicleID))
+                    try // todo: more checks to make sure this is a valid enter attempt
                     {
-                        Logger.Failure($"Error @ Packet-Type 55 [Enter Vehicle] -- Vehicle ID '{enteredVehicleID}' does not exist.");
-                        break;
+                        short vehicleID = msg.ReadInt16();
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            if (HamsterballList.ContainsKey(vehicleID))
+                            {
+                                NetOutgoingMessage hampterlol = server.CreateMessage();
+                                hampterlol.Write((byte)56);
+                                hampterlol.Write(player.myID);
+                                hampterlol.Write(vehicleID);
+                                hampterlol.Write(player.position_X); // should be the Hamsterball's X-Y and then force the player there
+                                hampterlol.Write(player.position_Y);
+                                player.vehicleID = vehicleID;
+                                server.SendToAll(hampterlol, NetDeliveryMethod.ReliableUnordered);
+                            }
+                        }
                     }
-                    if (HamsterballList[enteredVehicleID].HP <= 0)
+                    catch (Exception except)
                     {
-                        Logger.Failure($"Error @ Packet-Type 55 [Enter Vehicle] -- Player attempted to enter a vehicle (Vehicle ID: {enteredVehicleID}), but it should be broken. Refusing their request.");
-                        break;
+                        Logger.Failure($"[Hammerball EnterAttempt] ERROR\n{except}");
                     }
-                    // TODO - probably should check ownership of the vehicle. like, is anyone already in it and stuff?
-                    NetOutgoingMessage enterVehicle = server.CreateMessage();
-                    enterVehicle.Write((byte)56);
-                    enterVehicle.Write(player_list[vehPlr].myID); //sent ID
-                    enterVehicle.Write(enteredVehicleID); //vehicle ID
-                    enterVehicle.Write(player_list[vehPlr].position_X); //X
-                    enterVehicle.Write(player_list[vehPlr].position_Y); //Y
-                    player_list[vehPlr].vehicleID = enteredVehicleID;
-                    server.SendToAll(enterVehicle, NetDeliveryMethod.ReliableOrdered);
                     break;
 
                 case 57: // Client - Exit Hammerball
-                    // TODO -- when messing with hammerball owners, reset owner.
-                    short vehPlrEx = getPlayerArrayIndex(msg.SenderConnection);
-                    NetOutgoingMessage exitVehicle = server.CreateMessage();
-                    exitVehicle.Write((byte)58);
-                    exitVehicle.Write(player_list[vehPlrEx].myID); //sent ID
-                    exitVehicle.Write(msg.ReadInt16()); //vehicle ID
-                    exitVehicle.Write(player_list[vehPlrEx].position_X); //X
-                    exitVehicle.Write(player_list[vehPlrEx].position_Y); //Y
-                    player_list[vehPlrEx].vehicleID = -1;
-                    server.SendToAll(exitVehicle, NetDeliveryMethod.ReliableOrdered); //yes it's that simple
+                    try
+                    {
+                        //short exitVehicleID = msg.ReadInt16();
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            NetOutgoingMessage nohampter = server.CreateMessage();
+                            nohampter.Write((byte)58);
+                            nohampter.Write(player.myID);
+                            nohampter.Write(player.vehicleID);
+                            nohampter.Write(player.position_X);
+                            nohampter.Write(player.position_Y);
+                            server.SendToAll(nohampter, NetDeliveryMethod.ReliableUnordered);
+                            player.vehicleID = -1; // NEVER FORGET THIS
+                        }
+                    } catch (Exception except)
+                    {
+                        Logger.Failure($"[Hammerball ExitAttempt] ERROR\n{except}");
+                    }
                     break;
 
                 case 44: // Client - Request Current Spectator
@@ -1903,14 +1915,14 @@ namespace WCSARS
                         }
                         else { responseMsg = "Not enough arguments provided."; }
                         break;
-
+                    /* this works it's just useless
                     case "/removeweapons":
                         NetOutgoingMessage rmMsg = server.CreateMessage();
                         rmMsg.Write((byte)125);
                         rmMsg.Write(getPlayerID(message.SenderConnection));
                         server.SendToAll(rmMsg, NetDeliveryMethod.ReliableUnordered);
                         responseMsg = $"Weapons removed for {player_list[getPlayerArrayIndex(message.SenderConnection)].myName}";
-                        break;
+                        break;*/
                     case "/ghost":
                         //TODO : remove or make better command -- testing only
                         NetOutgoingMessage ghostMsg = server.CreateMessage();
