@@ -215,21 +215,18 @@ namespace WCSARS
                                 try
                                 {
                                     float pingTime = msg.ReadFloat();
-                                    Logger.Basic($"  -> Ping time: {pingTime}");
-                                    Logger.Basic($"  -> Remote Time Offset: {msg.SenderConnection.RemoteTimeOffset}");
-                                    Logger.Basic($"  -> Average Round Time: {msg.SenderConnection.AverageRoundtripTime}");
-                                    try
+                                    Logger.Basic($"Received PingFloat: {pingTime}");
+                                    Logger.Basic($"Received PingFloat * 1000: {pingTime * 1000}");
+                                    Logger.Basic($"Sender RTOffset: {msg.SenderConnection.RemoteTimeOffset}");
+                                    Logger.Basic($"Sender Avg. RoundTrip: {msg.SenderConnection.AverageRoundtripTime}");
+                                    if (tryFindPlayerbyConnection(msg.SenderConnection, out Player pinger))
                                     {
-                                        player_list[getPlayerArrayIndex(msg.SenderConnection)].LastPingTime = pingTime; //not actually ping whoopsies
-                                    }
-                                    catch
-                                    {
-                                        Logger.Failure($"  -> Connection {msg.SenderEndPoint} does not exist. Cannot write their last ping time. (likely not yet fully connected)");
+                                        pinger.LastPingTime = pingTime;
                                     }
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
-                                    Logger.Failure("ConnectionLatencyUpdated -- Error:: No float to read");
+                                    Logger.Failure($"Error while attempting to read ConnectionLatencyUpdate ping. Is okii!\n{ex}");
                                 }
                                 break;
                             default:
@@ -682,16 +679,17 @@ namespace WCSARS
                     sendPlayerCharacters();
                     break;
                 case 7: // Client - Request Eagle Eject
-                    // TODO - Probably just make a ForceMove message and stuff
-                    Player ejectedPlayer = player_list[getPlayerArrayIndex(msg.SenderConnection)];
-                    NetOutgoingMessage sendEject = server.CreateMessage();
-                    sendEject.Write((byte)8); // Server - Force Moveplayer
-                    sendEject.Write(ejectedPlayer.myID); // PlayerID
-                    sendEject.Write(ejectedPlayer.position_X); // Where2Go X
-                    sendEject.Write(ejectedPlayer.position_Y); // Where2Go Y
-                    sendEject.Write(true);                     // Is Parachute? | Always Yes in this case.
-                    server.SendToAll(sendEject, NetDeliveryMethod.ReliableSequenced);
-                    Logger.Warn($"Player ID {ejectedPlayer.myID} ({ejectedPlayer.myName}) has ejected!\nX, Y: ({ejectedPlayer.position_X}, {ejectedPlayer.position_Y})");
+                    if (tryFindPlayerbyConnection(msg.SenderConnection, out Player ejector))
+                    {
+                        serverForcePosition(ejector.myID, ejector.position_X, ejector.position_Y, true);
+
+                        Logger.Warn($"Player ID {ejector.myID} ({ejector.myName}) has ejected!\nX, Y: ({ejector.position_X}, {ejector.position_Y})");
+                    }
+                    else
+                    {
+                        Logger.Failure($"[Server HandleClient Land-Request] Unable to locate NetConnection \"{msg.SenderConnection}\" in PlayerList. Disconnecting client.");
+                        msg.SenderConnection.Disconnect("There was an error while processing your request, so your connection was dropped. Sorry for the inconvenience.");
+                    }
                     break;
 
                 case 14: // player sends info about them and junk. pretty neat. seems fine where it is at now
@@ -787,7 +785,7 @@ namespace WCSARS
                                 hampterlol.Write((byte)56);
                                 hampterlol.Write(player.myID);
                                 hampterlol.Write(vehicleID);
-                                hampterlol.Write(HamsterballList[vehicleID].X); // should be the Hamsterball's X-Y and then force the player there
+                                hampterlol.Write(HamsterballList[vehicleID].X);
                                 hampterlol.Write(HamsterballList[vehicleID].Y);
                                 player.vehicleID = vehicleID;
                                 server.SendToAll(hampterlol, NetDeliveryMethod.ReliableUnordered);
@@ -1171,6 +1169,16 @@ namespace WCSARS
             }
             Logger.Success("Going to be sending new player all other player positions.");
             server.SendToAll(sendPlayerPosition, NetDeliveryMethod.ReliableSequenced);
+        }
+        private void serverForcePosition(short id, float x, float y, bool parachute)
+        {
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)8);
+            msg.Write(id);
+            msg.Write(x);
+            msg.Write(y);
+            msg.Write(parachute);
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
         private void serverForcePosition(short id, float x, float y)
         {
@@ -1752,8 +1760,7 @@ namespace WCSARS
                     case "/startshow":
                         if (command.Length > 1)
                         {
-                            byte showNum;
-                            if (byte.TryParse(command[1], out showNum))
+                            if (byte.TryParse(command[1], out byte showNum))
                             {
                                 NetOutgoingMessage cParaMsg = server.CreateMessage();
                                 cParaMsg.Write((byte)104);
@@ -1777,28 +1784,10 @@ namespace WCSARS
                             short forceID;
                             if (short.TryParse(command[1], out forceID))
                             {
-                                if (!(forceID < 0) && !(forceID > 64))
+                                if (tryFindPlayerByID(forceID, out Player newlander))
                                 {
-                                    for (int fl = 0; fl < player_list.Length; fl++)
-                                    {
-                                        if (player_list[fl] != null && player_list[fl]?.myID == forceID)
-                                        {
-                                            NetOutgoingMessage sendEject = server.CreateMessage();
-                                            sendEject.Write((byte)8);
-                                            sendEject.Write(player_list[fl].myID);
-                                            sendEject.Write(player_list[fl].position_X);
-                                            sendEject.Write(player_list[fl].position_Y);
-                                            sendEject.Write(true);
-                                            server.SendToAll(sendEject, NetDeliveryMethod.ReliableSequenced);
-                                            responseMsg = "Command executed successfully?";
-                                            break;
-                                        }
-                                        responseMsg = $"Player ID {forceID} not found.";
-                                    }
-                                }
-                                else
-                                {
-                                    responseMsg = $"Provided argument, '{forceID}' not valid. 0-64.";
+                                    serverForcePosition(forceID, newlander.position_X, newlander.position_X, true);
+                                    responseMsg = $"Successfully forced player {forceID} ({newlander.myName}) to eject.";
                                 }
                             }
                         }
@@ -2992,43 +2981,6 @@ namespace WCSARS
                 Logger.Warn("Attempted to sort out nulls in playerlist while sorting already in progress.\n");
                 return;
             }
-        }
-        private void sortPlayersListIDs()
-        {
-            Player[] temp_plrlst = new Player[player_list.Length]; ;
-            for (int i = 0; i < player_list.Length; i++)
-            {
-                for (int j = i + 1; j < player_list.Length; j++)
-                {
-                    if (player_list[i]?.myID < player_list[j]?.myID)
-                    {
-                        temp_plrlst[i] = player_list[i];
-                        player_list[i] = player_list[j];
-                        player_list[j] = temp_plrlst[i];
-                    }
-                }
-            }
-            player_list = temp_plrlst;
-        }
-
-        private short getPlayerListLength()
-        {
-            // This isn't used but the older version was so stupidly overcomplicated.
-            short length;
-            if (!isSorted)
-            {
-                sortPlayersListNull();
-            }
-            Logger.Basic($"length of playerList array = {player_list.Length}");
-            for (length = 0; length < player_list.Length; length++)
-            {
-                if (player_list[length] == null)
-                {
-                    break;
-                }
-            }
-            Logger.Basic($"returned value: {length}");
-            return length;
         }
 
         /// <summary>
