@@ -61,6 +61,7 @@ namespace WCSARS
         public byte Tapies = 0;
         public bool isDrinking = false;
         public DateTime NextHealTime; // time before start = 1.2s; time between = 0.5s (probably wrong but this is good enough)
+        public DateTime NextTapeTime; // time until complete tape-up << ~3seconds total
         public bool isTaping = false;
         public bool isAlive = true;
         public short LastAttackerID = -1;
