@@ -310,7 +310,7 @@ namespace WCSARS
                     updateEveryoneOnPlayerInfo();
 
                     updateServerDrinkCheck();
-                    //updateServerTapeCheck(); --similar idea, about as stupid.
+                    updateServerTapeCheck();
                     updateEveryonePingList();
 
                     advanceTimeAndEventCheck();
@@ -469,6 +469,30 @@ namespace WCSARS
                     {
                         ServerAMSG_EndedDrinking(player_list[i].myID);
                         player_list[i].isDrinking = false;
+                    }
+                }
+            }
+        }
+        private void updateServerTapeCheck() // blatant copy of ServerDrinkCheck || maybe TODO:: make amount of tape per check dynamic
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if ((player_list[i] != null) && player_list[i].isTaping && (player_list[i].NextTapeTime < DateTime.Now))
+                {
+                    if ((player_list[i].ArmorTier > 0) && (player_list[i].Tapies > 0) && (player_list[i].ArmorTapes < player_list[i].ArmorTier)) // stuff could happen!
+                    {
+                        player_list[i].Tapies -= 1;
+                        player_list[i].ArmorTapes += 1;
+                        player_list[i].isTaping = false;
+                        if (player_list[i].ArmorTapes == player_list[i].ArmorTier)
+                        {
+                            ServerAMSG_EndedTaping(player_list[i].myID);
+                        }
+                    }
+                    else
+                    {
+                        ServerAMSG_EndedTaping(player_list[i].myID);
+                        player_list[i].isTaping = false;
                     }
                 }
             }
@@ -742,9 +766,28 @@ namespace WCSARS
                 case 25:
                     serverHandleChatMessage(msg);
                     break;
-
                 case 27: // Client Slot Update
-                    serverSendSlotUpdate(msg.SenderConnection, msg.ReadByte());
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            byte newSlot = msg.ReadByte();
+                            if (newSlot < 0 || newSlot > 4)
+                            {
+                                throw new Exception("Player sent an invalid slot.");
+                            }
+                            player.ActiveSlot = newSlot;
+                            NetOutgoingMessage slotupdate = server.CreateMessage();
+                            slotupdate.Write((byte)28);
+                            slotupdate.Write(player.myID);
+                            slotupdate.Write(newSlot);
+                            server.SendToAll(slotupdate, NetDeliveryMethod.ReliableOrdered);
+
+                        }
+                    } catch (Exception except)
+                    {
+                        Logger.Failure($"[ServerHandle Client Slot-Update-Request] ERROR\n{except}");
+                    }
                     break;
 
                 case 29: //Received Reloading
@@ -856,7 +899,7 @@ namespace WCSARS
                     }
                     break;
 
-                case 64: // Client - I Hit a Vehicle
+                case 64: // Client - I Hit a Vehicle // TODO cleanup
                     // TODO - Make sure everything works and cleanup
                     short vehShotWepID = msg.ReadInt16();//WeaponID, ID of the weapon that shot the vehicle
                     short targetedVehicleID = msg.ReadInt16(); //targetVehicleID, vehicle that was shot at
@@ -937,6 +980,7 @@ namespace WCSARS
                     serverSendDepployedTrap(msg);
                     break;
                 case 90: // Client - Request Reload Cancel
+                    // TOOD : actually do reloading
                     NetOutgoingMessage plrCancelReloadMsg = server.CreateMessage();
                     plrCancelReloadMsg.Write((byte)91);
                     plrCancelReloadMsg.Write(getPlayerID(msg.SenderConnection));
@@ -949,7 +993,37 @@ namespace WCSARS
                     server.SendMessage(dummyMsg, msg.SenderConnection, NetDeliveryMethod.Unreliable);
                     break;
                 case 98: // Client - I want to Tape-Up [ Request Duct Taping ]
-                    serverSendPlayerStartedTaping(msg.SenderConnection, msg.ReadFloat(), msg.ReadFloat());
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player taper))
+                        {
+                            if ((taper.ArmorTier > 0) && (taper.ArmorTapes != taper.ArmorTier))
+                            {
+                                taper.position_X = msg.ReadFloat();
+                                taper.position_Y = msg.ReadFloat();
+                                taper.isTaping = true;
+                                taper.NextTapeTime = DateTime.Now.AddSeconds(3.0d);
+
+                                NetOutgoingMessage tapetiem = server.CreateMessage();
+                                tapetiem.Write((byte)99);
+                                tapetiem.Write(taper.myID);
+                                server.SendToAll(tapetiem, NetDeliveryMethod.ReliableUnordered);
+                            }
+                            else
+                            {
+                                Logger.Warn($"[Client Tape-Request] Seems as though this taper's ArmorTapes is equal to their ArmorTier or has no armor. Weird");
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client Tape-Request] Unable to locate NetConnection \"{msg.SenderConnection}\" in the PlayerList. NetClient disconnected.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request, so your connection was dropped. Sorry for the inconvenience.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Failure($"[Client Tape-Request] [ERROR]\n{ex}");
+                    }
                     break;
                 //case 108: // Player Request DiveMode update / Parachute mode update idrk...
                     // unused as of yet...
@@ -1170,6 +1244,9 @@ namespace WCSARS
             Logger.Success("Going to be sending new player all other player positions.");
             server.SendToAll(sendPlayerPosition, NetDeliveryMethod.ReliableSequenced);
         }
+        /// <summary>
+        /// Sends a NetMessage to all connected clients stating that the player with the provided PlayerID should be moved to the provided XY position AND whether or not they are landing.
+        /// </summary>
         private void serverForcePosition(short id, float x, float y, bool parachute)
         {
             NetOutgoingMessage msg = server.CreateMessage();
@@ -1180,6 +1257,9 @@ namespace WCSARS
             msg.Write(parachute);
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
+        /// <summary>
+        /// Sends a NetMessage to all connected clients stating that the player with the provided PlayerID should be moved to the provided XY position. LandingArgument = FALSE.
+        /// </summary>
         private void serverForcePosition(short id, float x, float y)
         {
             NetOutgoingMessage msg = server.CreateMessage();
@@ -1192,7 +1272,7 @@ namespace WCSARS
         }
 
         /// <summary>
-        /// Sends a message to all connected clients that a player had been killed. 
+        /// Sends a NetMessage to all connected clients that contains information about a particular player dying.
         /// </summary>
         private void ServerAMSG_KillAnnouncement(short aOffedID, float aGraveX, float aGraveY, short aKillerID, short aWeaponID)
         {
@@ -1207,7 +1287,7 @@ namespace WCSARS
         }
 
         /// <summary>
-        /// Handles a NetIncoming message with the header byte "16"
+        /// Handles a NetIncomingMessage with a byte-header of 16.
         /// </summary>
         private void HandlePlayerShotMessage(NetIncomingMessage msg)
         {
@@ -1958,8 +2038,10 @@ namespace WCSARS
                         Logger.Success("position command");
                         try
                         {
-                            Player ___this = player_list[getPlayerArrayIndex(message.SenderConnection)];
-                            responseMsg = $"Your position: ({___this.position_X}, {___this.position_Y})";
+                            if (tryFindPlayerbyConnection(message.SenderConnection, out Player _posplayer))
+                            {
+                                responseMsg = $"Player {_posplayer.myID} ({_posplayer.myName}) X: {_posplayer.position_X}; Y: {_posplayer.position_Y}";
+                            }
                         }
                         catch
                         {
@@ -2063,19 +2145,6 @@ namespace WCSARS
                 allchatmsg.Write(false);
                 server.SendToAll(allchatmsg, NetDeliveryMethod.ReliableUnordered);
             }
-        }
-
-        //got 27 > send 28
-        private void serverSendSlotUpdate(NetConnection snd, byte sentSlot)
-        {
-            Player plr = player_list[getPlayerArrayIndex(snd)];
-            plr.ActiveSlot = sentSlot;
-
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)28);
-            msg.Write(plr.myID);
-            msg.Write(sentSlot);
-            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
         //got 36 > send 37
@@ -2520,7 +2589,7 @@ namespace WCSARS
         }
 
         //client[47] > server[48] -- pretty much a copy of sendingTape and stuff... info inside btw...
-        private void serverSendPlayerStartedHealing(NetConnection sender, float posX, float posY)
+        private void serverSendPlayerStartedHealing(NetConnection sender, float posX, float posY) // TODO << update. I want it in HandleMessage method not separate from it.
         {
             if (tryFindPlayerbyConnection(sender, out Player player))
             {
@@ -2541,32 +2610,25 @@ namespace WCSARS
         }
 
         //r[87] > s[111]
-        private void serverSendDepployedTrap(NetIncomingMessage message)
+        private void serverSendDepployedTrap(NetIncomingMessage message) // unfinished :/
         {
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)111);
             msg.Write(getPlayerID(message.SenderConnection));
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
-
-        //client[98] > server[99] -- started taping
         /// <summary>
-        /// Sends to everyone in the match a player who has started to tape along with their position.
+        /// Sends a NetMessage to all connected clients that states a player with the provided PlayerID has finished/stopped taping their armor.
         /// </summary>
-        private void serverSendPlayerStartedTaping(NetConnection sender, float posX, float posY)
+        private void ServerAMSG_EndedTaping(short aID) // Server Announcement Message - Someone Finished Taping || Type-100
         {
-            Player plr = player_list[getPlayerArrayIndex(sender)];
-            plr.position_X = posX;
-            plr.position_Y = posY;
-            plr.isTaping = true;
-
             NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)99);
-            msg.Write(plr.myID);
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+            msg.Write((byte)100);
+            msg.Write(aID);
+            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
         /// <summary>
-        /// Sends an announcement message to ALL connected NetClients that a particular Player's Parachute Mode has been updated.
+        /// Sends a NetMessage to all connected clients that a player with the provided PlayerID has had their parachute-mode updated.
         /// </summary>
         private void ServerAMSG_ParachuteUpdate(short aID, bool aIsDiving) // Server Announcement Message -- Parachute Mode Update
         {
