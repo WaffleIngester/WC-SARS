@@ -899,54 +899,70 @@ namespace WCSARS
                     }
                     break;
 
-                case 64: // Client - I Hit a Vehicle // TODO cleanup
-                    // TODO - Make sure everything works and cleanup
-                    short vehShotWepID = msg.ReadInt16();//WeaponID, ID of the weapon that shot the vehicle
-                    short targetedVehicleID = msg.ReadInt16(); //targetVehicleID, vehicle that was shot at
-                    short optionalProjectileID = msg.ReadInt16();
-                    if (!HamsterballList.ContainsKey(targetedVehicleID))
-                    {
-                        Logger.Failure($"Error @ Packet-Type 64 [ClientHitVehcile] - Vehicle which was hit doesn't exist in the vehicle list.");
-                        break;
-                    }
-                    if (HamsterballList[targetedVehicleID].HP <= 0)
-                    {
-                        Logger.Failure("Error @ Packet-Type 64 [ClientHitVehcile] - Vehicle which was hit has 0 or less HP. Which means it's gone.");
-                        break;
-                    }
-
-                    // it would seem that the game actually just looks at the item's index in the json list and just says "frick it that's our item"
+                case 64: // ClientHitVehicle -- should be worky just fine
                     try
                     {
-                        Logger.Basic($"Sent Weapon ID: {vehShotWepID}\nWeapon's Name if used as an index: {s_WeaponsList[vehShotWepID].Name}");
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            short _weaponID = msg.ReadInt16();
+                            short _vehicleID = msg.ReadInt16();
+                            short _projectileID = msg.ReadInt16();
+                            if (HamsterballList.ContainsKey(_vehicleID))
+                            {
+                                // go figure out how much damage we WANT to do
+                                byte _wdam = 0;
+                                if (_projectileID >= 0)
+                                {
+                                    if (player.ProjectileList.ContainsKey(_projectileID) && (player.ProjectileList[_projectileID].WeaponID == _weaponID))
+                                    {
+                                        Weapon weaponlol = s_WeaponsList[_weaponID];
+                                        _wdam = weaponlol.ArmorDamage;
+                                        if (weaponlol.ArmorDamageOverride > 0)
+                                        {
+                                            _wdam = weaponlol.ArmorDamageOverride;
+                                        }
+                                        if (weaponlol.Name == "GunMagnum")
+                                        {
+                                            _wdam = 2;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Logger.DebugServer("[Client Destroy-Vehicle-Request] Provided ProjectileID >= 0 but ProjectileList[_ProjID].WeaponID != this._weaponID");
+                                    }
+                                }
+                                else if (_projectileID == -1)
+                                {
+                                    Weapon weaponlol = s_WeaponsList[_weaponID];
+                                    _wdam = weaponlol.ArmorDamage; // if you are a big enough lunatic to go through every melee and change its ArmorDamage you can change how much armor is dinked. it's only fair.
+                                }
+                                // figure out how much we CAN remove
+                                if ((HamsterballList[_vehicleID].HP - _wdam) < 0)
+                                {
+                                    _wdam = HamsterballList[_vehicleID].HP;
+                                }
+                                // subtract WantedDamage from This-Ball.HP
+                                HamsterballList[_vehicleID].HP -= _wdam;
+                                //go send info over
+                                NetOutgoingMessage ballhit = server.CreateMessage();
+                                ballhit.Write((byte)65);
+                                ballhit.Write(player.myID);
+                                ballhit.Write(_vehicleID);
+                                ballhit.Write(HamsterballList[_vehicleID].HP);
+                                ballhit.Write(_projectileID);
+                                server.SendToAll(ballhit, NetDeliveryMethod.ReliableOrdered);
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client Destroy-Vehicle-Request] Unable to locate NetConnection \"{msg.SenderConnection}\" in the PlayerList. NetClient disconnected and request ignored.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request, so your connection was dropped. Sorry for the inconvenience.");
+                        }
                     }
-                    catch
+                    catch (Exception except)
                     {
-                        Logger.Failure("Yeah, I bonked this one up.");
+                        Logger.Failure($"[ClientHitVehicle] ERROR\n{except}");
                     }
-
-                    Logger.Warn(s_WeaponsList[vehShotWepID].ArmorDamageOverride.ToString());
-
-                    int dink = s_WeaponsList[vehShotWepID].ArmorDamage;
-                    if (s_WeaponsList[vehShotWepID].ArmorDamageOverride > 0)
-                    {
-                        dink = s_WeaponsList[vehShotWepID].ArmorDamageOverride;
-                    }
-                    if ((HamsterballList[targetedVehicleID].HP - dink) < 0)
-                    {
-                        HamsterballList[targetedVehicleID].HP = 0;
-                    }
-                    else
-                    {
-                        HamsterballList[targetedVehicleID].HP -= (byte)dink;
-                    }
-                    NetOutgoingMessage ballHit = server.CreateMessage();
-                    ballHit.Write((byte)65);
-                    ballHit.Write(getPlayerID(msg.SenderConnection));
-                    ballHit.Write(targetedVehicleID);
-                    ballHit.Write(HamsterballList[targetedVehicleID].HP);
-                    ballHit.Write(optionalProjectileID);
-                    server.SendToAll(ballHit, NetDeliveryMethod.ReliableUnordered);
                     break;
 
                 case 66: // Client - Sent Emote
@@ -1489,6 +1505,7 @@ namespace WCSARS
                                     _hammer.HP = 0;
                                     NetOutgoingMessage vehiclegone = server.CreateMessage();
                                     vehiclegone.Write((byte)58);
+                                    vehiclegone.Write(target.myID);
                                     vehiclegone.Write(_hammer.ID);
                                     vehiclegone.Write(target.position_X);
                                     vehiclegone.Write(target.position_Y);
