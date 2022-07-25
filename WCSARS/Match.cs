@@ -66,6 +66,8 @@ namespace WCSARS
         private float sv_DDGTickRate = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
         private int sv_DDGDamagePerTick = 9;
 
+        private MersenneTwister ServRNG = new MersenneTwister((uint)DateTime.Now.Ticks);
+
         // TODO make LootGen Tiles actually have... position and stuff? For now, just listing them is fineee
         //private List<short> svd_LootGenTilesR; // normal loot tiles
         //private List<short> svd_LootGenTitlesG; // "better" loot tiles
@@ -86,9 +88,18 @@ namespace WCSARS
             sv_TotalLootCounter = 0;
 
             // Spawn Loot Generation Seeds
+            /*
             sv_LootSeed = 351301; // TODO -- Make these... you know... RANDOM ???
             sv_CoconutSeed = 5328522;
             sv_VehicleSeed = 9037281;
+            */
+            //Logger.Warn($"DateTime Ticks: {DateTime.Now.Ticks}");
+            sv_LootSeed = (int)ServRNG.NextUInt(0, (uint)DateTime.Now.Ticks);
+            //Logger.Warn($"LootSeed: {sv_LootSeed}");
+            sv_CoconutSeed = (int)ServRNG.NextUInt(0, (uint)sv_LootSeed * (uint)DateTime.Now.Ticks);
+            //Logger.Warn($"CocoSeed: {sv_CoconutSeed}");
+            sv_VehicleSeed = (int)ServRNG.NextUInt(0, (uint)sv_CoconutSeed * (uint)sv_CoconutSeed);
+            //Logger.Warn($"VehicleSeed: {sv_VehicleSeed}");
 
             matchStarted = false;
             matchFull = false;
