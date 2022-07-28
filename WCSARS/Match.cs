@@ -89,7 +89,7 @@ namespace WCSARS
 
             // Spawn Loot Generation Seeds
             /*
-            sv_LootSeed = 351301; // TODO -- Make these... you know... RANDOM ???
+            sv_LootSeed = 351301;
             sv_CoconutSeed = 5328522;
             sv_VehicleSeed = 9037281;
             */
@@ -227,9 +227,9 @@ namespace WCSARS
                                 {
                                     float pingTime = msg.ReadFloat();
                                     Logger.Basic($"Received PingFloat: {pingTime}");
-                                    Logger.Basic($"Received PingFloat * 1000: {pingTime * 1000}");
-                                    Logger.Basic($"Sender RTOffset: {msg.SenderConnection.RemoteTimeOffset}");
-                                    Logger.Basic($"Sender Avg. RoundTrip: {msg.SenderConnection.AverageRoundtripTime}");
+                                    Logger.Basic($"Received PingFloatCorrection: {pingTime * 1000}");
+                                    Logger.Basic($"Sender RemoteTimeOffset: {msg.SenderConnection.RemoteTimeOffset}");
+                                    Logger.Basic($"Sender AverageRoundTrip: {msg.SenderConnection.AverageRoundtripTime}");
                                     if (tryFindPlayerbyConnection(msg.SenderConnection, out Player pinger))
                                     {
                                         pinger.LastPingTime = pingTime;
@@ -495,10 +495,7 @@ namespace WCSARS
                         player_list[i].Tapies -= 1;
                         player_list[i].ArmorTapes += 1;
                         player_list[i].isTaping = false;
-                        if (player_list[i].ArmorTapes == player_list[i].ArmorTier)
-                        {
-                            ServerAMSG_EndedTaping(player_list[i].myID);
-                        }
+                        ServerAMSG_EndedTaping(player_list[i].myID);
                     }
                     else
                     {
@@ -817,14 +814,99 @@ namespace WCSARS
                     server.SendToAll(doneReloading, NetDeliveryMethod.ReliableOrdered); //yes it's that simple
                     break;
                 //figure it out.
-                case 36:
-                    serverSendBeganGrenadeThrow(msg);
+                case 36: // Client Send Start Throwing<< TODO -- cleanup
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            short grenadeID = msg.ReadInt16();
+                            Weapon lol = s_WeaponsList[grenadeID];
+                            if (lol.Name == "GrenadeBanana" || lol.Name == "GrenadeSkunk" || lol.Name == "GrenadeFrag"){
+                                NetOutgoingMessage throwStart = server.CreateMessage();
+                                throwStart.Write((byte)37);
+                                throwStart.Write(player.myID);
+                                throwStart.Write(grenadeID);
+                                server.SendToAll(throwStart, NetDeliveryMethod.ReliableOrdered);
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client.Throwable Initiate Request] Could not find the player initiating this request. Removing them.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request so you have been disconnected. Sorry for the inconvenience.");
+                        }
+                    }
+                    catch (Exception except)
+                    {
+                        Logger.Failure($"[Client.Throwable Initiate Request] ERROR\n{except}");
+                    }
                     break;
-                case 38:
-                    serverSendGrenadeThrowing(msg);
+                case 38: // Client Send Grenade Throwing << TODO -- cleanup
+                    try // little warning: grenades dupe because grenade count and stuff never really dealt with lol
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            float spX = msg.ReadFloat();
+                            float spY = msg.ReadFloat();
+                            float spGX = msg.ReadFloat();
+                            float spGY = msg.ReadFloat();
+                            float tpX = msg.ReadFloat();
+                            float tpY = msg.ReadFloat();
+                            short grenadeID = msg.ReadInt16();
+                            Weapon throwable = s_WeaponsList[grenadeID];
+                            if (throwable.Name == "GrenadeBanana" || throwable.Name == "GrenadeSkunk" || throwable.Name == "GrenadeFrag"){
+                                player.ThrowableCounter++; // it starts from -1
+                                NetOutgoingMessage throwmsg = server.CreateMessage();
+                                throwmsg.Write((byte)39);
+                                throwmsg.Write(player.myID);
+                                throwmsg.Write(spX);
+                                throwmsg.Write(spY);
+                                throwmsg.Write(spGX);
+                                throwmsg.Write(spGY);
+                                throwmsg.Write(tpX);
+                                throwmsg.Write(tpY);
+                                throwmsg.Write(grenadeID);
+                                throwmsg.Write(player.ThrowableCounter);
+                                server.SendToAll(throwmsg, NetDeliveryMethod.ReliableOrdered);
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client.Throwable Initiate Request] Could not find the player initiating this request. Removing them.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request so you have been disconnected. Sorry for the inconvenience.");
+                        }
+                    }
+                    catch (Exception except)
+                    {
+                        Logger.Failure($"[Client.Throwable Initiate Request] ERROR\n{except}");
+                    }
                     break;
-                case 40:
-                    serverSendGrenadeFinished(msg);
+                case 40: // SentGrenadeFinish TODO -- finish / calculate whether or not a player got hit
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            float x = msg.ReadFloat();
+                            float y = msg.ReadFloat();
+                            float height = msg.ReadFloat();
+                            short ID = msg.ReadInt16();
+                            //Logger.Warn($"Grenade Height: {height}\nGrenadeID: {ID}");
+                            //Logger.Warn($"Player ThrowableCount: {player.ThrowableCounter}");
+
+                            NetOutgoingMessage fragout = server.CreateMessage();
+                            fragout.Write((byte)41);    // Header
+                            fragout.Write(player.myID); // Short | PlayerID << who sent the grenade out
+                            fragout.Write(ID);          // Short | GrenadeID
+                            fragout.Write(x);           // Float | Grenade.X
+                            fragout.Write(y);           // Float | Grenade.Y
+                            fragout.Write(height);      // Float | Grenade.Height
+                            fragout.Write((byte)0);     // Byte  | # of HitPlayers
+                            //fragout.Write(playerID)   // Short | HitPlayerID
+                            server.SendToAll(fragout, NetDeliveryMethod.ReliableOrdered);
+                        }
+                    } catch(Exception except)
+                    {
+                        Logger.Failure($"[Client.GrenadeFinishRequest] ERROR\n{except}");
+                    }
                     break;
 
                 case 55: //Entering a hamball
@@ -1004,7 +1086,28 @@ namespace WCSARS
                     serverSendAttackWindDown(getPlayerID(msg.SenderConnection), msg.ReadInt16());
                     break;
                 case 87:
-                    serverSendDepployedTrap(msg);
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            float posX = msg.ReadFloat();
+                            float posY = msg.ReadFloat();
+                            short gID = msg.ReadInt16();
+                            NetOutgoingMessage lol = server.CreateMessage();
+                            lol.Write((byte)111);
+                            lol.Write(player.myID);
+                            lol.Write(gID);
+                        }
+                        else
+                        {
+                            Logger.Failure("87 error");
+                        }
+                    }
+                    catch (Exception except)
+                    {
+                        Logger.Failure($"87 error\n{except}");
+                    }
+                    //serverSendDepployedTrap(msg);
                     break;
                 case 90: // Client - Request Reload Cancel
                     // TOOD : actually do reloading
@@ -2173,60 +2276,6 @@ namespace WCSARS
                 allchatmsg.Write(false);
                 server.SendToAll(allchatmsg, NetDeliveryMethod.ReliableUnordered);
             }
-        }
-
-        //got 36 > send 37
-        private void serverSendBeganGrenadeThrow(NetIncomingMessage message)
-        {
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)37);
-            msg.Write(getPlayerID(message.SenderConnection));
-            msg.Write(message.ReadInt16());
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-        }
-        //got 38 > send 39
-        private void serverSendGrenadeThrowing(NetIncomingMessage message)
-        {
-            Player _plr = player_list[getPlayerArrayIndex(message.SenderConnection)];
-            if ((_plr.MyLootItems[2].GiveAmount - 1) >= 0)
-            {
-                _plr.MyLootItems[2].GiveAmount -= 1;
-                NetOutgoingMessage msg = server.CreateMessage();
-                msg.Write((byte)39);
-                for (byte i = 0; i < 3; i++)
-                {
-                    msg.Write(message.ReadFloat()); //x
-                    msg.Write(message.ReadFloat()); //y
-                }
-                short grenadeID = message.ReadInt16();
-                msg.Write(grenadeID);
-                msg.Write(grenadeID);//likely needs to be unique. not sure how. maybe just make the server have its own counter
-                server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-                if (_plr.MyLootItems[2].GiveAmount == 0)
-                {
-                    _plr.MyLootItems[2] = new LootItem(-1, LootType.Collectable, WeaponType.NotWeapon, "NOTHING", 0, 0);
-                }
-                return;
-            }
-            Logger.Failure($"[[serverSendGrenadeThrowing]] - Amount of grenades-1 = <0 | {_plr.MyLootItems[2].GiveAmount - 1}");
-        }
-        // ClientSentGrenadeFinished [40] >> ServerSentGrenadeFinished[41]
-        private void serverSendGrenadeFinished(NetIncomingMessage aMsg)
-        {
-            // TODO -- server must figure out who was in the blast.
-            float x = aMsg.ReadFloat();
-            float y = aMsg.ReadFloat();
-            float nadeHeight = aMsg.ReadFloat(); ;
-            short nadeID = aMsg.ReadInt16();
-
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)41); msg.Write(getPlayerID(aMsg.SenderConnection));
-            msg.Write(nadeID);
-            msg.Write(x); msg.Write(y);
-            msg.Write(nadeHeight);
-            msg.Write((byte)1);
-            msg.Write((short)0);// this should be a list of all players that are within the blast radius
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
         /// <summary>
         /// Sends a message to all connected clients that the provided PlayerID has stopped drinking. This method does not set the player's IsDrinking property to false.
