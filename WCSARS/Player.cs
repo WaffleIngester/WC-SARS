@@ -69,6 +69,7 @@ namespace WCSARS
         public short LastShotID = -1;
         public int DartTicks = 0;
         public DateTime DartNextTime;
+        public short ThrowableCounter = -1;
 
         // Color Bools
         public bool isDev = false;
