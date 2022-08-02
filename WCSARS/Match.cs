@@ -1517,89 +1517,87 @@ namespace WCSARS
         /// </summary>
         private void HandlePlayerShotMessage(NetIncomingMessage msg)
         {
-            if (!tryFindPlayerbyConnection(msg.SenderConnection))
+            if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
             {
-                throw new Exception("Could not locate ShotPlayer's NetConnection in player_list.");
-            }
-            Player player = getPlayerWithConnection(msg.SenderConnection);
-            checkForMoveConflicts(player);
-            short weaponID = msg.ReadInt16(); // short WeaponID << remember this is just the index in the WeaponsList array
-            byte itemSlot = msg.ReadByte();
-            float shotAngle = msg.ReadInt16() / 57.295776f;
-            float spawnX = msg.ReadFloat();
-            float spawnY = msg.ReadFloat();
-            bool isValid = msg.ReadBoolean();
-            bool didHit = msg.ReadBoolean();
-            short hitX = -1; // Hit Destructible CollisionPointX | makes an Int32Point
-            short hitY = -1; // Hit Destructible CollisionPointY | makes an Int32Point
-            if (didHit)
-            {
-                hitX = msg.ReadInt16();
-                hitY = msg.ReadInt16();
-                serverDoodadDestroy(hitX, hitY); // no clue how badly this messes with the efficiency
-            }
-            short attackID = msg.ReadInt16();
-            player.AttackCount++;
-            if (attackID != player.AttackCount)
-            {
-                Logger.Failure($"[ClientSentShot] [ERROR] There was a mis-match with server-side player attack count and the client-side attack count. (received:stored:: {attackID}:{player.AttackCount})");
-                return;
-            }
-            Logger.DebugServer($"Item Slot: {itemSlot}");
-            int projectileAnglesCount = msg.ReadByte(); // WARNING: the count will always be sent as a byte, but for simplicity is stored as int.
-            if (projectileAnglesCount < 0) // if we somehow manage to get an invalid value (a negative number less than 0) then we're going to crash anyways
-            {
-                throw new Exception($"Invalid value \"{projectileAnglesCount}\" received when attempting to find Projectile-Count");
-            }
-            float[] projectileAngles = new float[projectileAnglesCount];
-            short[] projectileIDs = new short[projectileAnglesCount];
-            bool[] projectileValids = new bool[projectileAnglesCount]; // because projectileAnglesCount will always be some number 0+
-            if (projectileAnglesCount > 0)
-            {
-                // Weapon1 = 0; Weapon2 = 1; Melee = 2 (can't encounter under normal conditions); Throwables = 3 (can't encounter under normal conditions)
-                LootItem _weapon = player.MyLootItems[itemSlot]; // there's potential for failure here because ^^
-                for (int i = 0; i < projectileAnglesCount; i++)
+                checkForMoveConflicts(player);
+                short weaponID = msg.ReadInt16(); // short WeaponID << remember this is just the index in the WeaponsList array
+                byte itemSlot = msg.ReadByte();
+                float shotAngle = msg.ReadInt16() / 57.295776f;
+                float spawnX = msg.ReadFloat();
+                float spawnY = msg.ReadFloat();
+                bool isValid = msg.ReadBoolean();
+                bool didHit = msg.ReadBoolean();
+                short hitX = -1; // Hit Destructible CollisionPointX | makes an Int32Point
+                short hitY = -1; // Hit Destructible CollisionPointY | makes an Int32Point
+                if (didHit)
                 {
-                    projectileAngles[i] = msg.ReadInt16() / 57.295776f;
-                    projectileIDs[i] = msg.ReadInt16();
-                    projectileValids[i] = msg.ReadBoolean();
-                    if (player.ProjectileList.ContainsKey(projectileIDs[i]))
+                    hitX = msg.ReadInt16();
+                    hitY = msg.ReadInt16();
+                    serverDoodadDestroy(hitX, hitY); // no clue how badly this messes with the efficiency
+                }
+                short attackID = msg.ReadInt16();
+                player.AttackCount++;
+                if (attackID != player.AttackCount)
+                {
+                    Logger.Failure($"[ClientSentShot] [ERROR] There was a mis-match with server-side player attack count and the client-side attack count. (received:stored:: {attackID}:{player.AttackCount})");
+                    return;
+                }
+                Logger.DebugServer($"Item Slot: {itemSlot}");
+                int projectileAnglesCount = msg.ReadByte(); // WARNING: the count will always be sent as a byte, but for simplicity is stored as int.
+                if (projectileAnglesCount < 0) // if we somehow manage to get an invalid value (a negative number less than 0) then we're going to crash anyways
+                {
+                    throw new Exception($"Invalid value \"{projectileAnglesCount}\" received when attempting to find Projectile-Count");
+                }
+                float[] projectileAngles = new float[projectileAnglesCount];
+                short[] projectileIDs = new short[projectileAnglesCount];
+                bool[] projectileValids = new bool[projectileAnglesCount]; // because projectileAnglesCount will always be some number 0+
+                if (projectileAnglesCount > 0)
+                {
+                    // Weapon1 = 0; Weapon2 = 1; Melee = 2 (can't encounter under normal conditions); Throwables = 3 (can't encounter under normal conditions)
+                    LootItem _weapon = player.MyLootItems[itemSlot]; // there's potential for failure here because ^^
+                    for (int i = 0; i < projectileAnglesCount; i++)
                     {
-                        Logger.Failure($"[ClientSentShot] [ERROR] The key {projectileIDs[i]} already exists in the found Player's projectile list. (method exited)");
-                        return;
+                        projectileAngles[i] = msg.ReadInt16() / 57.295776f;
+                        projectileIDs[i] = msg.ReadInt16();
+                        projectileValids[i] = msg.ReadBoolean();
+                        if (player.ProjectileList.ContainsKey(projectileIDs[i]))
+                        {
+                            Logger.Failure($"[ClientSentShot] [ERROR] The key {projectileIDs[i]} already exists in the found Player's projectile list. (method exited)");
+                            return;
+                        }
+                        player.ProjectileList.Add(projectileIDs[i], new Projectile(_weapon.IndexInList, _weapon.ItemRarity, spawnX, spawnY, projectileAngles[i])); // unfinished...
+                        Logger.Warn($"Projectile ID: {projectileIDs[i]};\nListCount: {player.ProjectileList.Count}");
+                        Logger.Warn("Amount of ProjectileKeys in this list: " + player.ProjectileList.Keys.Count.ToString());
+                        Logger.testmsg(player.ProjectileList.Keys.ToString());
+                        Logger.testmsg($"keys: {player.ProjectileList.Keys.Count}");
                     }
-                    player.ProjectileList.Add(projectileIDs[i], new Projectile(_weapon.IndexInList, _weapon.ItemRarity, spawnX, spawnY, projectileAngles[i])); // unfinished...
-                    Logger.Warn($"Projectile ID: {projectileIDs[i]};\nListCount: {player.ProjectileList.Count}");
-                    Logger.Warn("Amount of ProjectileKeys in this list: " + player.ProjectileList.Keys.Count.ToString());
-                    Logger.testmsg(player.ProjectileList.Keys.ToString());
-                    Logger.testmsg($"keys: {player.ProjectileList.Keys.Count}");
                 }
-            }
 
-            // this should probably be moved into its own little method, but right now it is fine for this to be here I think
-            NetOutgoingMessage pmsg = server.CreateMessage();
-            pmsg.Write((byte)17);
-            pmsg.Write(player.myID);
-            pmsg.Write((ushort)(player.LastPingTime * 1000f));
-            pmsg.Write(weaponID);
-            pmsg.Write(itemSlot);
-            pmsg.Write(attackID); // I think this is like how the servers deal with it. each player has AttackID/ProjectileIDs attached just to them
-            pmsg.Write((short)(3.1415927f / shotAngle * 180f));
-            pmsg.Write(spawnX);
-            pmsg.Write(spawnY);
-            pmsg.Write(isValid);
-            pmsg.Write((byte)projectileAnglesCount);
-            if (projectileAnglesCount > 0)
-            {
-                for (int i = 0; i < projectileAnglesCount; i++)
+                // this should probably be moved into its own little method, but right now it is fine for this to be here I think
+                NetOutgoingMessage pmsg = server.CreateMessage();
+                pmsg.Write((byte)17);
+                pmsg.Write(player.myID);
+                pmsg.Write((ushort)(player.LastPingTime * 1000f));
+                pmsg.Write(weaponID);
+                pmsg.Write(itemSlot);
+                pmsg.Write(attackID); // I think this is like how the servers deal with it. each player has AttackID/ProjectileIDs attached just to them
+                pmsg.Write((short)(3.1415927f / shotAngle * 180f));
+                pmsg.Write(spawnX);
+                pmsg.Write(spawnY);
+                pmsg.Write(isValid);
+                pmsg.Write((byte)projectileAnglesCount);
+                if (projectileAnglesCount > 0)
                 {
-                    pmsg.Write((short) (projectileAngles[i] / 3.1415927f * 180f));
-                    pmsg.Write(projectileIDs[i]);
-                    pmsg.Write(projectileValids[i]);
+                    for (int i = 0; i < projectileAnglesCount; i++)
+                    {
+                        pmsg.Write((short)(projectileAngles[i] / 3.1415927f * 180f));
+                        pmsg.Write(projectileIDs[i]);
+                        pmsg.Write(projectileValids[i]);
 
+                    }
                 }
+                server.SendToAll(pmsg, NetDeliveryMethod.ReliableSequenced);
             }
-            server.SendToAll(pmsg, NetDeliveryMethod.ReliableSequenced);
         }
 
         //18 > 19
@@ -3298,28 +3296,6 @@ namespace WCSARS
             }
             retPlayer = null;
             return false;
-        }
-        private bool tryFindPlayerbyConnection(NetConnection aNetConnection) // so you don't HAVE to use a returned Player object
-        {
-            for (int i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] != null && player_list[i].sender == aNetConnection)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-        private Player getPlayerWithConnection(NetConnection aNetConnection)
-        {
-            for (int i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] != null && player_list[i].sender == aNetConnection)
-                {
-                    return player_list[i];
-                }
-            }
-            return null;
         }
 
         /// <summary>
