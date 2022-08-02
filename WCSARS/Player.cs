@@ -53,7 +53,9 @@ namespace WCSARS
         //public short equip3 = -1;
         //public byte equip1_rarity = 0;
         //public byte equip2_rarity = 0;
-        public short vehicleID = -1;
+        public short VehicleID = -1;
+        public float VehicleVelocityX = 0f;
+        public float VehicleVelocityY = 0f;
 
         // Health Related
         public byte HP = 100;

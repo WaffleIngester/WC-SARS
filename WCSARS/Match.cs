@@ -317,7 +317,7 @@ namespace WCSARS
                     if (shouldUpdateAliveCount && sv_doWins) { svu_Wincheck(); }
                     check_DDGTicks(); // TESTING
                     //updating player info to all people in the match
-                    updateEveryoneOnPlayerPositions();
+                    svu_MatchPositionUpdate();
                     updateEveryoneOnPlayerInfo();
 
                     updateServerDrinkCheck();
@@ -393,6 +393,80 @@ namespace WCSARS
                 } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+        private void svu_MatchPositionUpdate()
+        {
+            if (!isSorted)
+            {
+                sortPlayersListNull();
+            }
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)12);
+            // find list length
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] == null)
+                {
+                    msg.Write((byte)i);
+                    for (i = 0; i < player_list.Length; i++)
+                    {
+                        if (player_list[i] == null)
+                        {
+                            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+                            break;
+                        }
+                        else
+                        {
+                            msg.Write(player_list[i].myID);
+                            msg.Write((short)(180f * player_list[i].MouseAngle / 3.141592f));
+                            msg.Write((ushort)(player_list[i].position_X * 6f));
+                            msg.Write((ushort)(player_list[i].position_Y * 6f));
+                            if (player_list[i].WalkMode == 4)
+                            {
+                                msg.Write(true);
+                                //msg.Write((short)(player_list[i].position_X * 10f)); keep for good results
+                                //msg.Write((short)(player_list[i].position_Y * 10f));
+                                msg.Write((short)(player_list[i].VehicleVelocityX * 10f));
+                                msg.Write((short)(player_list[i].VehicleVelocityY * 10f));
+                            }
+                            else
+                            {
+                                msg.Write(false);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            /*
+           NetOutgoingMessage msg = server.CreateMessage(); // changed as of 6/1/22
+            msg.Write((byte)11); // I think this is working?
+            //find list length of players
+            if (!isSorted)
+            {
+                sortPlayersListNull();
+            }
+            for (byte i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] == null)
+                {
+                    msg.Write(i);
+                    break;
+                }
+            }
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    msg.Write(player_list[i].myID);
+                    sbyte whatthefrick = (sbyte)((180f * player_list[i].MouseAngle / 3.141592f) / 2);
+                    //msg.Write((sbyte)((player_list[i].MouseAngle / 3.141592f * 180f) / 2));
+                    msg.Write(whatthefrick);
+                    msg.Write((ushort)(player_list[i].position_X * 6f));
+                    msg.Write((ushort)(player_list[i].position_Y * 6f));
+                } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
+            }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);*/
         }
         private void updateEveryoneOnPlayerInfo()
         {
@@ -754,9 +828,17 @@ namespace WCSARS
                             player.MouseAngle = mouseAngle;
                             player.WalkMode = walkMode;
                             // add more checks or something ig not really but sure
+                            //Logger.DebugServer($"WalkMode: {walkMode}");
                             if (walkMode == 2)
                             {
                                 checkForMoveConflicts(player);
+                            }
+                            if (walkMode == 4 && player.VehicleID != -1) // is in hampterball
+                            {
+                                float vX = (float)(msg.ReadInt16() / 10f);
+                                float vY = (float)(msg.ReadInt16() / 10f);
+                                player.VehicleVelocityX = vX;
+                                player.VehicleVelocityY = vY;
                             }
                         }
                         else
@@ -946,7 +1028,7 @@ namespace WCSARS
                                 hampterlol.Write(vehicleID);
                                 hampterlol.Write(HamsterballList[vehicleID].X);
                                 hampterlol.Write(HamsterballList[vehicleID].Y);
-                                player.vehicleID = vehicleID;
+                                player.VehicleID = vehicleID;
                                 server.SendToAll(hampterlol, NetDeliveryMethod.ReliableUnordered);
                             }
                         }
@@ -966,13 +1048,13 @@ namespace WCSARS
                             NetOutgoingMessage nohampter = server.CreateMessage();
                             nohampter.Write((byte)58);
                             nohampter.Write(player.myID);
-                            nohampter.Write(player.vehicleID);
+                            nohampter.Write(player.VehicleID);
                             nohampter.Write(player.position_X);
                             nohampter.Write(player.position_Y);
                             server.SendToAll(nohampter, NetDeliveryMethod.ReliableUnordered);
-                            HamsterballList[player.vehicleID].X = player.position_X;
-                            HamsterballList[player.vehicleID].Y = player.position_Y;
-                            player.vehicleID = -1; // NEVER FORGET THIS
+                            HamsterballList[player.VehicleID].X = player.position_X;
+                            HamsterballList[player.VehicleID].Y = player.position_Y;
+                            player.VehicleID = -1; // NEVER FORGET THIS
                         }
                     } catch (Exception except)
                     {
@@ -1009,7 +1091,7 @@ namespace WCSARS
                             float speed = msg.ReadFloat();
                             if (tryFindPlayerByID(targetID, out Player target))
                             {
-                                if (player.vehicleID != -1 && HamsterballList.TryGetValue(player.vehicleID, out Hampterball ball))
+                                if (player.VehicleID != -1 && HamsterballList.TryGetValue(player.VehicleID, out Hampterball ball))
                                 {
                                     NetOutgoingMessage hampterhurt = server.CreateMessage();
                                     hampterhurt.Write((byte)61);
@@ -1625,7 +1707,7 @@ namespace WCSARS
                             target.LastAttackerID = attacker.myID;
                             target.LastWeaponID = weaponID;
                             target.LastShotID = projectileID;
-                            if (target.vehicleID == -1)
+                            if (target.VehicleID == -1)
                             {
                                 if (target.ArmorTapes == 0)
                                 {
@@ -1703,7 +1785,7 @@ namespace WCSARS
                             }
                             else // do hammer stuff
                             {
-                                Hampterball _hammer = HamsterballList[target.vehicleID];
+                                Hampterball _hammer = HamsterballList[target.VehicleID];
                                 int _balldmg = weapon.ArmorDamage;
                                 if (weapon.ArmorDamageOverride > 0)
                                 {
@@ -1719,7 +1801,7 @@ namespace WCSARS
                                     vehiclegone.Write(target.position_X);
                                     vehiclegone.Write(target.position_Y);
                                     server.SendToAll(vehiclegone, NetDeliveryMethod.ReliableOrdered);
-                                    target.vehicleID = -1;
+                                    target.VehicleID = -1;
                                 }
                                 else
                                 {
@@ -2433,7 +2515,7 @@ namespace WCSARS
             Logger.Header("[Vehicle Hit Player] Packet Received");
             if (tryFindPlayerbyConnection(aMsg.SenderConnection, out Player _attacker))
             {
-                if (_attacker.vehicleID != -1) // make sure the player is actually in a vehicle?
+                if (_attacker.VehicleID != -1) // make sure the player is actually in a vehicle?
                 {
                     try
                     {
@@ -2613,7 +2695,7 @@ namespace WCSARS
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)63);
             msg.Write(aPlayer.myID);
-            msg.Write(aPlayer.vehicleID);
+            msg.Write(aPlayer.VehicleID);
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
         /// <summary>
