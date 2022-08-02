@@ -32,9 +32,11 @@ namespace WCSARS
         public float position_Y = 496.7f;
 
         // Dance Stuff
-        public short currenteEmote = -1;
-        public float EmoteDuration = -1f;
-        public bool isDancing = false;
+        public bool isEmoting = false;
+        public short EmoteID = -1;
+        public float EmoteSpotX;
+        public float EmoteSpotY;
+        public DateTime EmoteEndTime;
 
         // Others... ?
         public byte WalkMode = 0;
@@ -60,9 +62,9 @@ namespace WCSARS
         public byte Drinkies = 200;
         public byte Tapies = 0;
         public bool isDrinking = false;
+        public bool isTaping = false;
         public DateTime NextHealTime; // time before start = 1.2s; time between = 0.5s (probably wrong but this is good enough)
         public DateTime NextTapeTime; // time until complete tape-up << ~3seconds total
-        public bool isTaping = false;
         public bool isAlive = true;
         public short LastAttackerID = -1;
         public short LastWeaponID = -1;
