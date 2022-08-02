@@ -322,6 +322,7 @@ namespace WCSARS
 
                     updateServerDrinkCheck();
                     updateServerTapeCheck();
+                    svu_EmoteCheck();
                     updateEveryonePingList();
 
                     advanceTimeAndEventCheck();
@@ -502,6 +503,20 @@ namespace WCSARS
                         ServerAMSG_EndedTaping(player_list[i].myID);
                         player_list[i].isTaping = false;
                     }
+                }
+            }
+        }
+        private void svu_EmoteCheck()
+        {
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if ((player_list[i] != null) && player_list[i].isEmoting && (player_list[i].EmoteEndTime < DateTime.Now))
+                {
+                    ServerEndEmoter(player_list[i].myID);
+                    player_list[i].isEmoting = false;
+                    player_list[i].EmoteID = -1;
+                    player_list[i].EmoteSpotX = -1;
+                    player_list[i].EmoteSpotY = -1;
                 }
             }
         }
@@ -727,16 +742,22 @@ namespace WCSARS
                 case 14: // player sends info about them and junk. pretty neat. seems fine where it is at now
                     try
                     {
-                        float mouseAngle = msg.ReadInt16() / 57.295776f;
-                        float rX = msg.ReadFloat();
-                        float rY = msg.ReadFloat();
-                        byte walkMode = msg.ReadByte();
-                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player plr))
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
                         {
-                            plr.position_X = rX;
-                            plr.position_Y = rY;
-                            plr.MouseAngle = mouseAngle;
-                            plr.WalkMode = walkMode;
+                            float mouseAngle = msg.ReadInt16() / 57.295776f;
+                            float rX = msg.ReadFloat();
+                            float rY = msg.ReadFloat();
+                            byte walkMode = msg.ReadByte();
+
+                            player.position_X = rX;
+                            player.position_Y = rY;
+                            player.MouseAngle = mouseAngle;
+                            player.WalkMode = walkMode;
+                            // add more checks or something ig not really but sure
+                            if (walkMode == 2)
+                            {
+                                checkForMoveConflicts(player);
+                            }
                         }
                         else
                         {
@@ -845,6 +866,7 @@ namespace WCSARS
                     {
                         if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
                         {
+                            checkForMoveConflicts(player);
                             float spX = msg.ReadFloat();
                             float spY = msg.ReadFloat();
                             float spGX = msg.ReadFloat();
@@ -917,6 +939,7 @@ namespace WCSARS
                         {
                             if (HamsterballList.ContainsKey(vehicleID))
                             {
+                                checkForMoveConflicts(player);
                                 NetOutgoingMessage hampterlol = server.CreateMessage();
                                 hampterlol.Write((byte)56);
                                 hampterlol.Write(player.myID);
@@ -1058,8 +1081,48 @@ namespace WCSARS
                     }
                     break;
 
-                case 66: // Client - Sent Emote
-                    ServerMSG_SendPerformedEmote(player_list[getPlayerArrayIndex(msg.SenderConnection)], msg);
+                case 66: // Client - Sent Emote // TODO:: make sure emote is valid, XY is valid
+                    try
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            short emoteID = msg.ReadInt16();
+                            float x = msg.ReadFloat();
+                            float y = msg.ReadFloat();
+                            float duration = msg.ReadFloat(); // TODO -- server should probably have a list of correct timings instead of taking word
+                            //Logger.Warn($"Send EmoteID: {emoteID}");
+                            //Logger.Warn($"Sent Emote Duration: {duration}");
+                            //Logger.Warn($"Player XY: {player.position_X}, {player.position_Y}\nSent XY: {x}, {y}");
+
+                            checkHealorTape(player);
+                            NetOutgoingMessage emote = server.CreateMessage();
+                            emote.Write((byte)67);
+                            emote.Write(player.myID);
+                            emote.Write(emoteID);
+                            server.SendToAll(emote, NetDeliveryMethod.ReliableSequenced);
+                            player.isEmoting = true;
+                            player.EmoteID = emoteID;
+                            player.EmoteSpotX = x;
+                            player.EmoteSpotY = y;
+                            if (duration > -1)
+                            {
+                                player.EmoteEndTime = DateTime.Now.AddSeconds(duration);
+                            }
+                            else
+                            {
+                                player.EmoteEndTime = DateTime.MaxValue;
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client.PerformEmoteRequest] Could not find the player initiating this request. Removing them.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request so you have been disconnected. Sorry for the inconvenience.");
+                        }
+                    }
+                    catch (Exception except)
+                    {
+                        Logger.Failure($"[Client.PerformEmoteRequest] ERROR\n{except}");
+                    }
                     break;
 
                 case 72: // CLIENT_DESTORY_DOODAD
@@ -1129,6 +1192,7 @@ namespace WCSARS
                         {
                             if ((taper.ArmorTier > 0) && (taper.ArmorTapes != taper.ArmorTier))
                             {
+                                checkForMoveConflicts(taper); // this may or may not cut someone off from taping for a second
                                 taper.position_X = msg.ReadFloat();
                                 taper.position_Y = msg.ReadFloat();
                                 taper.isTaping = true;
@@ -1356,7 +1420,7 @@ namespace WCSARS
                     sendPlayerPosition.Write(player_list[i].position_Y);                // PositionY             |   Float
                     sendPlayerPosition.Write(player_list[i].myName);                    // PlayerName            |   String
 
-                    sendPlayerPosition.Write(player_list[i].currenteEmote);             // CurrentEmoteID        |   Short
+                    sendPlayerPosition.Write(player_list[i].EmoteID);             // CurrentEmoteID        |   Short
                     sendPlayerPosition.Write((short)player_list[i].MyLootItems[0].LootID);     // Equip 1 ID            |   Short
                     sendPlayerPosition.Write((short)player_list[i].MyLootItems[1].LootID);     // Equip 2 ID            |   Short
                     sendPlayerPosition.Write(player_list[i].MyLootItems[0].ItemRarity); // Equip 1 Rarity        |   Byte
@@ -1426,6 +1490,7 @@ namespace WCSARS
                 throw new Exception("Could not locate ShotPlayer's NetConnection in player_list.");
             }
             Player player = getPlayerWithConnection(msg.SenderConnection);
+            checkForMoveConflicts(player);
             short weaponID = msg.ReadInt16(); // short WeaponID << remember this is just the index in the WeaponsList array
             byte itemSlot = msg.ReadByte();
             float shotAngle = msg.ReadInt16() / 57.295776f;
@@ -2288,19 +2353,32 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
+        /// <summary>
+        /// Sends a NetMessage to all NetConnections that a Player with the given PlayerID has stopped emoting.
+        /// </summary>
+        private void ServerEndEmoter(short id)
+        {
+            NetOutgoingMessage emote = server.CreateMessage();
+            emote.Write((byte)67);
+            emote.Write(id);
+            emote.Write((short)-1);
+            server.SendToAll(emote, NetDeliveryMethod.ReliableSequenced);
+        }
+
         //send 51
         private void serverSendCoconutEaten(NetIncomingMessage msg) // TODO need to keep track of cocos
         {
             try
             {
-                short cocoID = msg.ReadInt16();
                 if (tryFindPlayerbyConnection(msg.SenderConnection, out Player cocop))
                 {
+                    short cocoID = msg.ReadInt16();
                     if (cocop.HP < 100)
                     {
                         cocop.HP += 5;
                         if (cocop.HP > 100) { cocop.HP = 100; }
                     }
+                    checkForMoveConflicts(cocop);
                     NetOutgoingMessage coco = server.CreateMessage();
                     coco.Write((byte)52);
                     coco.Write(cocop.myID);
@@ -2557,34 +2635,6 @@ namespace WCSARS
             msg.Write(aPlayer.vehicleID);
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
-
-        /// <summary>
-        /// Sends message to all clients connected to the server that a particular Player started emoting.
-        /// </summary>
-        private void ServerMSG_SendPerformedEmote(Player aPlayer, NetIncomingMessage aMsg) // Send PacketType 67
-        {
-            try
-            {
-                // TODO - Still need to figure out when the player should finish emoting and stuff... :<
-                short _EmoteID = aMsg.ReadInt16();
-                float _sEmotePosX = aMsg.ReadFloat();
-                float _sEmotePosY = aMsg.ReadFloat();
-                //float _Duration = aMsg.ReadFloat(); << This is Duration variable we need to figure out how long it should last.
-
-                NetOutgoingMessage msg = server.CreateMessage();
-                msg.Write((byte)67);
-                msg.Write(aPlayer.myID);
-                msg.Write(_EmoteID);
-                server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-
-                // This is where we can update the info and junk. Like you know, how long the emote is supposed to last?
-                aPlayer.position_X = _sEmotePosX;
-                aPlayer.position_Y = _sEmotePosY;
-            } catch (Exception EX)
-            {
-                Logger.Failure($"Error processing EmoteMsg from Player {aPlayer.myID}({aPlayer.myName}).\n{EX}");
-            }
-        }
         /// <summary>
         /// Attempts to locate a Doodad at the given Coordinates and then destroys it!
         /// </summary>
@@ -2670,6 +2720,7 @@ namespace WCSARS
         {
             if (tryFindPlayerbyConnection(sender, out Player player))
             {
+                checkForMoveConflicts(player); // this may or may not accidently cut-off someone from healing for a second.
                 player.position_X = posX;
                 player.position_Y = posY;
                 player.isDrinking = true;
@@ -2812,6 +2863,46 @@ namespace WCSARS
             msg.Write(itemRarity.ToString());    // Spawn Amount        |  Byte
             ItemList.Add(sv_TotalLootCounter, new LootItem(sv_TotalLootCounter, LootType.Weapon, WeaponType.Gun, name, itemRarity, (byte)weaponIndex, clipAmount));
             return msg;
+        }
+        /// <summary>
+        /// Checks if the provided Player is healing or taping. Forces the player to stop healing/taping if found true.
+        /// </summary>
+        private void checkHealorTape(Player player)
+        {
+            if (player.isDrinking)
+            {
+                ServerAMSG_EndedDrinking(player.myID);
+                player.isDrinking = false;
+            }
+            if (player.isTaping)
+            {
+                ServerAMSG_EndedTaping(player.myID);
+                player.isTaping = false;
+            }
+        }
+        /// <summary>
+        /// Checks whether the given Player is currently taping, drinking, and or emoting; and stops any action that returns True.
+        /// </summary>
+        private void checkForMoveConflicts(Player player)
+        {
+            if (player.isDrinking)
+            {
+                ServerAMSG_EndedDrinking(player.myID);
+                player.isDrinking = false;
+            }
+            if (player.isTaping)
+            {
+                ServerAMSG_EndedTaping(player.myID);
+                player.isTaping = false;
+            }
+            if (player.isEmoting)
+            {
+                ServerEndEmoter(player.myID);
+                player.isEmoting = false;
+                player.EmoteID = -1;
+                player.EmoteSpotX = -1;
+                player.EmoteSpotY = -1;
+            }
         }
 
         #region Level Data Loading Method
