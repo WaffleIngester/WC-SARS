@@ -634,7 +634,7 @@ namespace WCSARS
             sv_safeX = x2;
             sv_safeY = y2;
             sv_safeRadius = r2;
-            sv_isGasReal = true;
+            //sv_isGasReal = true; // LOL
         }
 
         private void checkForWinnerWinnerChickenDinner()
@@ -1791,12 +1791,14 @@ namespace WCSARS
             //this is terrible. we are aware. have fun.
             if (message.PeekString().StartsWith("/"))
             {
-
                 string[] command = message.PeekString().Split(" ", 8);
                 string responseMsg = "command executed... no info given...";
                 short id, id2, amount;
                 float cPosX, cPosY;
-                Logger.Warn($"Player {player_list[getPlayerArrayIndex(message.SenderConnection)].myID} ({player_list[getPlayerArrayIndex(message.SenderConnection)].myName}) used {command[0]}");
+                if (tryFindPlayerbyConnection(message.SenderConnection, out Player LOL))
+                {
+                    Logger.Warn($"Player {LOL.myID} ({LOL.myName}) sent command \"{command[0]}\"");
+                }
                 switch (command[0])
                 {
                     case "/help":
@@ -2104,21 +2106,6 @@ namespace WCSARS
                             responseMsg = $"Insufficient amount of arguments provided. This command takes 1. Given: {command.Length - 1}.";
                         }
                         break;
-                    case "/sendjunk":
-                        Logger.Success("user used... sending JUNK?!!");
-                        NetOutgoingMessage LOL = server.CreateMessage();
-                        LOL.Write((byte)97);
-                        LOL.Write("Hello, this is a string!");
-                        LOL.Write(245f);
-                        LOL.Write("There was a float somewhere there (2)...");
-                        LOL.Write((short)5);
-                        LOL.Write("There was a short somewhere there (5)...");
-                        LOL.Write(true);
-                        LOL.Write("There was a bool somewhere there (true)...");
-                        LOL.Write("But that's all for now. Have fun with this RELIABLE ORDERED message!");
-                        server.SendToAll(LOL, NetDeliveryMethod.ReliableUnordered);
-                        responseMsg = "All good. Have fun lol";
-                        break;
                     case "/pray":
                         NetOutgoingMessage banan = server.CreateMessage();
                         banan.Write((byte)110);
@@ -2216,32 +2203,30 @@ namespace WCSARS
                         break;
                     case "/drink":
                         Logger.Success("drink command");
-                        byte drinkiesAmount;
-                        if (command.Length > 2)
+                        try
                         {
-                            try
+                            if (tryFindPlayerbyConnection(message.SenderConnection, out Player drinky)) // band aid fix
                             {
-                                id = short.Parse(command[1]);
-                                amount = short.Parse(command[2]);
-                                player_list[id].Drinkies = (byte)amount;
-                                responseMsg = $"done {amount}";
+                                if (command.Length == 2)
+                                {
+                                    drinky.Drinkies = byte.Parse(command[1]);
+                                }
+                                else if (command.Length == 3)
+                                {
+                                    short searchid = short.Parse(command[1]);
+                                    if (tryFindPlayerByID(searchid, out Player plr))
+                                    {
+                                        plr.Drinkies = byte.Parse(command[2]);
+                                    }
+                                }
+                                else
+                                {
+                                    responseMsg = "Invalid parameters. Usage: /drink [ID] [AMOUNT] OR /drink [AMOUNT]";
+                                }
                             }
-                            catch
-                            {
-                                responseMsg = "One or both arguments were not integer values. please try again.";
-                            }
-                        } else if (command.Length > 1)
+                        } catch
                         {
-                            try
-                            {
-                                drinkiesAmount = byte.Parse(command[1]);
-                                player_list[getPlayerArrayIndex(message.SenderConnection)].Drinkies = drinkiesAmount;
-                                responseMsg = $"Set your drink amount to {drinkiesAmount}.";
-                            }
-                            catch
-                            {
-                                responseMsg = "Error parsing AMOUNT argument. Usage: /drink {Amount (Integer)}";
-                            }
+                            responseMsg = "There was an error while processing your request.";
                         }
                         break;
                     case "/tapes":
@@ -2503,111 +2488,114 @@ namespace WCSARS
             Logger.Header("Player Looted Item");
             try
             {
-                Player thisPlayer = player_list[getPlayerArrayIndex(msg.SenderConnection)];
-                NetOutgoingMessage _extraLootMSG = null; // Extra loot message to send after telling everyone about loot and junk
-                short m_LootID = (short)msg.ReadInt32();
-                byte m_PlayerSlot = msg.ReadByte();
-                LootItem m_LootToGive = ItemList[m_LootID];
-
-                switch (m_LootToGive.LootType)
+                //Player thisPlayer = player_list[getPlayerArrayIndex(msg.SenderConnection)];
+                if (tryFindPlayerbyConnection(msg.SenderConnection, out Player thisPlayer))
                 {
-                    case LootType.Weapon: // Stupidity
-                        Logger.Basic($" -> Player found a weapon.\n{m_LootToGive.LootName}");
-                        if (m_PlayerSlot == 1 || m_PlayerSlot == 0) // Weapon 1 or 2 | Not Melee
-                        {
-                            if (thisPlayer.MyLootItems[m_PlayerSlot].WeaponType != WeaponType.NotWeapon) // means there's already something here
-                            {
-                                // So problem, can also dupe weapons. Might need to put a cooldown on when a player can pick them up again...
-                                LootItem oldLoot = thisPlayer.MyLootItems[m_PlayerSlot];
-                                _extraLootMSG = MakeNewGunLootItem(oldLoot.LootName, (short)oldLoot.IndexInList, oldLoot.ItemRarity, oldLoot.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                                thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
-                            }
-                            thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
-                            //Logger.Failure("  -> WARNING NOT YET FULLY HANDLED");
-                            break;
-                        }
-                        if (m_PlayerSlot != 3) // Slot 3 = Throwables. Slot 2 can't be used; and so anything other than 0, 1, and 3 just skip.
-                        {
-                            Logger.Failure("  -> Player has found a weapon. However, none of the slot it claims to be accessing are valid here.");
-                            break;
-                        }
+                    NetOutgoingMessage _extraLootMSG = null; // Extra loot message to send after telling everyone about loot and junk
+                    short m_LootID = (short)msg.ReadInt32();
+                    byte m_PlayerSlot = msg.ReadByte();
+                    LootItem m_LootToGive = ItemList[m_LootID];
 
-                        // Throwable / Slot_3 | PlayerSlot 4 | so... m_PlayerSlot-1 = 2 >> right array index
-                        if (thisPlayer.MyLootItems[2].WeaponType != WeaponType.NotWeapon) // Player has throwable here already
-                        {
-                            // uuuh how do we figure this out ?????
-                            Logger.DebugServer($"Throwable LootName Test: Plr: {thisPlayer.MyLootItems[2].LootName}\nThis new loot: {m_LootToGive.LootName}");
-                            if (thisPlayer.MyLootItems[2].LootName == m_LootToGive.LootName) // Has this throwable-type already
+                    switch (m_LootToGive.LootType)
+                    {
+                        case LootType.Weapon: // Stupidity
+                            Logger.Basic($" -> Player found a weapon.\n{m_LootToGive.LootName}");
+                            if (m_PlayerSlot == 1 || m_PlayerSlot == 0) // Weapon 1 or 2 | Not Melee
                             {
-                                thisPlayer.MyLootItems[2].GiveAmount += m_LootToGive.GiveAmount;
-                                Logger.Basic($"{thisPlayer.MyLootItems[2].LootName} - Amount: {thisPlayer.MyLootItems[2].GiveAmount}");
+                                if (thisPlayer.MyLootItems[m_PlayerSlot].WeaponType != WeaponType.NotWeapon) // means there's already something here
+                                {
+                                    // So problem, can also dupe weapons. Might need to put a cooldown on when a player can pick them up again...
+                                    LootItem oldLoot = thisPlayer.MyLootItems[m_PlayerSlot];
+                                    _extraLootMSG = MakeNewGunLootItem(oldLoot.LootName, (short)oldLoot.IndexInList, oldLoot.ItemRarity, oldLoot.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                    thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
+                                }
+                                thisPlayer.MyLootItems[m_PlayerSlot] = m_LootToGive;
+                                //Logger.Failure("  -> WARNING NOT YET FULLY HANDLED");
                                 break;
                             }
-                            // Else = Player has a throwable, BUT it is a different type so we need to re-spawn the old one
-                            _extraLootMSG = MakeNewThrowableLootItem((short)thisPlayer.MyLootItems[2].IndexInList, thisPlayer.MyLootItems[2].GiveAmount, thisPlayer.MyLootItems[2].LootName, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                            // Go give player the loot item.
+                            if (m_PlayerSlot != 3) // Slot 3 = Throwables. Slot 2 can't be used; and so anything other than 0, 1, and 3 just skip.
+                            {
+                                Logger.Failure("  -> Player has found a weapon. However, none of the slot it claims to be accessing are valid here.");
+                                break;
+                            }
+
+                            // Throwable / Slot_3 | PlayerSlot 4 | so... m_PlayerSlot-1 = 2 >> right array index
+                            if (thisPlayer.MyLootItems[2].WeaponType != WeaponType.NotWeapon) // Player has throwable here already
+                            {
+                                // uuuh how do we figure this out ?????
+                                Logger.DebugServer($"Throwable LootName Test: Plr: {thisPlayer.MyLootItems[2].LootName}\nThis new loot: {m_LootToGive.LootName}");
+                                if (thisPlayer.MyLootItems[2].LootName == m_LootToGive.LootName) // Has this throwable-type already
+                                {
+                                    thisPlayer.MyLootItems[2].GiveAmount += m_LootToGive.GiveAmount;
+                                    Logger.Basic($"{thisPlayer.MyLootItems[2].LootName} - Amount: {thisPlayer.MyLootItems[2].GiveAmount}");
+                                    break;
+                                }
+                                // Else = Player has a throwable, BUT it is a different type so we need to re-spawn the old one
+                                _extraLootMSG = MakeNewThrowableLootItem((short)thisPlayer.MyLootItems[2].IndexInList, thisPlayer.MyLootItems[2].GiveAmount, thisPlayer.MyLootItems[2].LootName, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                // Go give player the loot item.
+                                thisPlayer.MyLootItems[2] = m_LootToGive;
+                                break;
+                            }
+                            // Player doesn't have a throwable
                             thisPlayer.MyLootItems[2] = m_LootToGive;
                             break;
-                        }
-                        // Player doesn't have a throwable
-                        thisPlayer.MyLootItems[2] = m_LootToGive;
-                        break;
-                    case LootType.Juices:
-                        Logger.Basic($" -> Player found some drinkies. +{m_LootToGive.GiveAmount}");
-                        if (thisPlayer.Drinkies + m_LootToGive.GiveAmount > 200)
-                        {
-                            m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.Drinkies);
-                            thisPlayer.Drinkies += (byte)(200 - thisPlayer.Drinkies);
-                            _extraLootMSG = MakeNewDrinkLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                        case LootType.Juices:
+                            Logger.Basic($" -> Player found some drinkies. +{m_LootToGive.GiveAmount}");
+                            if (thisPlayer.Drinkies + m_LootToGive.GiveAmount > 200)
+                            {
+                                m_LootToGive.GiveAmount -= (byte)(200 - thisPlayer.Drinkies);
+                                thisPlayer.Drinkies += (byte)(200 - thisPlayer.Drinkies);
+                                _extraLootMSG = MakeNewDrinkLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                break;
+                            }
+                            thisPlayer.Drinkies += m_LootToGive.GiveAmount;
                             break;
-                        }
-                        thisPlayer.Drinkies += m_LootToGive.GiveAmount;
-                        break;
-                    case LootType.Tape:
-                        Logger.Basic(" -> Player found some tape.");
-                        if ((thisPlayer.Tapies + m_LootToGive.GiveAmount) > 5)
-                        {
-                            m_LootToGive.GiveAmount -= (byte)(5 - thisPlayer.Tapies);
-                            thisPlayer.Tapies += (byte)(5 - thisPlayer.Tapies);
-                            _extraLootMSG = MakeNewTapeLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                        case LootType.Tape:
+                            Logger.Basic(" -> Player found some tape.");
+                            if ((thisPlayer.Tapies + m_LootToGive.GiveAmount) > 5)
+                            {
+                                m_LootToGive.GiveAmount -= (byte)(5 - thisPlayer.Tapies);
+                                thisPlayer.Tapies += (byte)(5 - thisPlayer.Tapies);
+                                _extraLootMSG = MakeNewTapeLootItem(m_LootToGive.GiveAmount, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                break;
+                            }
+                            thisPlayer.Tapies += m_LootToGive.GiveAmount;
                             break;
-                        }
-                        thisPlayer.Tapies += m_LootToGive.GiveAmount;
-                        break;
-                    case LootType.Armor:
-                        Logger.Basic($" -> Player got some armor. Tier{m_LootToGive.ItemRarity} - Ticks: {m_LootToGive.GiveAmount}");
-                        if (thisPlayer.ArmorTier != 0)
-                        {
-                            _extraLootMSG = MakeNewArmorLootItem(thisPlayer.ArmorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
-                            // Update the player's armor.
+                        case LootType.Armor:
+                            Logger.Basic($" -> Player got some armor. Tier{m_LootToGive.ItemRarity} - Ticks: {m_LootToGive.GiveAmount}");
+                            if (thisPlayer.ArmorTier != 0)
+                            {
+                                _extraLootMSG = MakeNewArmorLootItem(thisPlayer.ArmorTapes, thisPlayer.ArmorTier, new float[] { thisPlayer.position_X, thisPlayer.position_Y, thisPlayer.position_X, thisPlayer.position_Y });
+                                // Update the player's armor.
+                                thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
+                                thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
+                                break;
+                            }
                             thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
                             thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
                             break;
-                        }
-                        thisPlayer.ArmorTier = m_LootToGive.ItemRarity;
-                        thisPlayer.ArmorTapes = m_LootToGive.GiveAmount;
-                        break;
 
-                    // TODO - make sure server tracks ammo not just spawns it and stuff.
-                    case LootType.Ammo: // Ammo Type is stored in LootItem.ItemRarity
-                        Logger.Basic($" -> Ammo Loot: AmmoType:Ammount -- {m_LootToGive.ItemRarity}:{m_LootToGive.GiveAmount}");
-                        // I can't be bothered right now
-                        break;
-                }
-                NetOutgoingMessage testMessage = server.CreateMessage();
-                testMessage.Write((byte)22); // Header / Packet ID
-                testMessage.Write(thisPlayer.myID); // Player ID
-                testMessage.Write((int)m_LootID); // Loot Item ID
-                testMessage.Write(m_PlayerSlot); // Player Slot to update
-                if (!matchStarted) // Write Forced Rarity
-                {
-                    testMessage.Write((byte)4); // Only matters in a lobby
-                }
-                testMessage.Write((byte)0);
-                server.SendToAll(testMessage, NetDeliveryMethod.ReliableSequenced);
-                if (_extraLootMSG != null)
-                {
-                    server.SendToAll(_extraLootMSG, NetDeliveryMethod.ReliableSequenced);
+                        // TODO - make sure server tracks ammo not just spawns it and stuff.
+                        case LootType.Ammo: // Ammo Type is stored in LootItem.ItemRarity
+                            Logger.Basic($" -> Ammo Loot: AmmoType:Ammount -- {m_LootToGive.ItemRarity}:{m_LootToGive.GiveAmount}");
+                            // I can't be bothered right now
+                            break;
+                    }
+                    NetOutgoingMessage testMessage = server.CreateMessage();
+                    testMessage.Write((byte)22); // Header / Packet ID
+                    testMessage.Write(thisPlayer.myID); // Player ID
+                    testMessage.Write((int)m_LootID); // Loot Item ID
+                    testMessage.Write(m_PlayerSlot); // Player Slot to update
+                    if (!matchStarted) // Write Forced Rarity
+                    {
+                        testMessage.Write((byte)4); // Only matters in a lobby
+                    }
+                    testMessage.Write((byte)0);
+                    server.SendToAll(testMessage, NetDeliveryMethod.ReliableSequenced);
+                    if (_extraLootMSG != null)
+                    {
+                        server.SendToAll(_extraLootMSG, NetDeliveryMethod.ReliableSequenced);
+                    }
                 }
             }
             catch (Exception Except)
@@ -3352,26 +3340,6 @@ namespace WCSARS
                 }
             }
             return id;
-        }
-        /// <summary>
-        /// Returns the index at which the provided NetConnection is found in the Server's Player list. -1 otherwise. (Short)
-        /// </summary>
-        private short getPlayerArrayIndex(NetConnection thisSender)
-        {
-            short id = -1;
-            for (id = 0; id < player_list.Length; id++)
-            {
-                if (player_list[id] != null)
-                {
-                    if (player_list[id].sender == thisSender)
-                    {
-                        //Logger.Success($"This sender ({thisSender.RemoteEndPoint}) is at array-index {id}, with an assigned ID of {player_list[id].myID}");
-                        return id;
-                    }
-                }
-            }
-            Logger.Failure("NO PLAYER WAS FOUND WITH THE GIVEN SENDER ADDRESS");
-            return -1;
         }
         #endregion
     }
