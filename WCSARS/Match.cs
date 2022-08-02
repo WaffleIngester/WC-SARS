@@ -1001,7 +1001,39 @@ namespace WCSARS
                     break;
 
                 case 60: // Client - Hammerball Hitsomeone
-                    serverSendVehicleHitPlayer(msg);
+                    try // todo -- damage
+                    {
+                        if (tryFindPlayerbyConnection(msg.SenderConnection, out Player player))
+                        {
+                            short targetID = msg.ReadInt16();
+                            float speed = msg.ReadFloat();
+                            if (tryFindPlayerByID(targetID, out Player target))
+                            {
+                                if (player.vehicleID != -1 && HamsterballList.TryGetValue(player.vehicleID, out Hampterball ball))
+                                {
+                                    NetOutgoingMessage hampterhurt = server.CreateMessage();
+                                    hampterhurt.Write((byte)61);
+                                    hampterhurt.Write(player.myID);
+                                    hampterhurt.Write(targetID);
+                                    hampterhurt.Write(!target.isAlive); //did kill player False = didn't kill therefore if opposite of Alive (which is true) this returns False
+                                    hampterhurt.Write(ball.HP);
+                                    server.SendToAll(hampterhurt, NetDeliveryMethod.ReliableOrdered);
+                                }
+                            }
+                            else
+                            {
+                                Logger.Failure($"[Client.HamsterballHurtedSomeone] Could not find TargetPlayer. Simply ignoring the request.");
+                            }
+                        }
+                        else
+                        {
+                            Logger.Failure($"[Client.HamsterballHurtedSomeone] Could not find the player initiating this request. Removing them.");
+                            msg.SenderConnection.Disconnect("There was an error while processing your request so you have been disconnected. Sorry for the inconvenience.");
+                        }
+                    } catch (Exception except)
+                    {
+                        Logger.Failure($"[Client.HamsterballHurtedSomeone] ERROR\n{except}");
+                    }
                     break;
 
                 case 62: // Client - My Hamsterball Hit a Wall
@@ -1244,8 +1276,8 @@ namespace WCSARS
             string _AuthenticationTicket = msg.ReadString();
             byte _PartyCount = msg.ReadByte();
             string[] _PartyIDs; */
-            //Logger.DebugServer("This user's PlayFabID: " + _PlayFabID);
-            if (!IncomingConnectionsList.ContainsKey(msg.SenderConnection))
+                    //Logger.DebugServer("This user's PlayFabID: " + _PlayFabID);
+                    if (!IncomingConnectionsList.ContainsKey(msg.SenderConnection))
             {
                 IncomingConnectionsList.Add(msg.SenderConnection, _PlayFabID);
             }
@@ -2457,43 +2489,6 @@ namespace WCSARS
             {
                 Logger.Failure("[Vehicle Hit Player - Error] Packet Received, however sent PlayerID is nonexistent in Player List. (Ignoring the rest of the request.)");
             }
-            /*
-            try
-            {
-                short _attacker = getPlayerID(aMsg.SenderConnection);
-                short _target = aMsg.ReadInt16();
-                float _speed = aMsg.ReadFloat();
-
-                NetOutgoingMessage msg = server.CreateMessage();
-                msg.Write((byte)61);
-                msg.Write(_attacker); // person who is attacking
-                msg.Write(_target); // person who got hit
-                msg.Write(false); // has killed
-                msg.Write((short)0); // vehicle ID
-                msg.Write((byte)0); // no clue
-                msg.Write((byte)2); // no clue
-
-                server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-            }*/
-            /*
-            Logger.Header("--  Vehicle Hit Player  --");
-            Logger.Basic($"Target Player ID: {message.ReadInt16()}\nSpeed: {message.ReadFloat()}");
-            Player plrA = player_list[getPlayerArrayIndex(message.SenderConnection)];
-            NetOutgoingMessage vehicleHit = server.CreateMessage();
-            vehicleHit.Write((byte)61); //Message #61
-            vehicleHit.Write(plrA.myID); //player who hit
-            vehicleHit.Write(message.ReadInt16()); //player who GOT hit
-            //TODO: redo player list so that can actually figure out how to find whether or not palyer died
-            if (message.ReadFloat() > 50f)
-            {
-                vehicleHit.Write(true);
-            }
-            else { vehicleHit.Write(false); }
-            vehicleHit.Write(plrA.vehicleID);
-            vehicleHit.Write((byte)0); //idk
-            vehicleHit.Write((byte)2);
-
-            server.SendToAll(vehicleHit, NetDeliveryMethod.ReliableOrdered);*/
         }
 
         /// <summary>
