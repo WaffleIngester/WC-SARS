@@ -323,7 +323,7 @@ namespace WCSARS
                     updateServerDrinkCheck();
                     updateServerTapeCheck();
                     svu_EmoteCheck();
-                    updateEveryonePingList();
+                    svu_AnnouncePingTimes();
 
                     advanceTimeAndEventCheck();
                     checkGasTime();
@@ -340,14 +340,8 @@ namespace WCSARS
             }
         }
 
-        private void updateEveryoneLobbyStartTime()
-        {
-            NetOutgoingMessage sTimeMsg = server.CreateMessage();
-            sTimeMsg.Write((byte)43);
-            sTimeMsg.Write(timeUntilStart);
-            server.SendToAll(sTimeMsg, NetDeliveryMethod.ReliableOrdered);
-        }
-        private void svu_LobbyPositionUpdate() // Copied over from svu_MatchPosUpdate() and modified to fit this message's format
+        
+        private void svu_LobbyPositionUpdate() // 11 -- Copied over from svu_MatchPosUpdate() and modified to fit this message's format
         {
             // Find amount of valid players (non-null)
             int pCount = 0;
@@ -374,7 +368,7 @@ namespace WCSARS
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
-        private void svu_MatchPositionUpdate() // This is only used by the server once a match has began and is in progress.
+        private void svu_MatchPositionUpdate() // 12 -- This is only used by the server once a match has began and is in progress.
         {
             // Find amount of valid players (non-null)
             int pCount = 0;
@@ -413,7 +407,14 @@ namespace WCSARS
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
-        private void svu_PlayerDataChanges() // likely only intended to be used when a Player's state is changed
+        private void svu_LobbyCurrentCountdown() // 43 -- Informs connected NetPeers of current Lobby countdown time
+        {
+            NetOutgoingMessage sTimeMsg = server.CreateMessage();
+            sTimeMsg.Write((byte)43);
+            sTimeMsg.Write(timeUntilStart);
+            server.SendToAll(sTimeMsg, NetDeliveryMethod.ReliableOrdered);
+        }
+        private void svu_PlayerDataChanges()   // 45 -- Likely only intended to be used when a Player's state is changed
         {
             // Find amount of valid players (non-null) -- ripped from MatchPositionUpdate lol
             int pCount = 0;
@@ -449,24 +450,24 @@ namespace WCSARS
             server.SendToAll(dummy, NetDeliveryMethod.ReliableOrdered);
         }
 
-        private void updateEveryonePingList()
+        private void svu_AnnouncePingTimes() // 112 -- Tells all NetPeers everyone's Ping.
         {
-            NetOutgoingMessage pings = server.CreateMessage();
-            pings.Write((byte)112);
-            for (int i = 0; i < player_list.Length; i++)
+            int pCount = getPListEntires();
+            if (pCount > 0)
             {
-                if (player_list[i] == null)
+                NetOutgoingMessage msg = server.CreateMessage();
+                msg.Write((byte)112);
+                msg.Write((byte)pCount);
+                for (int i = 0; i < player_list.Length; i++)
                 {
-                    pings.Write((byte)i);
-                    for (int j = 0; j < i; j++)
+                    if (player_list[i] != null)
                     {
-                        pings.Write(player_list[j].myID);
-                        pings.Write((short)(player_list[j].LastPingTime * 1000f)); //this appears to be correct.
+                        msg.Write(player_list[i].myID);
+                        msg.Write((short)(player_list[i].LastPingTime * 1000f));
                     }
-                    break;
                 }
+                server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
             }
-            server.SendToAll(pings, NetDeliveryMethod.ReliableOrdered);
         }
 
         private void updateServerDrinkCheck()
@@ -568,7 +569,7 @@ namespace WCSARS
                     if ((timeUntilStart % 2) < 1)
                     {
                         Logger.Basic($"seconds until start: {timeUntilStart }");
-                        if (timeUntilStart != 0) { updateEveryoneLobbyStartTime(); }
+                        if (timeUntilStart != 0) { svu_LobbyCurrentCountdown(); }
                     }
                     timeUntilStart -= 1;
                     prevTime = DateTime.Now.Second;
@@ -3217,6 +3218,21 @@ namespace WCSARS
                 Logger.Warn("Attempted to sort out nulls in playerlist while sorting already in progress.\n");
                 return;
             }
+        }
+        /// <summary>
+        /// Traverses the Match's player_list array in search of non-null entries. If a non-null entry is found, the Counter increases by 1.
+        /// </summary>
+        private int getPListEntires()
+        {
+            int count = 0;
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    count++;
+                }
+            }
+            return count;
         }
 
         /// <summary>
