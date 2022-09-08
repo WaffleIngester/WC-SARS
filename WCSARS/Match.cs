@@ -285,8 +285,8 @@ namespace WCSARS
 
 
                     //updating player info to all people in the match
-                    updateEveryoneOnPlayerPositions();
-                    updateEveryoneOnPlayerInfo();
+                    svu_LobbyPositionUpdate();
+                    svu_PlayerDataChanges();
                     //updateServerTapeCheck(); --similar idea, about as stupid.
                     nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
                     if (nextTick > DateTime.Now)
@@ -318,7 +318,7 @@ namespace WCSARS
                     check_DDGTicks(); // TESTING
                     //updating player info to all people in the match
                     svu_MatchPositionUpdate();
-                    updateEveryoneOnPlayerInfo();
+                    svu_PlayerDataChanges();
 
                     updateServerDrinkCheck();
                     updateServerTapeCheck();
@@ -347,156 +347,100 @@ namespace WCSARS
             sTimeMsg.Write(timeUntilStart);
             server.SendToAll(sTimeMsg, NetDeliveryMethod.ReliableOrdered);
         }
-        private void updateEveryoneOnPlayerPositions() // TODO -- 1. Make Send like Client should actually receive 2. Use only in Lobby instead of all the time.
+        private void svu_LobbyPositionUpdate() // Copied over from svu_MatchPosUpdate() and modified to fit this message's format
         {
-            /* format
-             * H - 11
-             * Byte -- List Length / times to loop
-             * 
-             * For Each Person in the list
-             * Short
-             * SByte - Mouse Angle or whatever
-             * Short - PosX
-             * Short - Pos Y
-             * 
-             * How to determine these values
-             * Mouse Angle Convert1 = (int)(ReadSByte)*2
-             * Mouse Angle = PI * (float)(Mouse Angle Convert1) / 180f;
-             * 
-             * PosX and PosY = (float)ReadShort / 6f;
-             */
-            NetOutgoingMessage msg = server.CreateMessage(); // changed as of 6/1/22
-            msg.Write((byte)11); // I think this is working?
-            //find list length of players
-            if (!isSorted)
+            // Find amount of valid players (non-null)
+            int pCount = 0;
+            for (int i = 0; i < player_list.Length; i++)
             {
-                sortPlayersListNull();
-            }
-            for (byte i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] == null)
+                if (player_list[i] != null)
                 {
-                    msg.Write(i);
-                    break;
+                    pCount++;
                 }
             }
+            // Make message sending player data. Loops entire list but only sends non-null entries.
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)11);       // Byte | Header
+            msg.Write((byte)pCount);   // Byte | Count of valid entries the Client is receiving/iterating over
             for (int i = 0; i < player_list.Length; i++)
             {
                 if (player_list[i] != null)
                 {
                     msg.Write(player_list[i].myID);
-                    sbyte whatthefrick = (sbyte)((180f * player_list[i].MouseAngle / 3.141592f) / 2);
-                    //msg.Write((sbyte)((player_list[i].MouseAngle / 3.141592f * 180f) / 2));
-                    msg.Write(whatthefrick);
+                    msg.Write((sbyte)((180f * player_list[i].MouseAngle / 3.141592f) / 2));
                     msg.Write((ushort)(player_list[i].position_X * 6f));
                     msg.Write((ushort)(player_list[i].position_Y * 6f));
-                } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
+                }
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
-        private void svu_MatchPositionUpdate()
+        private void svu_MatchPositionUpdate() // This is only used by the server once a match has began and is in progress.
         {
-            if (!isSorted)
-            {
-                sortPlayersListNull();
-            }
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)12);
-            // find list length
+            // Find amount of valid players (non-null)
+            int pCount = 0;
             for (int i = 0; i < player_list.Length; i++)
             {
-                if (player_list[i] == null)
+                if (player_list[i] != null)
                 {
-                    msg.Write((byte)i);
-                    for (i = 0; i < player_list.Length; i++)
-                    {
-                        if (player_list[i] == null)
-                        {
-                            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-                            break;
-                        }
-                        else
-                        {
-                            msg.Write(player_list[i].myID);
-                            msg.Write((short)(180f * player_list[i].MouseAngle / 3.141592f));
-                            msg.Write((ushort)(player_list[i].position_X * 6f));
-                            msg.Write((ushort)(player_list[i].position_Y * 6f));
-                            if (player_list[i].WalkMode == 4)
-                            {
-                                msg.Write(true);
-                                //msg.Write((short)(player_list[i].position_X * 10f)); keep for good results
-                                //msg.Write((short)(player_list[i].position_Y * 10f));
-                                msg.Write((short)(player_list[i].VehicleVelocityX * 10f));
-                                msg.Write((short)(player_list[i].VehicleVelocityY * 10f));
-                            }
-                            else
-                            {
-                                msg.Write(false);
-                            }
-                        }
-                    }
-                    break;
+                    pCount++;
                 }
             }
-            /*
-           NetOutgoingMessage msg = server.CreateMessage(); // changed as of 6/1/22
-            msg.Write((byte)11); // I think this is working?
-            //find list length of players
-            if (!isSorted)
-            {
-                sortPlayersListNull();
-            }
-            for (byte i = 0; i < player_list.Length; i++)
-            {
-                if (player_list[i] == null)
-                {
-                    msg.Write(i);
-                    break;
-                }
-            }
+            // Make message sending player data. Loops entire list but only sends non-null entries.
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)12);       // Byte | Header
+            msg.Write((byte)pCount);   // Byte | Count of valid entries the Client is receiving/iterating over
             for (int i = 0; i < player_list.Length; i++)
             {
                 if (player_list[i] != null)
                 {
                     msg.Write(player_list[i].myID);
-                    sbyte whatthefrick = (sbyte)((180f * player_list[i].MouseAngle / 3.141592f) / 2);
-                    //msg.Write((sbyte)((player_list[i].MouseAngle / 3.141592f * 180f) / 2));
-                    msg.Write(whatthefrick);
+                    msg.Write((short)(180f * player_list[i].MouseAngle / 3.141592f));
                     msg.Write((ushort)(player_list[i].position_X * 6f));
                     msg.Write((ushort)(player_list[i].position_Y * 6f));
-                } // why the frick did I break-out early of these. there's like no real benefit in doing so other than causing more problems...
-            }
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);*/
-        }
-        private void updateEveryoneOnPlayerInfo()
-        {
-            // this is probably only meant to only be sent when someone actually has a change in their HP, Armor, ArmorTicks, Drinks, TapeAmount, or WalkMode
-            // however, this works just as fine right now so ya!
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)45);
-            for (int list_length = 0; list_length < player_list.Length; list_length++)
-            {
-                if (player_list[list_length] == null)
-                {
-                    msg.Write((byte)list_length);
-                    for (int i = 0; i < list_length; i++)
+                    if (player_list[i].WalkMode == 4) // Reminder that modern versions of the game probably don't use this...
                     {
-                        if (player_list[i] != null)
-                        {
-                            msg.Write(player_list[i].myID);
-                            msg.Write(player_list[i].HP);
-                            msg.Write(player_list[i].ArmorTier);
-                            msg.Write(player_list[i].ArmorTapes);
-                            msg.Write(player_list[i].WalkMode);
-                            msg.Write(player_list[i].Drinkies);
-                            msg.Write(player_list[i].Tapies);
-                        }
-                        else { break; }
+                        msg.Write(true);
+                        //msg.Write((short)(player_list[i].position_X * 10f)); keep for good results
+                        //msg.Write((short)(player_list[i].position_Y * 10f));
+                        msg.Write((short)(player_list[i].VehicleVelocityX * 10f));
+                        msg.Write((short)(player_list[i].VehicleVelocityY * 10f));
                     }
-                    server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-                    break;
+                    else
+                    {
+                        msg.Write(false);
+                    }
                 }
             }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+        private void svu_PlayerDataChanges() // likely only intended to be used when a Player's state is changed
+        {
+            // Find amount of valid players (non-null) -- ripped from MatchPositionUpdate lol
+            int pCount = 0;
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    pCount++;
+                }
+            }
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)45);
+            msg.Write((byte)pCount);
+            for (int i = 0; i < player_list.Length; i++)
+            {
+                if (player_list[i] != null)
+                {
+                    msg.Write(player_list[i].myID);
+                    msg.Write(player_list[i].HP);
+                    msg.Write(player_list[i].ArmorTier);
+                    msg.Write(player_list[i].ArmorTapes);
+                    msg.Write(player_list[i].WalkMode);
+                    msg.Write(player_list[i].Drinkies);
+                    msg.Write(player_list[i].Tapies);
+                }
+            }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
         private void send_dummy()
         {
@@ -3020,7 +2964,6 @@ namespace WCSARS
             Logger.Success("[LoadSARLevel] Successfully read and loaded item loot spawn tiles.");
 
             #region LootItemList generation
-            Logger.testmsg("THIS ITEM LOOT GENERATION IS NOT YET COMPELTED- MUST USE ITEM TILES");
             Logger.Warn("Attempting to Generate ItemList");
             sv_TotalLootCounter = 0;
             MersenneTwister MerTwist = new MersenneTwister((uint)sv_LootSeed);
