@@ -11,18 +11,19 @@ namespace WCSARS
         public NetConnection sender;
         public short myID;
         public string myName = "愛子";
-        public short charID; // Character / Avatar
-        public short umbrellaID; // Umbrella
-        public short gravestoneID; // Gravestone
+        public short charID;        // CharacterID -- the animal which this Player is using
+        public short umbrellaID;    // Umbrella
+        public short gravestoneID;  // Gravestone
         public short deathEffectID; // Death Explosion
-        public short[] emoteIDs; // Emote List (Length of 6; short; array)
-        public short hatID; // Hat
-        public short glassesID; // Glasses
-        public short beardID; // Beard
-        public short clothesID; // Clothes
-        public short meleeID; // Melee
-        public byte gunSkinCount; // Gunskin1 --> Amount of GunSkins
-        public short[] gunskinKey; // Gunskin2 IDK //key  --> Gun... ID?
+        public short[] emoteIDs;    // EmoteIDs -- an array which lists all the emotes this Player has equipped
+        public short hatID;         // Hat
+        public short glassesID;     // Glasses
+        public short beardID;       // Beard
+        public short clothesID;     // Clothes
+        public short meleeID;       // Melee
+        // Honestly these could just go in a dictionary or something...
+        public byte gunSkinCount;   // Gunskin1 --> Amount of GunSkins
+        public short[] gunskinKey;  // Gunskin2 IDK //key  --> Gun... ID?
         public byte[] gunskinValue; // Gunskin3 IDK //value --> SkinKey for GunID ?
 
         //Updated Regularly...
