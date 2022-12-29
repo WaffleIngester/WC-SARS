@@ -10,6 +10,10 @@ namespace WCSARS
         {
             Logger.Basic("<< Super Animal Royale Server  >>");
             Logger.Header("Super Animal Royale Version: 0.90.2\n");
+
+            // Create necessary files for Match initialization.
+            //InitializeData(); // UNUSED RIGHT NOW
+
             if (args.Length > 0)
             {
                 Match m = new Match(int.Parse(args[1]), args[0]);
@@ -52,6 +56,58 @@ namespace WCSARS
                     }
                 }
             }
+            Logger.DebugServer("[MAIN] I have reached the end!");
+            /*string text;
+            while ((text = Console.ReadLine()) != "stop"){
+
+                Console.WriteLine(text);
+            }*/
         }
+        /* This all is unused for now. At a later point they may be, but for now not so. Overall it works. config gen is pain though lol
+        /// <summary>
+        /// Attempts to create all the necessary files required for the Match to run.
+        /// </summary>
+        static void InitializeData()
+        {
+            string location = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            Logger.DebugServer("Current Running Location:\n" + location);
+            CreateFile(location + @"\player-data.json");
+            CreateFile(location + @"\banned-players.json");
+            CreateFile(location + @"\banned-ips.json");
+
+            // Create a default config file...
+            if (!File.Exists(location + @"\server-config.json"))
+            {
+                using (FileStream configStream = File.Create(location + @"\server-config.json"))
+                {
+                    byte[] data;
+                    configStream.Write(new byte[] { 0x7B, 0x0A, 0x09 }); // { + \n + \LF
+                    data = new System.Text.UTF8Encoding(true).GetBytes("\"server-ip\": \"127.0.0.1\"");
+                    configStream.Write(data);
+                    configStream.Write(new byte[] { 0x2C, 0x0A, 0x09 }); // , + \n + \LF
+                    data = new System.Text.UTF8Encoding(true).GetBytes("\"server-port\": 42896");
+                    configStream.Write(data);
+                    configStream.Write(new byte[] { 0x0A, 0x7D}); // , + \n + \LF
+                }
+                Logger.DebugServer("Created config.json");
+            }
+        }
+
+        /// <summary>
+        /// Creates file at the speciifed location, writes "[]" to it, then closes.
+        /// </summary>
+        static void CreateFile(string filename)
+        {
+            if (File.Exists(filename))
+            {
+                Logger.Warn("[Main] [WARN] Attempted to call method but file already exists");
+                return;
+            }
+            using (FileStream fileStream = File.Create(filename))
+            {
+                fileStream.Write(new byte[] { 0x5B, 0X5D });
+            }
+            Logger.Success("[Main] [GOOD] Created file: " + filename);
+        }*/
     }
 }

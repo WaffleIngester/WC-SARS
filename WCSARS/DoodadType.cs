@@ -3,7 +3,7 @@ using System.IO;
 using System.Collections.Generic;
 using SimpleJSON;
 
-namespace WCSARS // at some point I want to move all these types from the SAR game into their own separate namespace
+namespace WCSARS // TODO : Move to SARStuff at somepoint
 {
     public class DoodadType // not quite finished I think?
     {
@@ -107,10 +107,10 @@ namespace WCSARS // at some point I want to move all these types from the SAR ga
                 throw new Exception("The datafile \"DoodadData.json\" is missing/unable to be found. Please verify it is in the correct folder/or exists.");
             }
             // variables needed to create list and scuh
-            Dictionary<int, DoodadType> _doodadtypes = new Dictionary<int, DoodadType>();
             JSONArray _array = (JSONArray)JSON.Parse(File.ReadAllText(Directory.GetCurrentDirectory() + @"\datafiles\DoodadData.json"));
             JSONNode _node;
             int entries = _array.Count;
+            Dictionary<int, DoodadType> _doodadtypes = new Dictionary<int, DoodadType>(entries);
             // actually adds the doodads and stuff
             for (int i = 0; i < entries; i++)
             {

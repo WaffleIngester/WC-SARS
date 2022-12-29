@@ -725,49 +725,46 @@ namespace SimpleJSON
             return ctx;
         }
 
-        // LoadFromFile junk... idk when this ever existed but had to add... - Aiko 6/25/22
-        public static JSONNode LoadFromFile(string aFileName)
+        public static JSONNode LoadFromFile(string filename)
         {
-            JSONNode result;
-            using (FileStream fileStream = File.OpenRead(aFileName))
+            if (!File.Exists(filename)) throw new FileNotFoundException("Could not locate file!", filename);
+            using (FileStream fileStream = File.OpenRead(filename))
             {
-                result = LoadFromStream(fileStream);
+                using (BinaryReader reader = new BinaryReader(fileStream))
+                {
+                    JSONNode result = Deserialize(reader);
+                    return result;
+                }
             }
-            return result;
         }
-        public static JSONNode LoadFromStream(Stream aStream)
-        {
-            JSONNode result;
-            using (BinaryReader binaryReader = new BinaryReader(aStream))
-            {
-                result = Deserialize(binaryReader);
-            }
-            return result;
-        }
+
         public static JSONNode Deserialize(BinaryReader aReader)
         {
             JSONBinaryTag jsonBinaryTag = (JSONBinaryTag)aReader.ReadByte();
             switch (jsonBinaryTag)
             {
                 case JSONBinaryTag.Array:
-                    int arrayLength = aReader.ReadInt32();
-                    JSONArray jsonArray = new JSONArray();
-                    for (int i = 0; i < arrayLength; i++)
                     {
-                        jsonArray.Add(Deserialize(aReader));
+                        int length = aReader.ReadInt32();
+                        JSONArray array = new JSONArray(length);
+                        for (int i = 0; i < length; i++)
+                        {
+                            array.Add(Deserialize(aReader));
+                        }
+                        return array;
                     }
-                    return jsonArray;
                 case JSONBinaryTag.Class:
-                    int classLength = aReader.ReadInt32();
-                    JSONObject jsonClass = new JSONObject();
-                    // was supposed to be JSONClass but I think JSONObject is the same. no clue never checked :3
-                    for (int i = 0; i < classLength; i++)
                     {
-                        string classKey = aReader.ReadString();
-                        JSONNode jsonNodeItem = Deserialize(aReader);
-                        jsonClass.Add(classKey, jsonNodeItem);
+                        int length = aReader.ReadInt32();
+                        JSONObject jsonObject = new JSONObject(length);
+                        for (int i = 0; i < length; i++)
+                        {
+                            string key = aReader.ReadString();
+                            JSONNode value = Deserialize(aReader);
+                            jsonObject.Add(key, value);
+                        }
+                        return jsonObject;
                     }
-                    return jsonClass;
                 case JSONBinaryTag.Value:
                     return new JSONString(aReader.ReadString());
                 case JSONBinaryTag.IntValue:
@@ -787,8 +784,20 @@ namespace SimpleJSON
 
     public partial class JSONArray : JSONNode
     {
-        private List<JSONNode> m_List = new List<JSONNode>();
+        private List<JSONNode> m_List;
         private bool inline = false;
+
+        public JSONArray()
+        {
+            m_List = new List<JSONNode>();
+        }
+
+        public JSONArray(int initialCapacity)
+        {
+            //if (initialCapacity <= 0) initialCapacity = 1;
+            m_List = new List<JSONNode>(initialCapacity);
+        }
+
         public override bool Inline
         {
             get { return inline; }
@@ -911,9 +920,19 @@ namespace SimpleJSON
 
     public partial class JSONObject : JSONNode
     {
-        private Dictionary<string, JSONNode> m_Dict = new Dictionary<string, JSONNode>();
-
+        private Dictionary<string, JSONNode> m_Dict;
         private bool inline = false;
+
+        public JSONObject()
+        {
+            m_Dict = new Dictionary<string, JSONNode>();
+        }
+        public JSONObject(int initialCapacity)
+        {
+            if (initialCapacity <= 0) initialCapacity = 1;
+            m_Dict = new Dictionary<string, JSONNode>(initialCapacity);
+        }
+
         public override bool Inline
         {
             get { return inline; }

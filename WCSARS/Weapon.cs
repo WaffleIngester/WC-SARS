@@ -15,8 +15,8 @@ namespace WCSARS
         public int Damage;
         public int DamageIncrease;
         public byte ArmorDamage;
-        public byte ArmorDamageOverride;
-        public bool PenetratesArmor; // this works differently in Modern SAR compared to 2019 SAR. 2019 SAR this is a bool. 2022 (min) is %-based
+        public byte VehicleDamageOverride;
+        public bool PenetratesArmor; // Reminder that in future versions this was changed from a True/False to %-based values.
         public byte RarityMaxVal;
         public byte RarityMinVal;
         public byte SpawnSizeOverworld;
@@ -28,29 +28,25 @@ namespace WCSARS
             if (data["inventoryID"]) Name = data["inventoryID"];
             if (data["weaponClass"])
             {
-                string readValue = data["weaponClass"];
-                if (readValue == "Melee")
+                string classValue = data["weaponClass"];
+                switch (classValue)
                 {
-                    WeaponType = WeaponType.Melee;
-                }
-                else if (readValue == "Gun")
-                {
-                    WeaponType = WeaponType.Gun;
-                }
-                else if (readValue == "Grenade")
-                {
-                    WeaponType = WeaponType.Throwable;
-                    if (data["grenadeInfo"]["worldSpawnAmount"])
-                    {
+                    case "Melee":
+                        WeaponType = WeaponType.Melee;
+                        break;
+                    case "Gun":
+                        WeaponType = WeaponType.Gun;
+                        break;
+                    case "Grenade":
+                        WeaponType = WeaponType.Throwable;
+                        if (data["grenadeInfo"] == null) throw new Exception($"{Name} was found to be a throwable, yet no \"grenadeInfo\" key found.");
+                        if (data["grenadeInfo"]["worldSpawnAmount"] == null) throw new Exception($"{Name} contains grenadeInfo, but no key \"worldSpawnAmount\".");
                         SpawnSizeOverworld = (byte)data["grenadeInfo"]["worldSpawnAmount"].AsInt;
-                    }
-                    else
-                    {
-                        Logger.Failure("Something went wrong while processing grenade information");
-                    }
+                        break;
+                    default:
+                        throw new Exception($"Invalid class identifier: \"{classValue}\".");
                 }
             }
-            // eat my shorts
             if (data["minRarity"])
             {
                 RarityMinVal = (byte)data["minRarity"].AsInt;
@@ -67,11 +63,11 @@ namespace WCSARS
             {
                 ArmorDamage = (byte)data["breaksArmorAmount"].AsInt;
             }
-            if (data["overrideBreaksVehicleAmount"]) // applies to sniper for sure and should apply to magnum as well but IT DOESN'T IN THIS FUCKING UPDATE
+            if (data["overrideBreaksVehicleAmount"]) // Someone got a little angy. We apologize for their use of foul language.
             {
-                ArmorDamageOverride = (byte)data["overrideBreaksVehicleAmount"].AsInt;
+                VehicleDamageOverride = (byte)data["overrideBreaksVehicleAmount"].AsInt;
             }
-            if (data["damageThroughArmor"]) // applies to dartgun for sure- likely bow/crossbow as well
+            if (data["damageThroughArmor"]) // In this version (v0.90.2), this only applies to Dartgun and is a Bool. At some point it was changed to be %-based.
             {
                 PenetratesArmor = data["damageThroughArmor"].AsBool;
             }
@@ -97,30 +93,72 @@ namespace WCSARS
             }
         }
 
-        static public Weapon[] GetAllWeaponsList()
+        static public Weapon[] GetAllWeaponsList() // Attempts to read weapondata.json @ ProgramLocation\datafiles-- Will crash if any exceptions are thrown
         {
-            string dir = Directory.GetCurrentDirectory() + @"\datafiles\WeaponData.json";
-            Weapon[] m_WeaponListGame = new Weapon[0];
-            if (!File.Exists(dir))
+            // Verify file exists...
+            string fileLoc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\weapondata.json";
+            if (!File.Exists(fileLoc)) throw new FileNotFoundException($"Could not locate weapondata.json!\nSearch location: {fileLoc}");
+
+            // Go load/read JSON, fill out a new Weapon[], then return it back.
+            string readData = File.ReadAllText(fileLoc);
+            JSONArray json = (JSONArray)JSON.Parse(readData);
+            Weapon[] weapons = new Weapon[json.Count];
+            for (int i = 0; i < json.Count; i++)
             {
-                Logger.Failure("Could not find WeaponData.json");
+                weapons[i] = new Weapon(json[i], (short)i);
             }
-            try
+            return weapons;
+        }
+
+        /// <summary>
+        /// Returns an array of Weapon objects which only contains Weapon with WeaponType.Gun. Calls Weapon.GetAllWeaponsList() to initialize the original array.
+        /// </summary>
+        public static Weapon[] GetAllGunsList()
+        {
+            // Get all Weapons then find the amount of entries that are actually guns
+            Weapon[] allWeapons = GetAllWeaponsList();
+            int entries = 0;
+            for (int i = 0; i < allWeapons.Length; i++)
             {
-                string ReadData = File.ReadAllText(dir);
-                JSONArray jArray = (JSONArray)JSON.Parse(ReadData);
-                m_WeaponListGame = new Weapon[jArray.Count];
-                //Logger.Success(jArray.Count.ToString()); // for counting entries to double-check if it is correct
-                for (int i = 0; i < jArray.Count; i++)
+                if (allWeapons[i].WeaponType == WeaponType.Gun) entries++;
+            }
+            // Make new Guns array and reset entries back to 0 for reuse
+            Weapon[] guns = new Weapon[entries];
+            entries = 0;
+            for (int i = 0; i < allWeapons.Length; i++)
+            {
+                if (allWeapons[i].WeaponType == WeaponType.Gun)
                 {
-                    m_WeaponListGame[i] = new Weapon(jArray[i], (short)i);
+                    guns[entries] = allWeapons[i];
+                    entries++;
                 }
             }
-            catch (Exception thisExcept)
+            return guns;
+        }
+
+        /// <summary>
+        /// Uses the provided Weapon[] array to return a new array of Weapon objects which only contains Weapons with WeaponType.Gun.
+        /// </summary>
+        public static Weapon[] GetAllGunsList(Weapon[] pweapons)
+        {
+            // Go through all entries in the provided Weapons array and get the count of gun entries
+            int entries = 0;
+            for (int i = 0; i < pweapons.Length; i++)
             {
-                Logger.Failure($"Error processing daat.\nException:: {thisExcept}");
+                if (pweapons[i].WeaponType == WeaponType.Gun) entries++;
             }
-            return m_WeaponListGame;
+            // Make new Guns array and reset entries back to 0 for reuse
+            Weapon[] guns = new Weapon[entries];
+            entries = 0;
+            for (int i = 0; i < pweapons.Length; i++)
+            {
+                if (pweapons[i].WeaponType == WeaponType.Gun)
+                {
+                    guns[entries] = pweapons[i];
+                    entries++;
+                }
+            }
+            return guns;
         }
     }
 }

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SuperAnimalRoyale.Types
+namespace SARStuff
 {
     public struct Projectile
     {

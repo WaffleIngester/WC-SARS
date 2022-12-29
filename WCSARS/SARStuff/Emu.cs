@@ -1,4 +1,4 @@
-﻿namespace SAR.Types
+﻿namespace SARStuff
 {
     public class Emu
     {

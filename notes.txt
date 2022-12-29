@@ -1,0 +1,173 @@
+﻿    -- Changelog --
+    
++------------------------------------------------------
+|    -- 12/28/22 #1 --
+|
+|--- Main Changes of Interest
+|- The network loop in Match has been moved to its own separate thread.
+|   -- Hopefully clears up the constructor a little bit... Although it'll be pretty messy again soon.
+|- Added struct `Vector2`.
+|   -- Basically Unity's Vector2 struct. Needed it for a while, and it helps with the Molecrate.
+|- Added class `MoleCrate`.
+|   -- Mole crates have been added to the game! Still haven't agreed on how to actually write it! But it's here!
+|   -- While the Match does handle the Molecrate "correctly", the Molecrate does not yet randomly spawn, nor does opening it give any players items.
+|- Added fields `_moleSpawnSpots`, `_maxMoleCrates`, and `_moleCrates` to Match.
+|   -- This is so the Match can actually handle mole crates.
+|- Added method `CheckMoleCrates()` to Match.
+|- Added command `/mole` to Match to test out Molecrate.
+|   -- Doesn't take any parameters. The path is hard-coded, but changing it does seem to handle correctly.
+|   -- Tried simplifying the reading of `weaponClass` key. Also throws exceptions now
+|
+|--- Oopsies Section
+|- Reminder that this project is also Github learning expierence.
+|   -- Messing around with stuff probably shouldn't leading to some wacky stuf like strange commit histories.
++------------------------------------------------------
+
++------------------------------------------------------
+|    -- 12/26/22 #1 --
+|
+|--- Main Changes of Interest
+|- Match:
+|   -- Renamed `serverSendPlayerShoteded()`  to `HandleAttackConfirm()`
+|   -- Tried to simplify `HandleAttackConfirm()` to not be tons of nested `try{} catch()` / `if`s; but may be more confusing to read
+|   -- `HandleAttackConfirm()` should now exit early if in lobby, attacking player is dead, or the target player is either dead or godmoded
+|   -- Renamed `serverSendShotInfo()` to `SendShotConfirmed()`.
+|   -- New method `SendExitVehicle()` to make sending hamsterball exit messages easier
+|   -- Moved `Match.GetAllGunsList()` to `Weapon` class.
+|   -- Set `Match._availableIDs` to have an initial capacity of `Match._playerList.Length`.
+|       --- This so all X number of IDs are available rather than a set 64.
+|   -- Set `Match._incomingConnections` to have an initial capacity of 4.
+|       --- Perhaps didn't need this as it would get resized anyways, but this should be fine-enough!
+|- Weapon:
+|   -- Renamed `ArmorDamageOverride` to `VehicleDamageOverride` to reflect its intended use
+|   -- Added `GetAllGunsList()` and `GetAllGunsList(Weapon[])`; although only the latter is used.
+|   -- Updated `GetAllWeaponsList()` to try and start where the executing assembly is located. Also throws exceptions now. Should likely handle these.
+|   -- Tried simplifying the reading of `weaponClass` key. Also throws exceptions now
+|
+|--- Oopsies Section
+|- Set Match._playerList default size back to 64 (from 1).
+|   -- The value of 1 was only intended to test whether the match was full or not. Even then, that wasn't finished so oopsies :[
++------------------------------------------------------
+
+
++------------------------------------------------------
+|    -- 12/26/22 #1 --
+|
+|--- Changes of Interest
+|- Match Stuff:
+|       -- Connections and Stuff --
+|   -- Renamed 'player_list' to '_playerList'.
+|   -- Renamed 'availableIDs' to '_availableIDs'.
+|   -- Renamed 'IncomingConnectionsList' to '_incomingConnections' (also moved more towards _playerList).
+|       -- For RNG Seeds  --
+|   -- Renamed 'sv_TotalLootCounter' to '_totalLootCounter'.
+|   -- Renamed "sv_LootSeed' to '_lootSeed'.
+|   -- Renamed 'sv_CoconutSeed' to "_coconutSeed'.
+|   -- Renamed 'sv_VehicleSeed' to "_vehicleSeed'.
+|   -- Renamed 'svd_ServerRNG' to "_servRNG' (although it still serves no purpose as of now).
+|       -- Data in General --
+|   -- Renamed 's_WeaponsList' to '_allWeaponsList'.
+|   -- Renamed 'CoconutList' to '_coconutList'.
+|   -- Renamed 'HamsterballList' to '_hamsterballList'.
+|   -- Renamed 'ItemList' to '_itemList'.
+|   -- Renamed 'svd_Doodads' to '_doodadList'.
+|   -- Renamed 'svd_PlayerDataJSON' to '_playerJSONdata'.
+|       -- General Match Stuff --
+|   -- Renamed 'LobbyTimeRemaining' to '_lobbyRemainingSeconds' (also made PRIVATE and added a commented-out public property).
+|   -- Renamed 'matchStarted' to '_hasMatchStarted'.
+|   -- Renamed 'matchFull' to '_isMatchFull'.
+|   -- Renamed 'm_SafeZone' to '_safeZone'.
+|   -- Renamed 'sv_doWins' to '_canCheckWins'.
+|   -- Renamed 'shouldUpdateAliveCount' to '_hasPlayerDied'.
+|   -- Renamed 'PoisonDamageQueue' to '_poisonDamageQueue' and added separate property (currently commented-out).
+|   -- Renamed 'sv_DDGMaxDmgTicks' to '_ddgMaxTicks'.
+|   -- Renamed 'sv_DDGTicksToAdd' to '_ddgAddTicks'.
+|   -- Renamed 'sv_DDGTickRate' to '_ddgTickRateSeconds'.
+|   -- Renamed 'sv_DDGDamagePerTick' to '_ddgDamagePerTick'.
+|   -- Renamed 'm_NextGasWarnTimerCheck' to '_nextGasWarnTimerCheck'.
+|   -- Renamed 'sv_HealAmount' to '_healPerTick'.
+|   -- Renamed 'sv_HealTickRate' to '_healRateSeconds'.
+|       -- Method Renames --
+|   -- Renamed 'serverForcePosition()' to 'SendForcePosition()'.
+|   -- Renamed 'serverHandleAttackWindUp()' to 'HandleAttackWindUp()'.
+|   -- Renamed 'serverSendAttackWindDown()' to 'HandleAttackWindDown()'.
+|   -- Renamed 'ServerMSG_PlayerHamsterballBounce()' to 'HandleHamsterballBounce()'.
+|   -- Renamed 'ServerAMSG_KillAnnouncement()' to 'SendPlayerDeath()'.
+|   -- Renamed 'sendClientMatchInfo2Connect()' to 'SendMatchInformation()'.
+|   -- Renamed 'send_dummy()' to 'SendDummy()'.
+|   -- Renamed `sendStartGame()` to 'SendMatchStart'.
+|- PlayerDataJSON initialization in default Match constructor will now show the path searched for and await key input before closing.
+|- Tagged 'SkunkGasRemainingApproachTime' as PRIVATE.
+|- Tagged 'SkunkGasWarningDuration' as PRIVATE.
+|- Added command "/god" and alternative '/godmode' to enable/disable Godmode.
+|- Improved test_damagePlayer() to check if the Player is God Moded AND whether or not they're actually alive.
+|- Added 'TryPlayerFromName' to try and get Player objects from Match._playerList by Username.
+|- Attempted to improve upon '/kill' so it is no longer just a glorified test of the KillAnnounce message type.
+|   -- It is now a glorified test of 'test_damagePlayer()' and 'TryPlayerFromName' instead.
+|
+|- Player fields renamed as well
+|   -- Renamed "sender" to "Sender".
+|   -- Renamed "myID" to simply "ID".
+|   -- Renamed "myName" to simply "Name".
+|   -- Renamed "charID" to "AnimalID" so it is more obvious what this value is for.
+|   -- Renamed "gravestoneID" to "GravestoneID".
+|   -- Renamed "deathEffectID" to "DeathExplosionID" to better reflect what this field is for.
+|   -- Renamed "emoteIDs" to "EmoteIDs".
+|   -- Renamed "hatID" to "HatID".
+|   -- Renamed "glassesID" to "GlassesID".
+|   -- Renamed "beardID" to "BeardID".
+|   -- Renamed "clothesID" to "ClothesID".
+|   -- Renamed "meleeID" to "MeleeID".
+|   -- Renamed "gunSkinCount" to "GunSkinCount".
+|   -- Renamed "gunskinKey" to "GunSkinKeys".
+|   -- Renamed "gunskinValue" to "GunSkinValues".
+|   -- Renamed "position_X" to "PositionX".
+|   -- Renamed "position_Y" to "PositionY".
+|   -- Renamed "MyLootItems" to simply "LootItems".
+|- Added field "isGodmode".
+|
+|- Other:
+|   -- Tried moving `MersenneTwister` to SARStuff.
+|
+|--- Other Comments / Potential Tasks for next time
+|- Noticed there is a `MessageReceivedEvent` property for NetServer. Could/should maybe use this to block Match main thread for until a message is received.
+|- HandleAttackWindUp/Down could maybe use more work?
+|- HandleHamsterballBounce needs more work.
++------------------------------------------------------
+
+
+
++------------------------------------------------------
+|    -- 12/22/22 #1 --
+|
+|--- Changes of Interest
+|- RNG Seeds have been set back to hard-coded values and are no longer randomly generated.
+|   -- This is to make testing a little bit easier right now.
+|- Added "ServerHandleLobbyLootRequest()" to allow players to pickup GalleryWeapons (still needs some work!).
+|- Added "m_SafeMode" so there can be safe/nonsafe things (default = TRUE).
+|- Added "/safemode" command which toggles "m_SafeMode".
+|- Added "/gun" ""command"" to make gun testing easier. 
+|- Added "GetAllGunsList()" which returns a Weapon-object array that only has Gun-Type Weapons.
+|
+|- Renamed "GSH_PlayerLootRequest" to "ServerHandleMatchLootRequest()".
+|- Renamed ""GSH_AttackWindup()"" to "serverHandleAttackWindUp()".
+|- Improved "serverHandleAttackWindUp()".
+|    -- Try/Catch in case of error.
+|    -- NetConnection will be dropped if 1) Sends Msg74 while NOT in the PlayerList; 2) Are in a match, calls the method and they DON'T have the right WeaponID in the Slot
+|    -->> Potentially need to check if the Weapon given can actually be wound-up, but right now this all seems to be cool!
+|- Improved ``/list`` so now it works properly.
+|
+|--- Oopsies Section
+|- (last commit) Commented out uses of "serverSendShotInfo()" in sections relating to the Dartgun.
+|    -- This should fix the double-hit sound playing for those who hit people with DDG.
+|- Accidently replaced the "if" statement in the Lobby-Countdown check with a "while" loop. The correct one should be replaced now.
+|    -- This was meant to be the "if" statement in the MatchStarted loop, which wanted to be changed to a "while" like in the NotMatchStarted section
+|
+|--- Other Comments / Potential Tasks for next time
+|- In general renaming things so everything is more consistent, would be nice.
+|- Changes like Player.myID to Player.ID is likely to be taking place soon.
+|- Ammo is still not tracked, which is waiting on the LootItems rework to be done. Maybe added at the same time.
+|- Grenades and such are in a similar boat, in which they are not properly tracked because LootItems is too messy!
+|
+|- A rework to the command system as a whole would be quite nice. Not sure how to accomplish this right now.
++------------------------------------------------------
