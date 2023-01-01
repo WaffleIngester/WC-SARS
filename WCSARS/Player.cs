@@ -58,6 +58,7 @@ namespace WCSARS
         public bool isTaping = false;
         public DateTime NextHealTime; // time before start = 1.2s; time between = 0.5s (probably wrong but this is good enough)
         public DateTime NextTapeTime; // time until complete tape-up << ~3seconds total
+        public DateTime NextCampfireTime; // time at next campfire heal check
         public short LastAttackerID = -1;
         public short LastWeaponID = -1;
         public short LastShotID = -1;
@@ -79,6 +80,7 @@ namespace WCSARS
         public bool isFalling = false;
         public bool isDiving = false;
         public bool isGodmode = false;
+        public bool hasLanded = false;
 
         // Create
         public Player(short id, short characterID, short umbrellaID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, NetConnection senderAddress)

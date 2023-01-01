@@ -7,7 +7,7 @@ using Lidgren.Network;
 using SimpleJSON;
 using SARStuff;
 
-namespace WCSARS // test test test
+namespace WCSARS
 {
     class Match
     {
@@ -17,13 +17,18 @@ namespace WCSARS // test test test
         //public Player[] PlayerList { get => _playerList; } // Unused as of now (12/23/22)
         private List<short> _availableIDs;
         private Dictionary<NetConnection, string> _incomingConnections;
-        private JSONArray _playerJSONdata;
         private TimeSpan DeltaTime;
+
+        // IO PlayerData
+        private JSONArray _playerData;
+        private JSONArray _bannedPlayers;
+        private JSONArray _bannedIPs;
 
         // Item-Like Data
         private Dictionary<int, LootItem> _itemList;
         private Dictionary<int, Coconut> _coconutList;
         private Dictionary<int, Hampterball> _hamsterballList;
+        private Campfire[] _campfires;
         private List<Doodad> _doodadList;
         private Weapon[] _weaponsList = Weapon.GetAllWeaponsList();
 
@@ -53,13 +58,13 @@ namespace WCSARS // test test test
         private MoleCrate[] _moleCrates; // An array of MoleCrate objects which is the amount of active moles/crates available. The Length is that of Match._maxMoleCrates.
         // -- MoleCrate Crate Stuff --
 
-        // Healing Values 1
+        // -- Healing Values --
         private float _healPerTick = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
         private float _healRateSeconds = 0.5f; // 0.5s
         //private byte _tapePerCheck; // Add when can config file
         //private float _tapeRateSeconds; // Add when can config file? (wait... isn't taping at a set speed??)
 
-        // Dartgun-Related things
+        // -- Dartgun-Related things --
         private int _ddgMaxTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
         private int _ddgAddTicks = 4; // the amount of DDG ticks to add with each DDG shot
         private float _ddgTickRateSeconds = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
@@ -67,7 +72,7 @@ namespace WCSARS // test test test
         private List<Player> _poisonDamageQueue; // List of PlayerIDs who're taking skunk damage > for cough sound -- 12/2/22
         //public List<Player> PoisonDamageQueue { get => _poisonDamageQueue; } // Added / unused as of now (12/23/22)
         
-        // Level / RNG-Related
+        // -- Level / RNG-Related --
         private int _totalLootCounter, _lootSeed, _coconutSeed, _vehicleSeed; // Spawnable Item Generation Seeds
         //private MersenneTwister _servRNG = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
         private bool svd_LevelLoaded = false; // Likely able to remove this without any problems
@@ -112,20 +117,15 @@ namespace WCSARS // test test test
 
             _lobbyRemainingSeconds = 90.00;
 
-
-            // Initializing JSON stuff
-            string plrJsonPath = Directory.GetCurrentDirectory() + @"\playerdata.json";
-            if (File.Exists(plrJsonPath))
-            {
-                JSONNode PlayerDataJSON = JSON.Parse(File.ReadAllText(plrJsonPath));
-                _playerJSONdata = (JSONArray)PlayerDataJSON["PlayerData"];
-            }
-            else
-            {
-                Logger.Failure($"Could not locate playerdata.json using specified path.\nSearched Path: {plrJsonPath}\n(press any key to exit)");
-                Console.ReadKey();
-                Environment.Exit(2);
-            }
+            // Load JSON Arrays
+            Logger.Warn("[Match.ctor] Loading player-data.json...");
+            string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            _playerData = LoadJSONArray(baseloc + @"\player-data.json");
+            Logger.Warn("[Match.ctor] Loading banned-players.json...");
+            _bannedPlayers = LoadJSONArray(baseloc + @"\banned-players.json");
+            Logger.Warn("[Match.ctor] Loading banned-ips.json...");
+            _bannedIPs = LoadJSONArray(baseloc + @"\banned-ips.json");
+            Logger.Success("[Match.ctor] Loaded player data and banlists!");
 
             // NetServer Initialization and starting
             Thread updateThread = new Thread(ServerUpdateLoop);
@@ -203,6 +203,24 @@ namespace WCSARS // test test test
                             break;
                         case NetIncomingMessageType.ConnectionApproval: // must enable MessageType ConnectionApproval for this to work
                             Logger.Header("[Connection Approval] A new connection is awaiting approval!");
+                            // Make sure this person isn't IP-banned...
+                            bool allowConnection = true;
+                            string ip = msg.SenderEndPoint.Address.ToString();
+                            Logger.DebugServer($"IP Address: {ip}");
+                            for (int i = 0; i < _bannedIPs.Count; i++)
+                            {
+                                if (_bannedIPs[i]["ip"] == ip)
+                                {
+                                    Logger.DebugServer($"[ServerAuthentiate] [WARN] Player @ {msg.SenderEndPoint} is IP-banned. Dropping connection.");
+                                    string reason = "No reason provided.";
+                                    if (_bannedIPs[i]["reason"] != null && _bannedIPs[i]["reason"] != "") reason = _bannedIPs[i]["reason"];
+                                    msg.SenderConnection.Deny($"\nYou're banned from this server.\n\"{reason}\"");
+                                    allowConnection = false;
+                                }
+                            }
+                            if (!allowConnection) break; // probs better way than this...
+
+                            // Player likely isn't banned
                             string clientKey = msg.ReadString();
                             Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
                             if (clientKey == "flwoi51nawudkowmqqq")
@@ -345,6 +363,8 @@ namespace WCSARS // test test test
                     server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
                     #endregion Lobby_UpdatePositions
 
+                    CheckCampfiresLobby();
+
                     // Not much else to do here. Probably deal with gallery targets or whatever
                     CheckMoleCrates(); // Only here because /commands
                     svu_PlayerDataChanges(); // Only here because /commands
@@ -435,6 +455,7 @@ namespace WCSARS // test test test
                     }
 
                     CheckMoleCrates();
+                    CheckCampfiresMatch();
 
                     nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
                     if (nextTick > DateTime.UtcNow)
@@ -699,7 +720,7 @@ namespace WCSARS // test test test
         private void CheckMoleCrates()
         {
             // Make sure there are actually any current moles waiting to do anything
-            if (_moleCrates == null || _moleCrates[0] == null) return;
+            if (_moleCrates == null || _moleCrates[0] == null) return; // The OR is fine actually, because Molecrates aren't removed once finished
             // There are Moles in the game right now; let's figure out what's going on.
             MoleCrate mole;
             for (int i = 0; i < _moleCrates.Length; i++)
@@ -735,6 +756,80 @@ namespace WCSARS // test test test
                 // If the above check fails, then that must mean we have to move towards this position.
                 float deltaMove = (float)DeltaTime.TotalSeconds * 25f; // This may be too high. Not completely sure yet
                 mole.Position = Vector2.MoveToVector(mole.Position, thisEndPoint, deltaMove);
+            }
+        }
+
+        /// <summary>
+        /// (MATCH) Iterates over Match._campfires, checking the status of all entries. Updates lighting up; healing players; etc. Nulls-out a used campfire.
+        /// </summary>
+        private void CheckCampfiresMatch() // TODO -- Make sure player has actually landed from Giant Eagle...
+        {
+            for (int i = 0; i < _campfires.Length; i++) // After a Campfire is used up, it its index in the array is nulled-out.
+            {
+                if (_campfires[i] == null) continue;
+                // Get campfire; figure out if it's lit and needs countdown
+                Campfire campfire = _campfires[i];
+                if (campfire.isLit)
+                {
+                    if (campfire.UseRemainder > 0) campfire.UseRemainder -= (float)DeltaTime.TotalSeconds;
+                    else
+                    {
+                        _campfires[i] = null; // Make the entry not real so we don't have to ever check it again. Sowwy...
+                        continue; // Leave this iteration to not execute below stuff. Perhaps can refactor to not have to do this though?
+                    }
+                }
+                // Player stuff- Figure out if a Player is close enough to light it up or get healed by it.
+                for (int j = 0; j < _playerList.Length; j++)
+                {
+                    if (_playerList[j] == null) continue;
+                    Player player = _playerList[j];
+                    Vector2 playerPos = new Vector2(player.PositionX, player.PositionY);
+                    if ((player.HP < 100) && Vector2.ValidDistance(campfire.Position, playerPos, 24f, true))
+                    {
+                        if (!campfire.isLit)
+                        {
+                            Logger.DebugServer($"Saw player at campfire near {campfire.Position.x}, {campfire.Position.y}");
+                            NetOutgoingMessage camplight = server.CreateMessage();
+                            camplight.Write((byte)50); // MSG ID -- 50
+                            camplight.Write((byte)i);  // byte | CampfireID ( I == this campfire's ID)
+                            server.SendToAll(camplight, NetDeliveryMethod.ReliableUnordered);
+                            campfire.isLit = true;
+                        }
+                        else if (player.NextCampfireTime < DateTime.UtcNow)
+                        {
+                            int heal = 4; // TODO -- maybe make configurable when config is added?
+                            if ((player.HP + heal) > 100) heal = 100 - player.HP;
+                            player.HP += (byte)heal;
+                            player.NextCampfireTime = DateTime.UtcNow.AddSeconds(1f);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// (LOBBY) Iterates over Match._campfires, checking to see if Players are close enough to any Campfires in order to light them up.
+        /// </summary>
+        private void CheckCampfiresLobby()
+        {
+            for (int i = 0; i < _campfires.Length; i++) // Does NOT null campfires once used. Lobby campfires are infinite-use.
+            {
+                if (_campfires[i] != null && !_campfires[i].hasBeenUsed)
+                {
+                    for (int j = 0; j < _playerList.Length; j++)
+                    {
+                        if (_playerList[j] == null) continue;
+                        Vector2 plrSpot = new Vector2(_playerList[j].PositionX, _playerList[j].PositionY);
+                        if (Vector2.ValidDistance(_campfires[i].Position, plrSpot, 24f, true))
+                        {
+                            _campfires[i].hasBeenUsed = true;
+                            NetOutgoingMessage lobbyLight = server.CreateMessage();
+                            lobbyLight.Write((byte)89);
+                            lobbyLight.Write((byte)i);
+                            server.SendToAll(lobbyLight, NetDeliveryMethod.ReliableUnordered);
+                        }
+                    }
+                }
             }
         }
 
@@ -922,7 +1017,7 @@ namespace WCSARS // test test test
                 // Request Authentication
                 case 1:
                     Logger.Header($"[Authentication Request] {msg.SenderEndPoint} is sending an authentication request!");
-                    sendAuthenticationResponseToClient(msg);
+                    HandleAuthenticationRequest(msg);
                     break;
 
                 case 3: // still has work to be done
@@ -1210,7 +1305,7 @@ namespace WCSARS // test test test
                     break;
 
                 case 51: // Client - I'm Requesting Coconut Eaten
-                    serverSendCoconutEaten(msg);
+                    HandleCoconutRequest(msg);
                     break;
 
                 case 53: // Client - Sent Cutgras
@@ -1400,7 +1495,7 @@ namespace WCSARS // test test test
                         // Calculate distance between player and molecrate:
                         float distance = (_moleCrates[molecrateID].Position - new Vector2(player.PositionX, player.PositionY)).magnitude;
                         //Logger.DebugServer($"Distance: {distance}"); // distance seems to be ~10 in any direction; but diag ~14-15
-                        if (distance > 14.5f)
+                        if (distance <= 14.7f) // WHOOOAA-- MY GAAH- WHY-Y=YYY ARE YOU SOOO~ SILLY~ (before it was checking if distance was greater not within)
                         {
                             // If all other checks pass, then this Player opened the molecrate.
                             NetOutgoingMessage openmsg = server.CreateMessage();
@@ -1443,8 +1538,8 @@ namespace WCSARS // test test test
                 case 76: // Client - Sent Attack Winddown
                     HandleAttackWindDown(msg);
                     break;
-                case 87:
-                    try
+                case 87: // Literally no clue what this one is because its so unspeciifc. Guessing this has something to do with grenades bc "GID"
+                    try // TODO -- Redo this whole thing like oh my goodness is this so silly
                     {
                         if (TryPlayerFromConnection(msg.SenderConnection, out Player player))
                         {
@@ -1523,34 +1618,53 @@ namespace WCSARS // test test test
             }
         }
         /// <summary>
-        /// Sends an Authentication Response to a connected client.
+        /// Sends an "authentication response" to the client. If the client's PlayFabID is found in the Match's banlist, their connection is dropped.
         /// </summary>
-        private void sendAuthenticationResponseToClient(NetIncomingMessage msg) // Receive PT 1 >> Send PacketType 2 // TODO -- Authenticate
+        private void HandleAuthenticationRequest(NetIncomingMessage msg) // Receive PT 1 >> Send PacketType 2 // TODO -- Authenticate
         {
-            //TODO -- Actually try approving the connection.
+            // TODO -- Authentication more than likely can be improved upon. Right now the system in place is fine to my liking.
+            // ... It doesn't scale the best (memory-wise at least); but it gets the job done OK.
+            // We receive a message that should look something like this...
             // string  --   PlayFabID
             // bool    --   FillYayorNay
-            // string  --   Auth Ticket
+            // string  --   PFab Auth Ticket
+            // If in party:
             // byte    --   Party Count
-            // string --    PartyMember PlayFabID
+            // string  --   PartyMember PlayFabID
+            
+            // Read Data
             string _PlayFabID = msg.ReadString();
             /* bool _FillsChoice = msg.ReadBoolean();
             string _AuthenticationTicket = msg.ReadString();
             byte _PartyCount = msg.ReadByte();
             string[] _PartyIDs; */
-            //Logger.DebugServer("This user's PlayFabID: " + _PlayFabID);
+            Logger.DebugServer("This user's PlayFabID: " + _PlayFabID);
+
+            // See if this client's PlayFabID is in the banlist.
+            for (int i = 0; i < _bannedPlayers.Count; i++)
+            {
+                if (_bannedPlayers[i]["playfabid"] == _PlayFabID)
+                {
+                    Logger.Warn($"[ServerAuthentiate] [WARN] Player {_PlayFabID} @ {msg.SenderEndPoint} is banned. Dropping connection.");
+                    string reason = "No reason provided.";
+                    if (_bannedPlayers[i]["reason"] != null && _bannedPlayers[i]["reason"] != "") reason = _bannedPlayers[i]["reason"];
+                    msg.SenderConnection.Deny($"\nYou're banned from this server.\n\"{reason}\"");
+                    return;
+                }
+            }
+            // If not in the banlist, let's let them in!
             if (!_incomingConnections.ContainsKey(msg.SenderConnection))
             {
                 _incomingConnections.Add(msg.SenderConnection, _PlayFabID);
             }
             NetOutgoingMessage acceptMsg = server.CreateMessage();
             acceptMsg.Write((byte)2);
-            acceptMsg.Write(true); //todo - maaaybe actually try authenticating the player?
+            acceptMsg.Write(true);
             server.SendMessage(acceptMsg, msg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
-            Logger.Success($"Server sent {msg.SenderConnection.RemoteEndPoint} their accept message!");
+            Logger.Success($"[ServerAuthentiate] [OK] Sent {msg.SenderConnection} an ACCEPT message!");
         }
 
-        private void serverHandlePlayerConnection(NetIncomingMessage msg)
+        private void serverHandlePlayerConnection(NetIncomingMessage msg) // whole thing probs needs rewrite
         {
             //Read the player's character info and stuff
             string steamName = msg.ReadString();  // only comes from modified client
@@ -1593,36 +1707,19 @@ namespace WCSARS // test test test
                     //sendClientMatchInfo2Connect(_availableIDs[0], msg.SenderConnection);
                     _availableIDs.RemoveAt(0);
                     //find if person who connected is mod, admin, or whatever!
-                    try
+
+                    string iPlayFabID = _incomingConnections[msg.SenderConnection];
+                    Logger.DebugServer("iPlayFabId: " + iPlayFabID);
+                    int playerDataCount = _playerData.Count; // For whatever reason, it is slightly faster to cache the length of lists than to call Count
+                    for (int j = 0; j < playerDataCount; j++)
                     {
-                        string _ThisPlayFabID = _incomingConnections[msg.SenderConnection];
-                        JSONObject _PlayerJSONData;
-                        for (int p = 0; p < _playerJSONdata.Count; p++)
+                        if ((_playerData[j]["playfabid"] != null) && (_playerData[j]["playfabid"] == iPlayFabID))
                         {
-                            if (_playerJSONdata[p] != null && _playerJSONdata[p]["PlayerID"] == _ThisPlayFabID)
-                            {
-                                _PlayerJSONData = (JSONObject)_playerJSONdata[p];
-                                //Logger.Basic($"PlayerDataJSON for this Player:\n{_PlayerJSONData}");
-                                // It would seem that not only does this check for if the key exists, but also its bool value. Probably wrong though lol
-                                if (_PlayerJSONData["Admin"])
-                                {
-                                    _playerList[i].isDev = true;
-                                }
-                                if (_PlayerJSONData["Moderator"])
-                                {
-                                    _playerList[i].isMod = true;
-                                }
-                                if (_PlayerJSONData["Founder"])
-                                {
-                                    _playerList[i].isFounder = true;
-                                }
-                                break;
-                            }
+                            if (_playerData[j]["dev"]) _playerList[i].isDev = _playerData[j]["dev"];
+                            if (_playerData[j]["mod"]) _playerList[i].isMod = _playerData[j]["mod"];
+                            if (_playerData[j]["founder"]) _playerList[i].isFounder = _playerData[j]["founder"];
+                            break;
                         }
-                    }
-                    catch (Exception exceptlol)
-                    {
-                        Logger.Failure("absolute blunder doing... IDK!\n" + exceptlol);
                     }
                     break;
                 }
@@ -1644,7 +1741,7 @@ namespace WCSARS // test test test
             // Match / Lobby Info...
             msg.Write(_lobbyRemainingSeconds);  // Double  |  LobbyTimeRemaining
             msg.Write("yerhAGJ");               // String  |  MatchUUID  // TODO-- Unique IDs
-            msg.Write("solo");                  // String  |  Gamemode [solo, duos, squads]
+            msg.Write("solo");                  // String  |  Gamemode [solo, duo, squad]
             // Flight Path  // TOOD-- RANDOMIZE
             msg.Write(0f);                      // Float  | FlightPath X1
             msg.Write(0f);                      // Float  | FlightPath Y1
@@ -2105,6 +2202,15 @@ namespace WCSARS // test test test
                             }
                         }
                         break;
+                    case "/camptest":
+                        for (int i = 0; i < _campfires.Length; i++)
+                        {
+                            if (_campfires[i] == null) continue;
+                            Campfire bruh = _campfires[i];
+                            SendForcePosition(0, bruh.Position.x, bruh.Position.y);
+                            Thread.Sleep(400);
+                        }
+                        break;
                     /*case "/shutdown":
                     case "/stop":
                         server.Shutdown("The server is shutting down...");
@@ -2552,8 +2658,8 @@ namespace WCSARS // test test test
                             responseMsg = "An error occurred while parsing the command! Try again?\nUsage: /god (PlayerID, PlayerName, or NoArgs)";
                         }
                         break;
-                    case "/ghost": // msg 105
-                        //TODO : remove or make better command -- testing only
+                    case "/ghost": // msg 105 -- Command is currently testing only!
+                        // Lets you move around like ghost, but your body sticks around for some reason. Oh well...
                         NetOutgoingMessage ghostMsg = server.CreateMessage();
                         ghostMsg.Write((byte)105);
                         server.SendMessage(ghostMsg, message.SenderConnection, NetDeliveryMethod.ReliableUnordered);
@@ -2745,45 +2851,48 @@ namespace WCSARS // test test test
         }
 
         // Client[51] >> Server[52] -- Coconut Eat Request
-        private void serverSendCoconutEaten(NetIncomingMessage msg) // If we ever get to 2020+ versions with powerups; this'll need some work.
+        private void HandleCoconutRequest(NetIncomingMessage amsg) // If we ever get to 2020+ versions with powerups; this'll need some work!
         {
-            try
+            if (TryPlayerFromConnection(amsg.SenderConnection, out Player player)) // Get Player
             {
-                if (TryPlayerFromConnection(msg.SenderConnection, out Player cocop))
+                try // So if the data isn't there program doesn't crash.
                 {
-                    ushort cocoID = msg.ReadUInt16();
-
-                    if (_coconutList.ContainsKey(cocoID)) // maybe add check if Client is close enough? << nah, not a big deal right now. if requested.
+                    // Get CoconutID -- Funny note: It's actually the index in the coconut array, which changes size based on RNG seeds lol
+                    // So if you thought this was correlated with the ID of the CoconutTile in LevelData, then nuh uh
+                    ushort coconutID = amsg.ReadUInt16();
+                    // Figure out if requested coconut is actually real still
+                    if (_coconutList.ContainsKey(coconutID))
                     {
-                        byte heal = 5; // perhaps this can become a server var so users can define their own heal-rate?
-                        if ((cocop.HP + heal) > 100)
+                        Coconut thisCoco = _coconutList[coconutID];
+                        Vector2 thisPlayerPos = new Vector2(player.PositionX, player.PositionY);
+                        if (Vector2.ValidDistance(thisCoco.Position, thisPlayerPos, 10f, true))
                         {
-                            heal = (byte)(100 - cocop.HP);
+                            // Send Message
+                            NetOutgoingMessage coconutMsg = server.CreateMessage(14);
+                            coconutMsg.Write((byte)52);
+                            coconutMsg.Write(player.ID);
+                            coconutMsg.Write((short)coconutID);
+                            server.SendToAll(coconutMsg, NetDeliveryMethod.ReliableUnordered);
+                            // Figure out heal amount
+                            int healAmount = 5; // TODO -- Banan forker if future versions; Maybe make this configurable for if server-config added?
+                            if ((player.HP + healAmount) > 100) healAmount = (byte)(100 - player.HP);
+                            player.HP += (byte)healAmount;
+                            // Pop entry if match is in progress
+                            if (_hasMatchStarted) _coconutList.Remove(coconutID);
                         }
-                        cocop.HP += heal;
-                        CheckMovementConflicts(cocop);
-                        NetOutgoingMessage coco = server.CreateMessage();
-                        coco.Write((byte)52);
-                        coco.Write(cocop.ID);
-                        coco.Write(cocoID);
-                        server.SendToAll(coco, NetDeliveryMethod.ReliableUnordered);
-                        if (_hasMatchStarted)
-                        {
-                            _coconutList.Remove(cocoID);
-                        }
-                    }
-                    else
-                    {
-                        Logger.Failure($"[ServerSendCoconutEaten] Unable to locate Coconut with an ID of \"{cocoID}\".");
-                    }
-                }
-                else
+                        else Logger.Warn($"[HandleCoconutRequest] Player @ {amsg.SenderConnection} not within threshold but sent coconut eat message.");
+                    } // Right now, the Player isn't dropped if the coconut is found because maybe they just lagged and sent message twice.
+                    // If this becomes an issue, then yes- Players will get dropped for this invalid action.
+                } catch (NetException ex)
                 {
-                    Logger.Failure("[ServerSendCoconutEaten] There was an error while trying to locate a Player with this NetConnection");
+                    Logger.Failure($"[HandleCoconutRequest] Likely read past bufffer size. Meaning this is an invalid msg.\n{ex}");
+                    amsg.SenderConnection.Deny("There was an error processing your request. Message: Error while reading packet data.");
                 }
-            } catch (Exception except)
+            }
+            else
             {
-                Logger.Failure($"[ServerSendCoconutEaten] [ERROR]\n{except}");
+                Logger.Failure($"[HandleCoconutRequest] Could not locate Player @ NetConnection \"{amsg.SenderConnection}\"; Connection has been dropped.");
+                amsg.SenderConnection.Deny("There was an error processing your request. Sorry for the inconvenience.\nMessage: INVALID ACTION- NOT IN PLAYER-LIST");
             }
         }
 
@@ -3602,6 +3711,18 @@ namespace WCSARS // test test test
             //Logger.Success("[LoadSARLevel] Loaded all Doodads tagged with \"destructible\" successfully.");
             #endregion
 
+            // -- Load Campfire Spots --
+            #region campfires
+            if (LevelJSON["campfires"] == null) throw new Exception("No such key \"campfires\" in loaded LevelJSON.");
+            _campfires = new Campfire[LevelJSON["campfires"].Count];
+            for (int i = 0; i < _campfires.Length; i++)
+            {
+                _campfires[i] = new Campfire(LevelJSON["campfires"][i]["x"].AsFloat, LevelJSON["campfires"][i]["y"].AsFloat);
+            }
+            #endregion campfires
+            // -- End of Campfire spots --
+
+
             // -- Load MoleCrate SpawnSpots
             #region moleSpots
             if (LevelJSON["moleSpawns"] == null) throw new Exception("No such key \"moleSpawns\" in loaded LevelJSON.");
@@ -3816,5 +3937,16 @@ namespace WCSARS // test test test
             return id;
         }
         #endregion
+
+        /// <summary>
+        /// Attempts to load the File at the provided Path as a JSONArray.
+        /// </summary>
+        /// <param name="loc">Location of the file to load</param>
+        /// <returns>The File's read text as a JSONArray object.</returns>
+        private JSONArray LoadJSONArray(string loc) // TESTING -- Hopefully can move this elsewhere at some point.
+        {
+            string txt = File.ReadAllText(loc);
+            return (JSONArray)JSONNode.Parse(txt);
+        }
     }
 }

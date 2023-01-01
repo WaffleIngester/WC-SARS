@@ -12,7 +12,7 @@ namespace WCSARS
             Logger.Header("Super Animal Royale Version: 0.90.2\n");
 
             // Create necessary files for Match initialization.
-            //InitializeData(); // UNUSED RIGHT NOW
+            InitializeData();
 
             if (args.Length > 0)
             {
@@ -63,7 +63,7 @@ namespace WCSARS
                 Console.WriteLine(text);
             }*/
         }
-        /* This all is unused for now. At a later point they may be, but for now not so. Overall it works. config gen is pain though lol
+
         /// <summary>
         /// Attempts to create all the necessary files required for the Match to run.
         /// </summary>
@@ -75,8 +75,8 @@ namespace WCSARS
             CreateFile(location + @"\banned-players.json");
             CreateFile(location + @"\banned-ips.json");
 
-            // Create a default config file...
-            if (!File.Exists(location + @"\server-config.json"))
+            // Create a default config file... -- Currently unused as config is still not real!
+            /*if (!File.Exists(location + @"\server-config.json"))
             {
                 using (FileStream configStream = File.Create(location + @"\server-config.json"))
                 {
@@ -90,7 +90,7 @@ namespace WCSARS
                     configStream.Write(new byte[] { 0x0A, 0x7D}); // , + \n + \LF
                 }
                 Logger.DebugServer("Created config.json");
-            }
+            }*/
         }
 
         /// <summary>
@@ -108,6 +108,6 @@ namespace WCSARS
                 fileStream.Write(new byte[] { 0x5B, 0X5D });
             }
             Logger.Success("[Main] [GOOD] Created file: " + filename);
-        }*/
+        }//*/
     }
 }

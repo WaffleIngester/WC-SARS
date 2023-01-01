@@ -13,11 +13,8 @@
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
+datafiles/*
 config.json
-PlayerData.json
-WeaponData.json
-DoodadData.json
-EarlyAccessMap1.txt
 
 # Mono auto generated files
 mono_crash.*

@@ -1,4 +1,64 @@
-﻿    -- Changelog --
+﻿    -- Changelog --   
+    
++------------------------------------------------------
+|    -- 12/31/22 #2 --
+|
+|--- Main Changes of Interest
+|- Added 'Campfire.cs'; which allows for the addition of Campfires.
+|   -- Everything seems to work properly. Will have to edit this when actually handling Player landing, bc right now players can activate them while landing
+|- Added field '_campfires' to Match.
+|- Added field 'NextCampfireTime' to Player.
+|- Added field 'hasLanded' to Player.
+|   -- Awaiting implementation elsewhere. Kind of needs to be implemented everywhere though which stinks. Notably right now is for campfires though.
+|- Added methods 'CheckCampfiresLobby()' and 'CheckCampfiresMatch()' to Match.
+|- Match will now load all campfires from the level data file into '_campfires'.
+|
+|- Updated .gitignore to ignore all stuff from datafiles.
++------------------------------------------------------
+
++------------------------------------------------------
+|    -- 12/31/22 #1 --
+|
+|--- Main Changes of Interest
+|- Field 'Match._playerJSONdata' has been replaced with _playerData.
+|- Added field 'Match._bannedPlayers'.
+|- Added field 'Match._bannedIPs'.
+|   -- All of these have to do with the new and improved data json format, which was heavily based on Minecraft's. At least the general format.
+|   -- As of now... Although the files are auto generated if they don't yet exist, inputting data has to be done yourself. This shouldn't be too...
+|   ...difficult as the has been updated to show you how it is done. Otherwise, just in 'Match.cs' for references to the above fields.
+|- Added method 'Match.LoadJSONArray()' to load JSONArrays
+|   -- It's incredibly simple, and really doesn't scale the best, but it works. Should be noted that traversing the arrays seemed fast despite large sizes.
+|   -- For both banlists, a 14.8mb file with ~300k entries was loaded. At the time of both being used ~300mb of memory was used by the program.
+|   -- So indeed the scaling stinks! As long as the lists are short, everything is OK-enough for now.
+|- Added 'Vector2.ValidDistance' along with the read-only property 'magnitudeSquared'.
+|   -- 'ValidDistance' helps when wanting to find the distance between two vectors without having tons of duplicate code in 'Match.cs'.
+|   -- 'magnitudeSquare' should help elsewhere; but currently only used in 'ValidDistance()'
+|   -- NOTE: 'ValidDistance()' can return return the square-root distance if want, but 'Match.cs' only uses the squared-distance right now (it's faster).
+|- Replaced 'Coconut.x' and 'Coconut.y' with 'Coconut.Position', which is a Vector2.
+|
+|- Updated 'README.md'.
+|   -- Not quite sure what all to write, but hope it's in a more acceptable state than it was before.
+|
+|- Updated and renamed 'Match.sendAuthenticationResponseToClient()' to 'HandleAuthenticationRequest()'
+|   -- Should reflect the naming scheme better. IMPORTANT: The method now uses 'Match._bannedPlayers' to search for players with banned PlayFabIDs.
+|   -- PlayFabIDs will now also print to the console for in the event you want to add someone to the Banned-Players list.
+|- Updated `ConnectionApproval` in the Match's netloop to search for banned IPs before reading the ClientKey.
+|- Updated 'Match.serverHandlePlayerConnection()' to utilize Match's updated PlayerData field.
+|- Updated and renamed 'Match.serverSendCoconutEaten()' to 'Match.HandleCoconutRequest()'.
+|   -- Now uses the new 'Vector2.ValidDistance()' function!
+|
+|--- Oopsies Section
+|- Molecrate was checking if the Player was over the threshold, not *within*. Threshold also increased from 14.5 to 14.7 for good measure.
+|   -- Maybe caused by messing way too much with git histories, or just forgot to fix it.
+|   -- Figured if it was tested and the tests passed, then over 14.5 is a reasonable value. So the threshold has been increased from 14.5 to 14.7 for now.
+
+|--- Other Comments / Potential Tasks for next time
+|- Git history is wacky!! WHY???
+|   -- Kind of maybe messed way too hard with trying to clean up git history, and maybe accidentally overwrote the last 3 months worth of history... Sorry...
+|- Thinking of trying to do campfires soon now that Vector2 is a thing and also has a distance calculation built in.
+|   -- Although, fair warning: campfires probably won't be super accurate as the distance is just an estimate :[
+|- Would maybe try adding bananas, but that requires throwables to work- which was hoping to make overhaul LootItems first as well. So not quite sure yet!
++------------------------------------------------------
     
 +------------------------------------------------------
 |    -- 12/28/22 #1 --
