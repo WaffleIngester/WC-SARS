@@ -12,6 +12,7 @@ namespace WCSARS
     class Match
     {
         // Main Stuff...
+        private string _serverKey;
         public NetServer server;
         private Player[] _playerList;
         //public Player[] PlayerList { get => _playerList; } // Unused as of now (12/23/22)
@@ -63,6 +64,9 @@ namespace WCSARS
         private float _healRateSeconds = 0.5f; // 0.5s
         //private byte _tapePerCheck; // Add when can config file
         //private float _tapeRateSeconds; // Add when can config file? (wait... isn't taping at a set speed??)
+        private float _coconutHeal = 5f;
+        private float _campfireHealPer = 4f;
+        private float _campfireHealRateSeconds = 1f;
 
         // -- Dartgun-Related things --
         private int _ddgMaxTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
@@ -83,7 +87,7 @@ namespace WCSARS
         private bool _safeMode = true; // This is currently only used by the /gun ""command"" so you can generate guns with abnormal rarities
         private const int MS_PER_TICK = 41; // (1000ms / 24t/s == 41)
 
-        public Match(int port, string ip)
+        public Match(int port, string ip) // Original default constructor
         {
             // Initialize LootGenSeeds
             _lootSeed = 351301;
@@ -118,14 +122,14 @@ namespace WCSARS
             _lobbyRemainingSeconds = 90.00;
 
             // Load JSON Arrays
-            Logger.Warn("[Match.ctor] Loading player-data.json...");
+            Logger.Warn("[Match] Loading player-data.json...");
             string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
             _playerData = LoadJSONArray(baseloc + @"\player-data.json");
-            Logger.Warn("[Match.ctor] Loading banned-players.json...");
+            Logger.Warn("[Match] Loading banned-players.json...");
             _bannedPlayers = LoadJSONArray(baseloc + @"\banned-players.json");
-            Logger.Warn("[Match.ctor] Loading banned-ips.json...");
+            Logger.Warn("[Match] Loading banned-ips.json...");
             _bannedIPs = LoadJSONArray(baseloc + @"\banned-ips.json");
-            Logger.Success("[Match.ctor] Loaded player data and banlists!");
+            Logger.Success("[Match] Loaded player data and banlists!");
 
             // NetServer Initialization and starting
             Thread updateThread = new Thread(ServerUpdateLoop);
@@ -143,6 +147,83 @@ namespace WCSARS
             //Logger.DebugServer("[MATCH.ctor] I have reached the end of my create routine.");
         }
 
+        public Match(ConfigLoader cfg) // Match but it uses ConfigLoader (EW!)
+        {
+            Logger.Header("[Match] ConfigLoader Match creator used!");
+            // Initialize PlayerStuff
+            _serverKey = cfg.ServerKey;
+            _playerList = new Player[cfg.MaxPlayers];
+            _availableIDs = new List<short>(_playerList.Length);
+            _incomingConnections = new Dictionary<NetConnection, string>(4);
+            _poisonDamageQueue = new List<Player>(32);
+            for (short i = 0; i < _playerList.Length; i++) _availableIDs.Add(i);
+
+            // Load json files
+            Logger.Basic("[Match] Loading player-data.json...");
+            string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            _playerData = LoadJSONArray(baseloc + @"\player-data.json");
+            Logger.Basic("[Match] Loading banned-players.json...");
+            _bannedPlayers = LoadJSONArray(baseloc + @"\banned-players.json");
+            Logger.Basic("[Match] Loading banned-ips.json...");
+            _bannedIPs = LoadJSONArray(baseloc + @"\banned-ips.json");
+            Logger.Success("[Match] Loaded player data and banlists!");
+
+            // Set healing values
+            _healPerTick = cfg.HealthPerTick;
+            _healRateSeconds = cfg.DrinkTickRate;
+            _coconutHeal = cfg.CoconutHealAmount;
+            _campfireHealPer = cfg.CampfireHealPerTick;
+            _campfireHealRateSeconds = cfg.CampfireRateSeconds;
+
+            // Set Dartgun stuff -- TBH could just use the stats found in the Dartgun...
+            _ddgMaxTicks = cfg.MaxDartTicks;
+            _ddgTickRateSeconds = cfg.DartTickRate;
+            _ddgDamagePerTick = cfg.DartPoisonDamage;
+
+            // TODO -- Coconut; Campfire; SkunkGas-DamageRate-Seconds; ServerKey
+
+            // Others
+            _safeMode = cfg.Safemode;
+            isSorting = false;
+            isSorted = true;
+            _maxMoleCrates = cfg.MaxMoleCrates;
+            _moleCrates = new MoleCrate[_maxMoleCrates];
+            _lobbyRemainingSeconds = cfg.MaxLobbyTime;
+
+            // Initialize LootGenSeeds / call LoadSARLevel()
+            if (cfg.useConfigSeeds)
+            {
+                _lootSeed = cfg.LootSeed;
+                _coconutSeed = cfg.CocoSeed;
+                _vehicleSeed = cfg.HampterSeed;
+            }
+            else
+            {
+                MersenneTwister twistItUp = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
+                _lootSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue);
+                _coconutSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue);
+                _vehicleSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue); 
+            }
+            Logger.Warn($"[Match] Using Seeds: LootSeed: {_lootSeed}; CoconutSeed: {_coconutSeed}; HampterSeed: {_vehicleSeed}");
+            LoadSARLevel();
+
+            // Initialize NetServer
+            Logger.Basic($"[Match] Attempting to start server on \"{cfg.IP}:{cfg.Port}\".");
+            Thread updateThread = new Thread(ServerUpdateLoop);
+            Thread netThread = new Thread(ServerNetLoop);
+            NetPeerConfiguration config = new NetPeerConfiguration("BR2D");
+            config.EnableMessageType(NetIncomingMessageType.ConnectionLatencyUpdated);  // Reminder to not remove this
+            config.EnableMessageType(NetIncomingMessageType.ConnectionApproval);        // Reminder to not remove this
+            config.PingInterval = 22f;
+            config.LocalAddress = System.Net.IPAddress.Parse(cfg.IP);
+            config.Port = cfg.Port;
+            server = new NetServer(config);
+            server.Start();
+            netThread.Start();
+            updateThread.Start();
+            Logger.Header("[Match] Match created without encountering any errors.");
+        }
+
         /// <summary>
         /// Handles all NetIncomingMessages sent to this Match's server. Continuously runs until this Match.server is no longer running.
         /// </summary>
@@ -151,7 +232,7 @@ namespace WCSARS
             // Make sure no invalid....
             if (server == null) throw new Exception("Attempted to start ServerNetLoop when Match.server was null!");
             if (server.Status != NetPeerStatus.Running) throw new Exception("Attempted ServerNetLoop() while Match.server was not running.");
-            Logger.DebugServer("[NetworkLoopThread] [DEBUG] NetworkLoop has started");
+            Logger.Basic("[Match.ServerNetLoop] Network thread started!");
 
             // Loop to handle any recieved message from the NetServer... Stops when the server is no longer in the running state.
             NetIncomingMessage msg;
@@ -223,7 +304,7 @@ namespace WCSARS
                             // Player likely isn't banned
                             string clientKey = msg.ReadString();
                             Logger.Basic($"[Connection Approval] Incoming connection {msg.SenderEndPoint} sent key: {clientKey}");
-                            if (clientKey == "flwoi51nawudkowmqqq")
+                            if (clientKey == _serverKey) // Update to use ServerKey 1/2/23; ServerKey found in ConfigLoader
                             {
                                 if (_isMatchFull)
                                 {
@@ -300,11 +381,9 @@ namespace WCSARS
             // - You can change a Player's health, tapes, drink amount; and proably armor as well in lobby.
 
             // TODO - cleanese.
-            Logger.Success("Server update thread started.");
-            if (!_canCheckWins)
-            {
-                Logger.Warn("\n[ServerUpdateThread] [WARNING] Match will NOT check for wins. To re-enable this please type \"/togglewin\" while in-game.");
-            }
+            Logger.Basic("[Match.ServerUpdateLoop] Update thread started!");
+            if (!_safeMode) Logger.Warn("[Match] Warning! Safemode is set to FALSE! Crazy stuff might happen!!");
+            if (!_canCheckWins) Logger.Warn("[Match] Warning! Match will NOT check for wins! Use \"/togglewin\" in-game to re-enable");
             DateTime nextTick = DateTime.UtcNow;
 
             DateTime lastDateTime = DateTime.UtcNow; // Used for DeltaTime calculation
@@ -797,10 +876,10 @@ namespace WCSARS
                         }
                         else if (player.NextCampfireTime < DateTime.UtcNow)
                         {
-                            int heal = 4; // TODO -- maybe make configurable when config is added?
-                            if ((player.HP + heal) > 100) heal = 100 - player.HP;
-                            player.HP += (byte)heal;
-                            player.NextCampfireTime = DateTime.UtcNow.AddSeconds(1f);
+                            float healHP = _campfireHealPer; // Default = 4hp every 1 second
+                            if ((player.HP + healHP) > 100) healHP = 100 - player.HP;
+                            player.HP += (byte)healHP;
+                            player.NextCampfireTime = DateTime.UtcNow.AddSeconds(_campfireHealRateSeconds); // Default = 1 second / 1f
                         }
                     }
                 }
@@ -1048,7 +1127,7 @@ namespace WCSARS
                     {
                         if (TryPlayerFromConnection(msg.SenderConnection, out Player player))
                         {
-                            if (!player.isAlive) Logger.Warn("yes this is fired");
+                            if (!player.isAlive) return;
                             float mouseAngle = msg.ReadInt16() / 57.295776f;
                             float rX = msg.ReadFloat();
                             float rY = msg.ReadFloat();
@@ -1147,7 +1226,7 @@ namespace WCSARS
                     server.SendToAll(doneReloading, NetDeliveryMethod.ReliableOrdered); //yes it's that simple
                     break;
                 //figure it out.
-                case 36: // Client Send Start Throwing<< TODO -- cleanup
+                case 36: // Client Send Start Throwing<< TODO -- cleanup -- make real
                     try
                     {
                         if (TryPlayerFromConnection(msg.SenderConnection, out Player player))
@@ -1173,7 +1252,7 @@ namespace WCSARS
                         Logger.Failure($"[Client.Throwable Initiate Request] ERROR\n{except}");
                     }
                     break;
-                case 38: // Client Send Grenade Throwing << TODO -- cleanup
+                case 38: // Client Send Grenade Throwing << TODO -- cleanup -- make real
                     try // little warning: grenades dupe because grenade count and stuff never really dealt with lol
                     {
                         if (TryPlayerFromConnection(msg.SenderConnection, out Player player))
@@ -1709,7 +1788,7 @@ namespace WCSARS
                     //find if person who connected is mod, admin, or whatever!
 
                     string iPlayFabID = _incomingConnections[msg.SenderConnection];
-                    Logger.DebugServer("iPlayFabId: " + iPlayFabID);
+                    Logger.DebugServer("Incoming PlayFabID: " + iPlayFabID);
                     int playerDataCount = _playerData.Count; // For whatever reason, it is slightly faster to cache the length of lists than to call Count
                     for (int j = 0; j < playerDataCount; j++)
                     {
@@ -1737,7 +1816,7 @@ namespace WCSARS
             // Send RNG Seeds
             msg.Write(_lootSeed);               // Int  |  LootGenSeed
             msg.Write(_coconutSeed);            // Int  |  CocoGenSeed
-            msg.Write(_vehicleSeed);            // Int  | VehicleGenSeed
+            msg.Write(_vehicleSeed);            // Int  |  VehicleGenSeed
             // Match / Lobby Info...
             msg.Write(_lobbyRemainingSeconds);  // Double  |  LobbyTimeRemaining
             msg.Write("yerhAGJ");               // String  |  MatchUUID  // TODO-- Unique IDs
@@ -1817,6 +1896,7 @@ namespace WCSARS
             Logger.Success("Going to be sending new player all other player positions.");
             server.SendToAll(sendPlayerPosition, NetDeliveryMethod.ReliableSequenced);
         }
+
         /// <summary>
         /// Sends a NetMessage to all NetPeers which forces the Player with the specified PlayerID to the provided X-Y coordinates and sets ParachuteMode.
         /// </summary>
@@ -1833,7 +1913,7 @@ namespace WCSARS
         /// <summary>
         /// Sends a NetMessage to all NetPeers which forces the Player with the specified PlayerID to the provided X-Y coordinates.
         /// </summary>
-        private void SendForcePosition(short id, float x, float y)
+        private void SendForcePosition(short id, float x, float y) // TODO -- Set Player X/Y here too!!
         {
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)8);     // Byte  | MessageID
@@ -2107,7 +2187,7 @@ namespace WCSARS
                 string responseMsg = "command executed... no info given...";
                 short id, id2, amount;
                 float cPosX, cPosY;
-                if (TryPlayerFromConnection(message.SenderConnection, out Player LOL))
+                if (TryPlayerFromConnection(message.SenderConnection, out Player LOL)) // Could've used this the whole time oml...
                 {
                     Logger.Warn($"Player {LOL.ID} ({LOL.Name}) sent command \"{command[0]}\"");
                 }
@@ -2874,10 +2954,10 @@ namespace WCSARS
                             coconutMsg.Write((short)coconutID);
                             server.SendToAll(coconutMsg, NetDeliveryMethod.ReliableUnordered);
                             // Figure out heal amount
-                            int healAmount = 5; // TODO -- Banan forker if future versions; Maybe make this configurable for if server-config added?
-                            if ((player.HP + healAmount) > 100) healAmount = (byte)(100 - player.HP);
+                            float healAmount = _coconutHeal; // Future TODO -- 2020: Banana Forker and stuff
+                            if ((player.HP + healAmount) > 100) healAmount = 100 - player.HP;
                             player.HP += (byte)healAmount;
-                            // Pop entry if match is in progress
+                            // Remove entry if match is in progress
                             if (_hasMatchStarted) _coconutList.Remove(coconutID);
                         }
                         else Logger.Warn($"[HandleCoconutRequest] Player @ {amsg.SenderConnection} not within threshold but sent coconut eat message.");
@@ -3459,7 +3539,7 @@ namespace WCSARS
         /// </summary>
         private void LoadSARLevel() // This will become quite the mess.
         {
-            Logger.Header("[LoadSARLevel] Attempting to Load SAR LevelData!");
+            Logger.Header("[LoadSARLevel] Attempting to load SAR level data...");
             // Make sure this isn't called twice. Results in everything getting re-initialized. Which isn't awesome possum...
             if (svd_LevelLoaded) throw new Exception("LoadSARLevel has already been called. You cannot call this method multiple times.");
             //JSONNode
@@ -3731,7 +3811,7 @@ namespace WCSARS
             {
                 _moleSpawnSpots[i] = new Vector2(LevelJSON["moleSpawns"][i]["x"].AsFloat, LevelJSON["moleSpawns"][i]["y"].AsFloat);
             }
-            Logger.DebugServer($"[LoadSARLevel] [OK] -- Loaded moleSpawns without error. Count: {_moleSpawnSpots.Length}");
+            //Logger.DebugServer($"[LoadSARLevel] [OK] -- Loaded moleSpawns without error. Count: {_moleSpawnSpots.Length}");
 
             #endregion moleSpots
             // -- End of MoleCrate SpawnSpots

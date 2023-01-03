@@ -1,4 +1,17 @@
-﻿    -- Changelog --   
+﻿    -- Changelog --  
+    
++------------------------------------------------------
+|    -- 1/1/23 #1 --
+|
+|--- Main Changes of Interest
+|- Added 'ConfigLoader.cs' to load config files!
+|   -- Bit over complicated. Would like to improve loading keys, but not quite sure of the best way how
+|- Added a 'Match' constructor which takes a only 'ConfigLoader' parameter
+|   -- Hopefully makes making silly edits to healing and stuff a lot easier; so can enjoy doing random custom stuff
+|- Added field 'Match._serverkey' so the ConnectionApproval key isn't hard-coded anymore.
+|- Added more configurable fields '_campfireHealPer', '_campfireHealRateSeconds' and '_coconutHeal'.
+|   -- Hoping all instances of the hard-coded values were edited to now use the fields, but sure some were missed.
++------------------------------------------------------
     
 +------------------------------------------------------
 |    -- 12/31/22 #2 --

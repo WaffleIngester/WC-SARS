@@ -14,7 +14,7 @@
 *.userprefs
 
 datafiles/*
-config.json
+server-config.txt
 
 # Mono auto generated files
 mono_crash.*

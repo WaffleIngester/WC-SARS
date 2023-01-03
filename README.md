@@ -1,31 +1,91 @@
-## WC-SARS
----
+# WC-SARS
 
 WC-SARS is a program which acts as a gameserver for the video game [Super Animal Royale](https://animalroyale.com "Super Animal Royale website"). If you haven't played it before, then you should give it a try.
 
-A lot of features are missing and may or may not be implemented in the future. If you try and make sense of anything going on you will surely cry-- but that's OK because if you head empty everything is OK!
+Many features are mising and may or may not be added in the future.
 
-
----
 # Required Files
-There are a few important files required for the program to run. Some are found in the same location as the `WC-SARS.exe` executable, while others are found in a subfolder of this location known as `datafiles`. If the `datafiles` folder does not exist, you can simply create it in the correct location and place the required files within.
+There are a few important files required for the program to run. Some are found in the same location as the `WC-SARS.exe` executable, while others are found in a subfolder of this location known as `datafiles`. If this folder doesn't exist, you can simply create in in the correct location and place the files within.
 
-## Config
-> NOTE: `config.json` must be placed in the same folder as `WC-SARS.exe`.
+## Server Config
+*NOTE: `server-config.txt` must be placed in the same folder as `WC-SARS.exe`.*
+(this file is auto-generated if it's not found)
 
-> Presently, there is not a whole lot to the config file. For now, the only thing(s) available are `ServerIP` and `ServerPort`.
-* `ServerIP` the IP address which the program will attempt to bind to.
-* `ServerPort` the port which the program will attempt to bind to.
+Properties that the Match's the program makes, will use. Some are required, such as `server-ip`, while others like `drink-rate` are for you to mess around if you wish.
+
+Config generation is currently a bit wonky. If a key is not found then the default values is used. However the key won't get written back to the file again, so be cautious.
+
+* `server-ip` `string`
+    - IP Address the program will try to bind to.
+    - Defauts to `127.0.0.1` / `localhost`.
+* `server-port` `int`
+    - Port the program will try to bind to.
+    - Defaults to `42896`.
+* `server-key` `string`
+    - Key server uses to verify if clients can connect or not.
+* `use-config-seeds` `bool`
+    - Whether to use the seeds set in the config or randomly generate them on startup.
+    - Defaults to `False`. (**Note:** All seeds default to `0`)
+* `seed-loot` `int`
+    - The seed to use for generating LootItems.
+* `seed-coconuts` `int`
+    - The seed to use for generating Coconuts.
+* `seed-hamsterballs` `int`
+    - The seed to use for generating Hamsterballs.
+* `max-players` `int`
+    - Maximum amount of Players that can join the Match.
+    - Default is `64`.
+* `lobby-time` `float`
+    - The amount of time to spend in lobby (in seconds).
+    - Defualts to `120 seconds`.
+* `molecrates-max` `short`
+    - Maximum amount of Molecrates that can spawn in the match.
+    - Default is `12`.
+* `dart-ticks-max` `int`
+    - Maximum number of dart-ticks a Player can have.
+    - Default is `12`.
+* `dart-tickrate` `float`
+    - Rate (in seconds) at which a Player can take dart damage.
+    - Default is `0.6 seconds`.
+* `dart-poisondmg` `int`
+    - The amount of Poison Damage to do on a dart-tick damage attempt
+    - Default is `9`, but this should be phased out by storing this in the weapon data.
+* `skunkgas-rate` `float`
+    - Rate (in seconds) at which a Player will take skunk gas damage.
+    - Default is `0.6 seconds`, but is currently unused.
+* `heal-per-tick` `float`
+    - The amount of HP to heal a Player while they're drinking.
+    - Default is `4.75 HP`.
+* `drink-rate` `float`
+    - Rate (in seconds) at which a Player can heal at.
+    - Default is `0.5 seconds`.
+* `campfire-heal` `float`
+    - The amount of HP that a Campfire will give during a Campfire heal attempt
+    - Default is `4 HP`.
+* `campfire-heal-rate` `float`
+    - Rate (in seconds) at which a Player can be healed by a Campfire.
+    - Default is `1 second`.
+* `coconut-heal-base` `float`
+    - The amount of HP that a Coconut will give when eaten.
+    - Default is `5 HP`.
+* `safemode` `bool`
+    - Whether the Match should run in "Safemode" or not.
+    - Defaults to `True`, although has no real impact right now.
+* `debugmode` `bool`
+    - Whether or not to run in "Debug Mode"
+    - Defaults to `False`. (does nothing right now)
+
 
 ## Player Data
-> NOTE: `player-data.json` must be placed in the same folder as `WC-SARS.exe`.
-This file is auto-generated if not found.
+*NOTE: `player-data.json` must be placed in the same folder as `WC-SARS.exe`.*
+(this file is auto-generated if it's not found)
 
-> This file was indented to hold the data of all players who may connect to the server. Currently, however, it is just a list of players and tags to give them colors built into the game.
+Currently this file just stores a bunch of player PlayFabIDs and whether to set their name to certain colors built into the game itself.
+
 * `String` `playfabid`
     - This player's PlayFabID.
 * `String` `name`
-    - (UNUSED) This player's name. (may use for resolving names)
+    - **(UNUSED)** This player's name. (may use for resolving names)
 * `Bool` `dev`
     - Makes this user's name dev-name colored (overwrites all other name-colors).
 * `Bool` `mod`
@@ -53,14 +113,14 @@ This file is auto-generated if not found.
 ```
 
 ## Banned Players
-> NOTE: `banned-players.json` must be placed in the same folder as `WC-SARS.exe`.
-This file is auto-generated if not found.
+*NOTE: `banned-players.json` must be placed in the same folder as `WC-SARS.exe`.*
+(this file is auto-generated if it's not found)
 
-> This file holds a list of all banned PlayFabIDs for the server to load.
+A list of banned PlayFabIDs that will have their connections refused.
 * `String` `playfabid`
     - Banned player's PlayFabID.
 * `String` `name`
-    - (UNUSED) This banned player's name.
+    - **(UNUSED)** This banned player's name.
 * `String` `reason`
     - The reason this player was banned. If blank, a default message will be provided.
 
@@ -80,16 +140,16 @@ This file is auto-generated if not found.
 ]
 ```
 ## Banned IPs
-> NOTE: `banned-ips.json` must be placed in the same folder as `WC-SARS.exe`.
-This file is auto-generated if not found.
+*NOTE: `banned-ips.json` must be placed in the same folder as `WC-SARS.exe`.*
+(this file is auto-generated if it's not found)
 
-> This file holds a list of all banned PlayFabIDs for the server to load.
+A list of banned IPs who will have their connections refused.
 * `String` `ip`
     - Banned IP address.
 * `String` `playfabid`
-    - (UNUSED) PlayFabID attached to this banned IP.
+    - **(UNUSED)** PlayFabID attached to this banned IP.
 * `String` `name`
-    - (UNUSED) Name attached to this banned IP.
+    - **(UNUSED)** Name attached to this banned IP.
 * `String` `reason`
     - The reason this IP was banned. If blank, a default message will be provided.
 
@@ -112,27 +172,25 @@ This file is auto-generated if not found.
 ```
 
 ## WeaponData
-> NOTE: `weapondata.json` must be placed in the `datafiles` folder.
+*NOTE: `weapondata.json` must be placed in the `datafiles` folder.*
 
-> This is a file which contins all necessary information to define ``WeaponTypes`` for the program. A version with **only** the necessary data is included.
+This file contins all necessary information to define ``WeaponTypes`` for the program. A version with **only** the necessary data is included.
 
 ## DoodadData
-> NOTE: `doodaddata.json` must be placed in the `datafiles` folder.
+*NOTE: `doodaddata.json` must be placed in the `datafiles` folder.*
 
-> This is a file which contins all necessary information to define ``DoodadTypes`` for the program. A version with **only** the necessary data is included.
+This is a file which contins all necessary information to define ``DoodadTypes`` for the program. A version with **only** the necessary data is included.
 
 ## MapData
-> NOTE: `earlyaccessmap1.txt` must be placed in the `datafiles` folder.
+*NOTE: `earlyaccessmap1.txt` must be placed in the `datafiles` folder.*
 
-> This file contains ALL of the information about the overworld / current level. This file is included with releases.
+This file contains ALL of the information about the overworld / current level. This file is included with releases.
 
----
 # Extra Credits
-> Wish to say "thank you" to these individuals for creating the libraries this program uses:
+Wish to say "thank you" to these individuals for creating the libraries this program uses:
 
 * Markus Göbel (Bunny83) -- [SimpleJSON](https://github.com/Bunny83/SimpleJSON)
 * Michael Lidgren -- [LidgrenNetwork](https://github.com/lidgren/lidgren-network-gen3)
 
----
 # Final Notes
 While the "Master" branch is mostly stable, bugs still creep in. If you want the latest changes please compile "test1" instead. As this branch will likely have fixes already for new features; along with the new features being added.
