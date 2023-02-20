@@ -94,5 +94,10 @@
         {
             return new Vector2(a.x * num, a.y * num);
         }
+
+        /// <summary>
+        /// Converts a Vector2 into a string representation. (x, y)
+        /// </summary>
+        public override string ToString() => $"({x}, {y})";
     }
 }

@@ -5,27 +5,38 @@ WC-SARS is a program which acts as a gameserver for the video game [Super Animal
 Many features are mising and may or may not be added in the future.
 
 # Required Files
-There are a few important files required for the program to run. Some are found in the same location as the `WC-SARS.exe` executable, while others are found in a subfolder of this location known as `datafiles`. If this folder doesn't exist, you can simply create in in the correct location and place the files within.
+There are a few files required for the program to run properly. Some of these can be found in the same location as the `WC-SARS` executable; however, others are found in a subfolder of this location: `datafiles`. If the `datafiles` directory does not exist, you can simply create it yourself in the correct spot, and place the missing files you need within that newly created folder (assuming you even have the files in the first place!).
+
+For simplicity sake, the require files section is collapsed. If you wish to read more then click the text below to expand.
+
+<details>
+<summary>Click to expand</summary>
 
 ## Server Config
-*NOTE: `server-config.txt` must be placed in the same folder as `WC-SARS.exe`.*
-(this file is auto-generated if it's not found)
+**Must be placed in the same folder as `WC-SARS.exe`.**
+(will be auto-generated if not found)
 
-Properties that the Match's the program makes, will use. Some are required, such as `server-ip`, while others like `drink-rate` are for you to mess around if you wish.
+Properties for the program to use for Matches. `server-ip`, `server-port`, and `server-key` are required. All others are optional.
 
-Config generation is currently a bit wonky. If a key is not found then the default values is used. However the key won't get written back to the file again, so be cautious.
+**NOTE: Config is a bit wonky. If a key is missing it **will not** be regenerated unless the config file is deleted/or another key is found to be invalid.**
+
+<details>
+<summary>List of all Properties (click to expand)</summary>
 
 * `server-ip` `string`
     - IP Address the program will try to bind to.
-    - Defauts to `127.0.0.1` / `localhost`.
+    - Defauts to `127.0.0.1`.
 * `server-port` `int`
     - Port the program will try to bind to.
     - Defaults to `42896`.
 * `server-key` `string`
-    - Key server uses to verify if clients can connect or not.
+    - Key which incoming clients must give if they are to connect.
+* `gamemode` `string`
+    - Which `Gamemode` this Match will be.
+    - Defaults to `solo`. Valid options: `solo` `duo` `squad`
 * `use-config-seeds` `bool`
-    - Whether to use the seeds set in the config or randomly generate them on startup.
-    - Defaults to `False`. (**Note:** All seeds default to `0`)
+    - Whther to use randomized seeds, or seeds defined here in the config.
+    - Defaults to `False`.
 * `seed-loot` `int`
     - The seed to use for generating LootItems.
 * `seed-coconuts` `int`
@@ -75,10 +86,11 @@ Config generation is currently a bit wonky. If a key is not found then the defau
     - Whether or not to run in "Debug Mode"
     - Defaults to `False`. (does nothing right now)
 
+</details>
 
 ## Player Data
-*NOTE: `player-data.json` must be placed in the same folder as `WC-SARS.exe`.*
-(this file is auto-generated if it's not found)
+**Must be placed in the same folder as `WC-SARS.exe`.**
+(will be auto-generated if not found)
 
 Currently this file just stores a bunch of player PlayFabIDs and whether to set their name to certain colors built into the game itself.
 
@@ -113,8 +125,8 @@ Currently this file just stores a bunch of player PlayFabIDs and whether to set 
 ```
 
 ## Banned Players
-*NOTE: `banned-players.json` must be placed in the same folder as `WC-SARS.exe`.*
-(this file is auto-generated if it's not found)
+**Must be placed in the same folder as `WC-SARS.exe`.**
+(will be auto-generated if not found)
 
 A list of banned PlayFabIDs that will have their connections refused.
 * `String` `playfabid`
@@ -140,8 +152,8 @@ A list of banned PlayFabIDs that will have their connections refused.
 ]
 ```
 ## Banned IPs
-*NOTE: `banned-ips.json` must be placed in the same folder as `WC-SARS.exe`.*
-(this file is auto-generated if it's not found)
+**Must be placed in the same folder as `WC-SARS.exe`.**
+(will be auto-generated if not found)
 
 A list of banned IPs who will have their connections refused.
 * `String` `ip`
@@ -184,7 +196,9 @@ This is a file which contins all necessary information to define ``DoodadTypes``
 ## MapData
 *NOTE: `earlyaccessmap1.txt` must be placed in the `datafiles` folder.*
 
-This file contains ALL of the information about the overworld / current level. This file is included with releases.
+This file contains ALL of the information about the overworld / current level.
+
+</details>
 
 # Extra Credits
 Wish to say "thank you" to these individuals for creating the libraries this program uses:
@@ -192,5 +206,5 @@ Wish to say "thank you" to these individuals for creating the libraries this pro
 * Markus Göbel (Bunny83) -- [SimpleJSON](https://github.com/Bunny83/SimpleJSON)
 * Michael Lidgren -- [LidgrenNetwork](https://github.com/lidgren/lidgren-network-gen3)
 
-# Final Notes
-While the "Master" branch is mostly stable, bugs still creep in. If you want the latest changes please compile "test1" instead. As this branch will likely have fixes already for new features; along with the new features being added.
+# Final Comments
+While the master branch is *supposed* to be stable, there may be some issues still. If you want the latest changes go to the "test1" branch instead. Some bugs from the latest-added features are probably-maybe fixed there. Also also! If you want to contribute that helps too!

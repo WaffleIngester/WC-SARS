@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using SimpleJSON;
+using SARStuff;
 
 namespace WCSARS
 {
@@ -21,6 +22,7 @@ namespace WCSARS
         public byte RarityMinVal;
         public byte SpawnSizeOverworld;
         public int SpawnFrequency;
+        public int MaxCarry;
 
         public Weapon(JSONNode data, short index)
         {
@@ -41,56 +43,30 @@ namespace WCSARS
                         WeaponType = WeaponType.Throwable;
                         if (data["grenadeInfo"] == null) throw new Exception($"{Name} was found to be a throwable, yet no \"grenadeInfo\" key found.");
                         if (data["grenadeInfo"]["worldSpawnAmount"] == null) throw new Exception($"{Name} contains grenadeInfo, but no key \"worldSpawnAmount\".");
+                        if (data["grenadeInfo"]["carryMax"] == null) throw new Exception($"{Name} contains grenadeInfo, but no key \"carryMax\".");
                         SpawnSizeOverworld = (byte)data["grenadeInfo"]["worldSpawnAmount"].AsInt;
-                        break;
+                        MaxCarry = data["grenadeInfo"]["carryMax"].AsInt;
+                            break;
                     default:
                         throw new Exception($"Invalid class identifier: \"{classValue}\".");
                 }
             }
-            if (data["minRarity"])
-            {
-                RarityMinVal = (byte)data["minRarity"].AsInt;
-            }
-            if (data["maxRarity"])
-            {
-                RarityMaxVal = (byte)data["maxRarity"].AsInt;
-            }
-            if (data["damageNormal"])
-            {
-                Damage = data["damageNormal"].AsInt;
-            }
-            if (data["breaksArmorAmount"])
-            {
-                ArmorDamage = (byte)data["breaksArmorAmount"].AsInt;
-            }
-            if (data["overrideBreaksVehicleAmount"]) // Someone got a little angy. We apologize for their use of foul language.
-            {
-                VehicleDamageOverride = (byte)data["overrideBreaksVehicleAmount"].AsInt;
-            }
-            if (data["damageThroughArmor"]) // In this version (v0.90.2), this only applies to Dartgun and is a Bool. At some point it was changed to be %-based.
-            {
-                PenetratesArmor = data["damageThroughArmor"].AsBool;
-            }
-            if (data["addedDamagePerRarity"])
-            {
-                DamageIncrease = data["addedDamagePerRarity"].AsInt;
-            }
-            if (data["clipSize"])
-            {
-                ClipSize = data["clipSize"].AsInt;
-            }
-            if (data["spawnRatioRelativeToOthers"])
-            {
-                SpawnFrequency = data["spawnRatioRelativeToOthers"].AsInt;
-            }
-            if (data["ammoID"])
-            {
-                AmmoType = (byte)data["ammoID"].AsInt;
-            }
-            if (data["ammoSpawnAmount"])
-            {
-                AmmoSpawnAmount = (byte)data["ammoSpawnAmount"].AsInt;
-            }
+            if (data["minRarity"]) RarityMinVal = (byte)data["minRarity"].AsInt;
+            if (data["maxRarity"]) RarityMaxVal = (byte)data["maxRarity"].AsInt;
+
+            if (data["damageNormal"]) Damage = data["damageNormal"].AsInt;
+            if (data["addedDamagePerRarity"]) DamageIncrease = data["addedDamagePerRarity"].AsInt;
+
+            if (data["breaksArmorAmount"]) ArmorDamage = (byte)data["breaksArmorAmount"].AsInt;
+            if (data["overrideBreaksVehicleAmount"]) VehicleDamageOverride = (byte)data["overrideBreaksVehicleAmount"].AsInt;
+            // In v0.90.2, this only applies to Dartgun. Also it is a bool. At some point later, this was changed to a %. Neat!
+            if (data["damageThroughArmor"]) PenetratesArmor = data["damageThroughArmor"].AsBool;
+
+            if (data["clipSize"]) ClipSize = data["clipSize"].AsInt;
+            if (data["ammoID"]) AmmoType = (byte)data["ammoID"].AsInt;
+            if (data["ammoSpawnAmount"]) AmmoSpawnAmount = (byte)data["ammoSpawnAmount"].AsInt;
+
+            if (data["spawnRatioRelativeToOthers"]) SpawnFrequency = data["spawnRatioRelativeToOthers"].AsInt;
         }
 
         static public Weapon[] GetAllWeaponsList() // Attempts to read weapondata.json @ ProgramLocation\datafiles-- Will crash if any exceptions are thrown

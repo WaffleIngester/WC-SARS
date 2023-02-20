@@ -1,5 +1,191 @@
 ﻿    -- Changelog --  
-    
+
++------------------------------------------------------
+	-- 2/19/23 --
+
+Match:
+	>> Overall team-based modes *should* work. Can't find people to test it out concistently; so if something's broken don't be too surprised.
+	>> Super Skunk Gas should work more as intended
+
+	++ General Updates
+		- Added field `canSSGApproach`.
+		- Added field `_gamemode`.
+		- Added method `IsServerRunning`.
+			--> Various methods use this. Notably the "sends" which rely on the NetServer running to not crash.
+		- Added method `ResetForRoundStart`.
+		- Added method `UpdateSSGWarningTime`.
+		- Added method `HandleClientDisconnect`.
+		- Added method `SendTeammateDisconnected`.
+		- Added method `UpdateDownedPlayers`.
+		- Added method `RevivePlayer`.
+		- Added method `HandlePlayerDied`.
+		- Renamed field `_playerList` to `_players`.
+		- Renamed field `_weaponsList` to `_weapons`.
+		- Renamed method `SendShotConfirmed` to `SendConfirmAttack`.
+		- Renamed method `svu_SkunkGasRadius` to `UpdateSafezoneRadius`.
+		- Removed field `_nextGasWarnTimerCheck`.
+		- Updated method `CheckSkunkGas`.
+		- Updated method `UpdateLobbyCountdown`.
+		- Updated method `UpdateSafezoneRadius`.
+		- Fixed method `TryIndexFromConnection`.
+			--> Was returning the PlayerID as opposed to their index... Should work just fine now!
+	
+	++ Message Handles
+		- Msg5 (ReadyReceive) handle method `HandleReadyReceived` updated.
+			--> Little cleanup; sets player.isReady field; uses player.Teammates to handle teammodes!
+			--> Everyone has fills on! Redo incoming connections to make this work properly.
+		- Msg11 (LobbyPositionUpdate) method renamed to `SendLobbyPlayerPositions`.
+		- Msg12 (MatchPositionUpdate) method renamed to `SendMatchPlayerPositions`.
+		- Msg14 (HandlePlayerPosUpdate) method updated to handle downed-players.
+		- Msg15 (PlayerDied) send method `SendPlayerDeath` added.
+		- Msg18 (AttackConfirm) handle method updated a little.
+		- Msg34 (GasApproach) send method added. (`SendSSGApproachEvent`)
+		- Msg43 (CurrentLobbyCountdown) send method `SendCurrentLobbyCountdown` added.
+		- Msg80 (TeammatePickupRequest) handle method `HandleTeammatePickupRequest` added.
+		- Msg83 (PlayerRevived) send method `SendTeammateRevived` added.
+		- Msg84 (PlayerDowned) send added in method `HandlePlayerDowned`.
+		- Msg85 (MapMarked) handle method `HandleMapMarked` added.
+		- Msg85 (MapMark) send method `SendMapMarked` added.
+		- Msg112 (CurrentPlayerPings) send method `SendCurrentPlayerPings` updated.
+			--> Was sending a `short` not a `ushort`. Pings aren't really calculated and relies on NetLatencyUpdated, so still a little wrong probably
+	
+	++ Commands
+		- Added commands "/down" & "/forcedown"
+		- Added commands "/res" & "/forceres"
+
+Player:
+	- Added field `isReady`.
+	- Added field `Teammates`.
+	- Added field `NextGasTime`.
+	- Added field `hasBeenInGas`.
+		--> Prevents instant gas damage attempts.
+	- Added method `SetLastDamageSource`.
+	- Renamed field `ProjectilesList` to `Projectiles`.
+	- Removed field `LastShotID`.
+	- Renamed method `IsProjectileIDSafe` to `IsValidProjectileID`.
+	- Updated method `IsPlayerReal` to utilize field `isReady` in its check.
+
+ConfigLoader:
+	- Added field `Gamemode`.
+		--> Currently-known valid gamemode names: "solo", "duo", "squad". Default is "solo"
++------------------------------------------------------
+
++------------------------------------------------------
+	-- 1/31/23 --
+
+Match:
+	>> Most message message hanldes moved to separate methods to clean up `HandleMessage()`.
+	>> Renamed a few methods to have more consistent naming scheme
+	
+	++ General Updates
+		- Added method `VerifyPlayer`.
+			--> Basically a simplification of "if (TryFindPlayer){} else: DC Player" that was everywhere.
+		- Added method `ValidWeaponIndex`.
+		- Added method `SendCancelReload`. (cannot use to force-cancel reloads; that's a limitation of the game)
+		- Updated Lobby section of ServerUpdateLoop to call method `svu_LobbyPositionUpdate`.
+			--> This method has like always existed. Not sure why it wasn't being used/got changed like that. Sorry!
+		- Updated method `LoadSARLevel`.
+			--> Will now check from the WC-SARS assembly location! (also Hamsterball / LootItem loading!)
+		- Updated method `CheckMovementConflicts`.
+		- Updated method `SendForcePosition` and removed old overrides.
+		- Updated method `SendPlayerEndTape`.
+		- Updated method `SendParachuteUpdate`.
+		- Updated method `HandleEmoteRequest`.
+			--> Additionally added method `SendPlayerEmote` which will not only send emote packets over, but handle server-side settings.
+			--> Updated method `SendPlayerEndedEmoting`; pretty much a copy of SendPlayerEmote, but specifically ends the emote.
+		- Updated method `HandleAuthenticationRequest`.
+		- Updated method `HandleIncomingPlayerRequest`.
+		- Updated method `HandleAttackRequest`.
+		- Updated method `UpdatePlayerDrinking`.
+		- Updated method `UpdatePlayerTaping`.
+		- Updated method `UpdatePlayerEmotes`.
+		- "Removed" method `advanceTimeAndEventCheck`, along with associated fields: "prevTimeA" & "matchTime".
+			--> Skunk gas and other events will be added back at another point in time.
+		- Removed method `CheckDrinkTape`.
+		- Removed methods `getPlayerID` & `GetIDFromUsername`.
+	
+	++ Message Handles
+		- Msg7 (EjectRequest) handle put in separate method: "HandleEjectRequest".
+		- Msg14 (PositionUpdate) handle put in separate method: "HandlePositionUpdate".
+			--> Wanted to force clients back to their previous server-side spot, but caused problems. Try again when Giant Eagle!
+		- Msg27 (SlotUpdate) handle put into separate method: "HandleSlotUpdate".
+		- Msg29 (ReloadRequest) handle put in separate method: "HandleReloadRequest".
+		- Msg90 (ReloadCancel) handle now uses method "SendCancelReload".
+		- Msg92 (ReloadFinished) handle put in separate method: HandleReloadFinished".
+		- Msg47 (DrinkRequest) handle put in separate method: "HandleHealingRequest".
+		- Msg55 (HamsterballEnter) handle put in separate method: "HandleHamsterballEnter".
+		- Msg57 (HamsterballExit) handle put in separate method: "HandleHamsterballExit".
+		- Msg60 (HamsterballHitPlayer) handle put in separate method: "HandleHamsterballAttack".
+		- Msg62 (HamsterballBounced) handle put in separate method: "HandleHamsterballBounce".
+		- Msg64 (HamsterballDamaged) handle put in separate method: "HandleHamsterballHit".
+		- Msg98 (TapeRequest) handle put in separte method: "HandleTapeRequest".
+		
+	++ Throwable Handles
+		>> Most throwable handles were just added to "work". Throwables still do nothing.
+		- Update message handles for MsgIDs: `36`, `38`, and `40`.
+	
+	++ Commands
+		- Added method `TryPlayerFromString` (TPFS) to get Players from strings. Uses TryPlayerFromID/Name internally.
+		- Updated /forceland to use TryPlayerFromString.
+		- Updated /divemode to not only use TPFS, but also removed BOOL arg.
+			--> Instead of doing "/divemode 5" true; you now do "/divemode 5" OR "/divemode cleetus".
+		- Updated /kill, /getpos & /pos, to use TPFS.
+		
+	++ Match Hamsterball Stuff
+		- Added method `DestroyHamsterball`.
+		- Added method `SendExitHamsterball`.
+		- Updated most other methods/handles that have to do with Hamsterballs.
+		
+	++ Match LootItem Stuff
+		- Added field `_maxAmmo`.
+			--> Ammo types should be its own separate thing, most like-- but this is fine for now.
+		- Updated method `HandleLootRequestMatch`.
+		- Updated all `MakeNew-X-LootItem` methods.
+		
+	++ Oopsies Section
+		- Msg97 (DUMMY!) handle wasn't using SendDummy method, even though it already existed for the UpdateThread.
+		- Msg27 (ActiveSlotUpdate) handle will no longer check if SentSlotID is less than 0, as it receives a BYTE (which are unsigned).
+
+Hamsterball:
+	- Relocated to "SARStuff" namespace.
+	- Renamed from "Hampterball" to "Hamsterball".
+	- Removed fields `X` & `Y`.
+	- Added field `CurrentOwner`.
+	- Added field `Position`.
+
+Player:
+	- Updated class to be explicitly Public (before there was no access modifier).
+	- Added method `IsPlayerReal`.
+	- Added method `IsGunAndSlotValid`.
+	- Added method `IsProjectileIDSafe`.
+	- Added method `ResetHamsterball`.
+	- Added field `HamsterballVelocity`.
+	- Removed fields `VehicleVeloictyX` & `VehicleVelocityY`.
+	- Added field `EmotePosition`.
+	- Removed fields `EmotePositionX` & `EmotePositionY`.
+	- Added field `hasLanded`.
+	- Added field `NextLootTime`.
+	- Added field `Ammo`.
+	- Added field `LastThrowable`
+		--> Lazy fix for false-dc'ing of Players throwing throwables. Throwables still need redo.
+
+LootItem:
+	- Relocated to "SARStuff" namespace.
+	- Updated as a whole...
+	- Removed field `Ammo`.
+		--> All LootItem types now use GiveAmount in some way.
+	- Relocated Enums `WeaponType` & `LootType` out of LootItem class.
+
+Weapon: 
+	- Added field `MaxCarry`. (only used for throwables)
+
+Vector2:
+	- Added method override for `ToString`.
+	
+Tools:
+	- Added Python script "JSON Stripper - Doodads". (FINALLY!)
++------------------------------------------------------
+
 +------------------------------------------------------
 |    -- 1/1/23 #1 --
 |

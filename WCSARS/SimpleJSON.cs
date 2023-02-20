@@ -54,20 +54,22 @@ namespace SimpleJSON
         None = 7,
         Custom = 0xFF,
     }
+
     public enum JSONTextMode
     {
         Compact,
         Indent
     }
-    public enum JSONBinaryTag // had to add this bc wasn't in the current public version available - Aiko 6/25/22
+
+    public enum JSONBinaryTag // SAR Version of JSONNodeType for loading/saving compressed LevelData. Saving is not real here.
     {
-        Array = 1, // is probably required :I
-        Class,
-        Value,
-        IntValue,
-        DoubleValue,
-        BoolValue,
-        FloatValue
+        Array = 1,   // 1
+        Class,       // 2
+        Value,       // 3
+        IntValue,    // 4
+        DoubleValue, // 5
+        BoolValue,   // 6
+        FloatValue   // 7
     }
 
     public abstract partial class JSONNode
@@ -727,7 +729,6 @@ namespace SimpleJSON
 
         public static JSONNode LoadFromFile(string filename)
         {
-            if (!File.Exists(filename)) throw new FileNotFoundException("Could not locate file!", filename);
             using (FileStream fileStream = File.OpenRead(filename))
             {
                 using (BinaryReader reader = new BinaryReader(fileStream))

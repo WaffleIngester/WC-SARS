@@ -10,6 +10,7 @@ namespace WCSARS
         public string IP = "127.0.0.1";
         public int Port = 42896;
         public string ServerKey = "flwoi51nawudkowmqqq"; // Key for v0.90.2
+        public string Gamemode = "solo"; // currently-known strings: "solo", "duo", "squad".
         public bool useConfigSeeds = false;
         public int LootSeed;
         public int CocoSeed;
@@ -26,7 +27,7 @@ namespace WCSARS
         public int MaxDartTicks = 12;
         public float DartTickRate = 0.6f;
         public int DartPoisonDamage = 9;
-        public float SuperSkunkGasTickRate = 0.6f; // UNUSED -- Super Skunk Gas damage is not real
+        public float SuperSkunkGasTickRate = 0.6f; // UNUSED -- what even is the point?
 
         // Healing
         public float HealthPerTick = 4.75f;
@@ -84,6 +85,15 @@ namespace WCSARS
                             break;
                         case "server-key":
                             ServerKey = splits[1];
+                            break;
+                        case "gamemode":
+                            if (splits[1] == "solo" || splits[1] == "duo" || splits[1] == "squad") Gamemode = splits[1];
+                            else
+                            {
+                                Logger.Warn("[ConfigLoader] Invalid gamemode: " + splits[1]);
+                                errors++;
+                                Gamemode = "solo";
+                            }
                             break;
                         case "use-config-seeds":
                             useConfigSeeds = bool.Parse(splits[1]);
@@ -171,6 +181,7 @@ namespace WCSARS
                 streamWriter.WriteLine($"server-ip={IP}");
                 streamWriter.WriteLine($"server-port={Port}");
                 streamWriter.WriteLine($"server-key={ServerKey}");
+                streamWriter.WriteLine($"gamemode={Gamemode}");
                 streamWriter.WriteLine($"use-config-seeds={useConfigSeeds}");
                 streamWriter.WriteLine($"seed-loot={LootSeed}");
                 streamWriter.WriteLine($"seed-coconuts={CocoSeed}");
