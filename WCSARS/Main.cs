@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using SimpleJSON;
+using WCSARS.Replay;
 
 namespace WCSARS
 {
@@ -14,8 +15,13 @@ namespace WCSARS
             // Create necessary files for Match initialization.
             InitializeData();
             ConfigLoader mCfg = new ConfigLoader();
-            Match mMatch;
 
+            // No ReplayMatch + RealMatch = NO replay
+            // Uncomment ReplayMatch + NO-RealMatch = Replaying `latest.wcsrp`
+            ReplayMatch rpMatch = new ReplayMatch(mCfg);
+
+            // Matches and junk
+            /*Match mMatch;
             if (args.Length > 0) // try loading using command line args. really basic, likely will just break
             {
                 mMatch = new Match(int.Parse(args[1]), args[0]); // executable.exe IP PORT -- notice how there's no "-"
@@ -23,7 +29,7 @@ namespace WCSARS
             else
             {
                 mMatch = new Match(mCfg);
-            }
+            }*/
 
             // Do whatever stuff you want here 
         }
@@ -34,6 +40,7 @@ namespace WCSARS
         static void InitializeData()
         {
             string location = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            //ReplayQueue.VerifyLatest(location);
             Logger.DebugServer("Current Running Location:\n" + location);
             CreateFile(location + @"\player-data.json");
             CreateFile(location + @"\banned-players.json");

@@ -123,6 +123,30 @@ namespace WCSARS
                 new LootItem(LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0))
             };
         }
+        /// <summary> Creates a Player without a sender</summary>
+        public Player(string name, short id, short charID, short umbrellaID, short graveID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues)
+        {
+            Name = name;
+            ID = id;
+            AnimalID = charID;
+            UmbrellaID = umbrellaID;
+            GravestoneID = graveID;
+            DeathExplosionID = deathExplosionID;
+            EmoteIDs = emotes;
+            HatID = hatID;
+            GlassesID = glassesID;
+            BeardID = beardID;
+            ClothesID = clothingID;
+            MeleeID = meleeID;
+            GunSkinCount = skinCount;
+            GunSkinKeys = skinKeys;
+            GunSkinValues = skinValues;
+            LootItems = new LootItem[] {
+                new LootItem(LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0)),
+                new LootItem(LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0)),
+                new LootItem(LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0))
+            };
+        }
 
         /// <summary>
         /// Finds out if this Player is alive and has landed from the Giant Eagle.

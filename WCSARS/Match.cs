@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using WCSARS.Replay;
 
 namespace WCSARS
 {
@@ -20,6 +21,8 @@ namespace WCSARS
         private TimeSpan DeltaTime;
         //private string _uuid;
         private string _gamemode = "solo";
+
+        private ReplayQueue _rq = new ReplayQueue(256);
 
         // IO PlayerData
         private JSONArray _playerData;
@@ -474,7 +477,7 @@ namespace WCSARS
         private void UpdatePlayerDataChanges() // Sends Msg45 | Intended to ONLY be sent when necessary; but we spam lol
         {
             if (!IsServerRunning()) return;
-            NetOutgoingMessage msg = server.CreateMessage();
+            ReplayMessage msg = new ReplayMessage();
             msg.Write((byte)45);
             msg.Write((byte)GetValidPlayerCount());
             for (int i = 0; i < _players.Length; i++)
@@ -490,7 +493,11 @@ namespace WCSARS
                     msg.Write(_players[i].Tapies);
                 }
             }
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+            if (_hasMatchStarted) _rq.Push(msg);
+            // Send Message Out
+            NetOutgoingMessage pmsg = server.CreateMessage(msg.Data.Length);
+            pmsg.Write(msg.Data);
+            server.SendToAll(pmsg, NetDeliveryMethod.ReliableSequenced);
         }
 
         private void UpdatePlayerDrinking() // Appears OK
@@ -677,6 +684,58 @@ namespace WCSARS
                 _players[i].AttackCount = -1;
                 _players[i].Projectiles = new Dictionary<short, Projectile>();
             }
+
+            // TEST -- TODO: FINISH
+            _rq.Push(new ReplayMessage(_lootSeed, _coconutSeed, _vehicleSeed, _players)); // old, simpler way of doing things
+            /*NetOutgoingMessage tmp = server.CreateMessage();
+            tmp.Write(_lootSeed);
+            tmp.Write(_coconutSeed);
+            tmp.Write(_vehicleSeed);
+            #region playerWrite
+            int count = 0;
+            for (int i = 0; i < _players.Length; i++) if (_players[i] != null) count++;
+            tmp.Write(count);
+            Logger.DebugServer($"_players[i].: {count}");
+            Logger.Warn($"MsgLength Before: {tmp.Data.Length}");
+            for (int i = 0; i < _players.Length; i++)
+            {
+                if (_players[i] == null) continue;
+                // Player is Real
+                tmp.Write(_players[i].Name);
+                Logger.DebugServer($"Name: {_players[i].Name}");
+                tmp.Write(_players[i].ID);
+                Logger.DebugServer($"ID: {_players[i].ID}");
+                tmp.Write(_players[i].AnimalID);
+                Logger.DebugServer($"A: {_players[i].AnimalID}");
+                tmp.Write(_players[i].UmbrellaID);
+                Logger.DebugServer($"U: {_players[i].UmbrellaID}");
+                tmp.Write(_players[i].GravestoneID);
+                Logger.DebugServer($"G: {_players[i].GravestoneID}");
+                tmp.Write(_players[i].DeathExplosionID);
+                Logger.DebugServer($"DE: {_players[i].DeathExplosionID}");
+                for (int j = 0; j < 6; j++) tmp.Write(_players[i].EmoteIDs[j]);
+                tmp.Write(_players[i].HatID);
+                Logger.DebugServer($"H: {_players[i].HatID}");
+                tmp.Write(_players[i].GlassesID);
+                Logger.DebugServer($"G.: {_players[i].GlassesID}");
+                tmp.Write(_players[i].BeardID);
+                Logger.DebugServer($"B.: {_players[i].BeardID}");
+                tmp.Write(_players[i].ClothesID);
+                Logger.DebugServer($"C.: {_players[i].ClothesID}");
+                tmp.Write(_players[i].MeleeID);
+                Logger.DebugServer($"M: {_players[i].ClothesID}");
+                tmp.Write(_players[i].GunSkinCount);
+                Logger.DebugServer($"GSC: {_players[i].GunSkinCount}");
+                for (int k = 0; k < _players[i].GunSkinCount; k++)
+                {
+                    tmp.Write(_players[i].GunSkinKeys[k]);
+                    tmp.Write(_players[i].GunSkinValues[k]);
+                }
+            }
+            Logger.Warn($"MsgLength After: {tmp.Data.Length}");
+            #endregion playerWrite
+            _rq.Push(FrameType.MatchData, tmp.Data);*/
+
             Logger.Basic("[ResetForRoundStart] Reset all required Player fields!");
         }
 
@@ -1602,14 +1661,18 @@ namespace WCSARS
             // Set server-side stuff
             player.Position = moveToPosition;
             if (isParachute) player.hasLanded = false;
-            // Send Message out
-            NetOutgoingMessage msg = server.CreateMessage(22); // 22 == Allocate 22 bytes; should really use this more
+            // Write to Replay
+            ReplayMessage msg = new ReplayMessage(22); // 22 == Allocate 22 bytes; should really use this more
             msg.Write((byte)8);          // Byte  | MsgID (8)  | 1?
-            msg.Write(player.ID);        // Short | PlayerID   | 4
-            msg.Write(moveToPosition.x); // Float | PositionX  | 8
-            msg.Write(moveToPosition.y); // Float | PositionY  | 8
+            msg.Write(player.ID);        // Short | PlayerID   | 2
+            msg.Write(moveToPosition.x); // Float | PositionX  | 4
+            msg.Write(moveToPosition.y); // Float | PositionY  | 4
             msg.Write(isParachute);      // Bool  | Parachute? | 1?
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+            _rq.Push(msg);
+            // Send Message for Realsies
+            NetOutgoingMessage nmsg = server.CreateMessage(msg.Data.Length); // 22 == Allocate 22 bytes; should really use this more
+            nmsg.Write(msg.Data);
+            server.SendToAll(nmsg, NetDeliveryMethod.ReliableOrdered);
         }
 
         // Is only used while in Lobby.
@@ -1636,7 +1699,7 @@ namespace WCSARS
         {
             if (!IsServerRunning()) return;
             // Make message sending player data. Loops entire list but only sends non-null entries.
-            NetOutgoingMessage msg = server.CreateMessage();
+            ReplayMessage msg = new ReplayMessage(46);
             msg.Write((byte)12);                    // Byte | Header
             msg.Write((byte)GetValidPlayerCount()); // Byte | Count of valid entries the Client is receiving/iterating over
             for (int i = 0; i < _players.Length; i++)
@@ -1658,7 +1721,11 @@ namespace WCSARS
                     else msg.Write(false);
                 }
             }
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+            _rq.Push(msg);
+            // Send NetMessage
+            NetOutgoingMessage nmsg = server.CreateMessage(msg.Data.Length);
+            nmsg.Write(msg.Data);
+            server.SendToAll(nmsg, NetDeliveryMethod.ReliableSequenced);
         }
 
         /// <summary>Handles a NetMessage marked as a "PositionUpdate" packet (Msg14).</summary>
@@ -1844,7 +1911,7 @@ namespace WCSARS
                         }
                     }
                     // Send Message back to everyone with shot info...
-                    NetOutgoingMessage pmsg = server.CreateMessage();
+                    ReplayMessage pmsg = new ReplayMessage();
                     pmsg.Write((byte)17);
                     pmsg.Write(player.ID);
                     pmsg.Write((ushort)(player.LastPingTime * 1000f));
@@ -1866,7 +1933,11 @@ namespace WCSARS
 
                         }
                     }
-                    server.SendToAll(pmsg, NetDeliveryMethod.ReliableSequenced);
+                    if (_hasMatchStarted) _rq.Push(pmsg);
+                    // Send Message Out
+                    NetOutgoingMessage nmsg = server.CreateMessage(pmsg.Data.Length);
+                    nmsg.Write(pmsg.Data);
+                    server.SendToAll(nmsg, NetDeliveryMethod.ReliableSequenced);
 
                 } catch (NetException netEx)
                 {
@@ -2115,6 +2186,16 @@ namespace WCSARS
                                     "\n/tp {playerID1} {playerID2}" +
                                     "\n/moveplayer {playerID} {X} {Y}" +
                                     "\nType '/help [command]' for more information";
+                            }
+                            break;
+                        case "/dump":
+                            try
+                            {
+                                _rq.ForceDump();
+                            }
+                            catch
+                            {
+                                responseMsg = "There was some exception.";
                             }
                             break;
 
@@ -2891,7 +2972,7 @@ namespace WCSARS
         private void SendPlayerDataChange(Player player)
         {
             if (!IsServerRunning()) return;
-            NetOutgoingMessage msg = server.CreateMessage();
+            NetOutgoingMessage msg = server.CreateMessage(10);
             msg.Write((byte)45);            // Byte  | MsgID (45)
             msg.Write((byte)1);             // Byte  | # of Players [Always 1 here]
             msg.Write(player.ID);           // Short | PlayerID
