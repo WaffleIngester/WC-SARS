@@ -6,7 +6,7 @@
     public class Campfire
     {
         /// <summary>
-        /// Position of this Campfire.
+        /// Position of this Campfire in the overworld.
         /// </summary>
         public Vector2 Position;
 
@@ -26,13 +26,12 @@
         public float UseRemainder = 15f; // Only used while Match is in progress
 
         /// <summary>
-        /// Creates a Campfire object at the given points.
+        /// Creates a Campfire object at the provided position.
         /// </summary>
-        /// <param name="x">Campfire X position.</param>
-        /// <param name="y">Campfire Y position.</param>
-        public Campfire(float x, float y)
+        /// <param name="position">Position to spawn this Campfire object.</param>
+        public Campfire(Vector2 position)
         {
-            Position = new Vector2(x, y);
+            Position = position;
         }
     }
 }

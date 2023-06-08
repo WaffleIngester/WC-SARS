@@ -1,12 +1,14 @@
 ﻿using System;
 using System.IO;
 using SimpleJSON;
-using SARStuff;
+using System.Collections.Generic;
+using WCSARS; // logging purposes
 
-namespace WCSARS
+namespace SARStuff
 {
     internal class Weapon
     {
+        public static Weapon[] AllWeapons { get; private set; }
         public WeaponType WeaponType;
         public string Name;
         public short JSONIndex;
@@ -23,6 +25,7 @@ namespace WCSARS
         public byte SpawnSizeOverworld;
         public int SpawnFrequency;
         public int MaxCarry;
+        public float Radius;
 
         public Weapon(JSONNode data, short index)
         {
@@ -46,7 +49,14 @@ namespace WCSARS
                         if (data["grenadeInfo"]["carryMax"] == null) throw new Exception($"{Name} contains grenadeInfo, but no key \"carryMax\".");
                         SpawnSizeOverworld = (byte)data["grenadeInfo"]["worldSpawnAmount"].AsInt;
                         MaxCarry = data["grenadeInfo"]["carryMax"].AsInt;
-                            break;
+                        if (data["grenadeInfo"]["damageRadius"]) Radius = data["grenadeInfo"]["damageRadius"].AsFloat;
+                        if (data["grenadeInfo"]["isTrap"] == true)
+                        {
+                            Radius = data["grenadeInfo"]["trapRadius"].AsFloat;
+                            if (data["grenadeInfo"]["trapDamagePerTick"]) Damage = data["grenadeInfo"]["trapDamagePerTick"].AsInt;
+                            //if (data["grenadeInfo"]["isTrap"] == true)
+                        }
+                        break;
                     default:
                         throw new Exception($"Invalid class identifier: \"{classValue}\".");
                 }
@@ -69,72 +79,86 @@ namespace WCSARS
             if (data["spawnRatioRelativeToOthers"]) SpawnFrequency = data["spawnRatioRelativeToOthers"].AsInt;
         }
 
-        static public Weapon[] GetAllWeaponsList() // Attempts to read weapondata.json @ ProgramLocation\datafiles-- Will crash if any exceptions are thrown
+        public static Weapon[] GetAllWeaponTypes()
         {
-            // Verify file exists...
-            string fileLoc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\weapondata.json";
-            if (!File.Exists(fileLoc)) throw new FileNotFoundException($"Could not locate weapondata.json!\nSearch location: {fileLoc}");
-
-            // Go load/read JSON, fill out a new Weapon[], then return it back.
-            string readData = File.ReadAllText(fileLoc);
-            JSONArray json = (JSONArray)JSON.Parse(readData);
-            Weapon[] weapons = new Weapon[json.Count];
-            for (int i = 0; i < json.Count; i++)
+            if (AllWeapons != null) return AllWeapons;
+            string search = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\weapons.json";
+            if (!File.Exists(search))
             {
-                weapons[i] = new Weapon(json[i], (short)i);
+                Logger.Failure($"Failed to locate \"weapons.json\"!\nSearched: {search}");
+                Environment.Exit(23); // 20 = tiles; 21 = decals; 22 = doodads; 23 = weapons ([somewhat] goes in order of how they should be loaded)
             }
-            return weapons;
+            string data = File.ReadAllText(search);
+            JSONArray weaponData = JSON.Parse(data).AsArray;
+            AllWeapons = new Weapon[weaponData.Count];
+            for (int i = 0; i < AllWeapons.Length; i++)
+            {
+                AllWeapons[i] = new Weapon(weaponData[i], (short)i);
+            }
+            return AllWeapons;
         }
 
         /// <summary>
-        /// Returns an array of Weapon objects which only contains Weapon with WeaponType.Gun. Calls Weapon.GetAllWeaponsList() to initialize the original array.
+        /// Attempts to locate a Weapon using the provided WeaponID
         /// </summary>
-        public static Weapon[] GetAllGunsList()
+        /// <param name="pWeaponID">JSONIndex of the Weapon to search for.</param>
+        /// <returns>Returns the found Weapon; NULL if otherwise.</returns>
+        public static Weapon GetWeaponFromID(int pWeaponID)
         {
-            // Get all Weapons then find the amount of entries that are actually guns
-            Weapon[] allWeapons = GetAllWeaponsList();
-            int entries = 0;
-            for (int i = 0; i < allWeapons.Length; i++)
+            if (AllWeapons == null) GetAllWeaponTypes();
+            for (int i = 0; i < AllWeapons.Length; i++)
             {
-                if (allWeapons[i].WeaponType == WeaponType.Gun) entries++;
+                if (AllWeapons[i].JSONIndex == pWeaponID) return AllWeapons[i];
             }
-            // Make new Guns array and reset entries back to 0 for reuse
-            Weapon[] guns = new Weapon[entries];
-            entries = 0;
-            for (int i = 0; i < allWeapons.Length; i++)
-            {
-                if (allWeapons[i].WeaponType == WeaponType.Gun)
-                {
-                    guns[entries] = allWeapons[i];
-                    entries++;
-                }
-            }
-            return guns;
+            return null;
         }
 
         /// <summary>
         /// Uses the provided Weapon[] array to return a new array of Weapon objects which only contains Weapons with WeaponType.Gun.
         /// </summary>
-        public static Weapon[] GetAllGunsList(Weapon[] pweapons)
+        public static Weapon[] GetAllGuns(Weapon[] pWeapons)
         {
-            // Go through all entries in the provided Weapons array and get the count of gun entries
-            int entries = 0;
-            for (int i = 0; i < pweapons.Length; i++)
+            List<Weapon> retGuns = new List<Weapon>(AllWeapons.Length);
+            for (int i = 0; i < pWeapons.Length; i++)
             {
-                if (pweapons[i].WeaponType == WeaponType.Gun) entries++;
+                if (pWeapons[i].WeaponType == WeaponType.Gun) retGuns.Add(AllWeapons[i]);
             }
-            // Make new Guns array and reset entries back to 0 for reuse
-            Weapon[] guns = new Weapon[entries];
-            entries = 0;
-            for (int i = 0; i < pweapons.Length; i++)
+            return retGuns.ToArray();
+        }
+
+        public static Weapon[] GetAllGuns()
+        {
+            if (AllWeapons == null) AllWeapons = GetAllWeaponTypes();
+            List<Weapon> retGuns = new List<Weapon>(AllWeapons.Length);
+
+            for (int i = 0; i < AllWeapons.Length; i++)
             {
-                if (pweapons[i].WeaponType == WeaponType.Gun)
-                {
-                    guns[entries] = pweapons[i];
-                    entries++;
-                }
+                if (AllWeapons[i].WeaponType == WeaponType.Gun) retGuns.Add(AllWeapons[i]);
             }
-            return guns;
+            //NullAllWeaponsList();
+            return retGuns.ToArray();
+        }
+
+        public static Weapon[] GetAllThrowables()
+        {
+            if (AllWeapons == null) AllWeapons = GetAllWeaponTypes();
+            List<Weapon> ret = new List<Weapon>(AllWeapons.Length);
+            for (int i = 0; i < AllWeapons.Length; i++)
+            {
+                if (AllWeapons[i].WeaponType == WeaponType.Throwable) ret.Add(AllWeapons[i]);
+            }
+            //NullAllWeaponsList();
+            return ret.ToArray();
+        }
+
+        /// <summary>
+        /// Nulls the static "AllWeapons" property so it can collected by the garbage collector... Hopefully.
+        /// </summary>
+        public static void NullAllWeaponsList()
+        {
+            Logger.Warn("[Weapon] Nulling AllWeapons...");
+            AllWeapons = null;
+            Logger.Success("[Weapon] AllWeapons nulled! :]");
         }
     }
 }

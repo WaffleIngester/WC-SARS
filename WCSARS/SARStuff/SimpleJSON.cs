@@ -780,6 +780,82 @@ namespace SimpleJSON
                     throw new Exception($"There was an error deserializing the JSON file. Encountered an unknown tag \"{jsonBinaryTag}\"");
             }
         }
+
+        // async Task<bool> 
+        // probably doesn't scale the best, but all we can do is "cry about it"
+        public static void SaveToFile(JSONArray json, string loc) // todo - many improvements; this obviously only works with json arrays and nothing else
+        {
+            // used for encoding strings and junk (UTF-8)
+            byte[] tmp_byteArray;
+            // []
+            byte[] bSquareOpen = { 0x5B };  // [
+            byte[] bSquareClose = { 0x5D }; // ]
+            // {}
+            byte[] bBracketOpen = { 0x7B };  // {
+            byte[] bBracketClose = { 0x7D }; // }
+            // \n
+            byte[] bNewLine = { 0xA };             // \n
+            byte[] bNLSquareClose = { 0xA, 0x5D }; // \n]
+            // ,
+            byte[] bComma = { 0x2C }; // ,
+            // indent
+            byte[] bIndent = new byte[] { 0x09 };// UTF8 indent? this thing: [    ]
+            try
+            {
+                using (FileStream fs = new FileStream(loc, FileMode.Create))
+                {
+                    // write opening [
+                    fs.Write(bSquareOpen); // [
+                    
+                    // iterate through array and write lazy json
+                    int arrayEntries = json.Count;
+                    int i, j, k, subEntriesCount, depth = 0;
+                    depth++;
+                    for (i = 0; i < arrayEntries; i++)
+                    {
+                        // class write 
+                        // write openers
+                        fs.Write(bNewLine);
+                        for (k = 0; k < depth; k++) fs.Write(bIndent);
+                        fs.Write(bBracketOpen); // {
+                        
+                        // write each entry
+                        subEntriesCount = json[i].Count;
+                        j = 0;
+                        depth++;
+                        foreach (var key in json[i].Keys) // no clue how else to get any random key's name other than to do this
+                        {
+                            fs.Write(bNewLine);
+                            for (k = 0; k < depth; k++) fs.Write(bIndent);
+                            //Console.WriteLine(key.ToString());
+                            string str = $"\"{key}\": {json[i][key]}";
+                            tmp_byteArray = new UTF8Encoding(true).GetBytes(str);
+                            fs.Write(tmp_byteArray);                             // [ENTRY]
+
+                            // inc & write "," if need to
+                            j++;
+                            if (j < subEntriesCount) fs.Write(bComma);  // ,  [[no new line, we get one every loop]
+                        }
+                        depth--;
+                        fs.Write(new byte[] { 0xA });
+                        for (k = 0; k < depth; k++) fs.Write(bIndent);
+                        fs.Write(bBracketClose);   // }
+                        if ((i + 1) < arrayEntries) fs.Write(bComma); // ,
+                        // end of class write
+                    }
+                    depth--;
+                    // closing ]
+                    if (arrayEntries > 0) fs.Write(bNLSquareClose);
+                    else fs.Write(bSquareClose);
+                    //return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Exception occurred while trying to save to file...\n{ex}");
+                //return false;
+            }
+        }
     }
     // End of JSONNode
 

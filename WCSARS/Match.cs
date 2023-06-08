@@ -27,23 +27,18 @@ namespace WCSARS
         private JSONArray _bannedIPs;
 
         // Item-Like Data
-        private Dictionary<int, LootItem> _lootItems;
         private Dictionary<int, Coconut> _coconutList;
         private Dictionary<int, Hamsterball> _hamsterballs;
         private Campfire[] _campfires;
-        private List<Doodad> _doodadList;
-        private Weapon[] _weapons = Weapon.GetAllWeaponsList();
-        private byte[] _maxAmmo = new byte[] { 120, 30, 90, 25, 25 }; // smg, shotgun, ak, sniper, dart
+        private Weapon[] _weapons = Weapon.GetAllWeaponTypes();
+        private byte[] _maxAmmo = new byte[] { 120, 30, 90, 25, 25 }; // smg, shotgun, ak, sniper, dart   // todo - dynamically load ammo
 
-        // UNSORTED
-        //private int prevTimeA, matchTime; // TODO -- Phase these out
-        private bool _hasMatchStarted = false;
-        private bool _isMatchFull = false;
+        // Actually unsorted
         private bool isSorting, isSorted; // TODO -- Unsure whether these are necessariy
-        private double _lobbyRemainingSeconds;
-        //public double LobbyRemainingTime { get => _lobbyRemainingSeconds; }
+        private List<Trap> _traps;
 
         // -- Super Skunk Gas --
+        private float _ssgTickRateSeconds = 1f;
         private float LastSafezoneX, LastSafezoneY, LastSafezoneRadius; // Set before SSG approachment; used for transitioning CurrentSZ to the Target/End SZ
         private float CurrentSafezoneX, CurrentSafezoneY, CurrentSafezoneRadius; // Current *active* Safezone; used for SSG damage checks
         private float EndSafezoneX, EndSafezoneY, EndSafezoneRadius; // Set before SSG approachment; this what the CurrentSafezone will become
@@ -56,10 +51,13 @@ namespace WCSARS
         // -- Super Skunk Gas --
 
         // -- MoleCrate Crate Stuff --
-        private Vector2[] _moleSpawnSpots; // Array containing every mole spawn-spot found while loading the level data in LoadSARLevel().
         private short _maxMoleCrates; // Maximum # of MoleCrates allowed in a match.
         private MoleCrate[] _moleCrates; // An array of MoleCrate objects which is the amount of active moles/crates available. The Length is that of Match._maxMoleCrates.
         // -- MoleCrate Crate Stuff --
+
+        // Giant Eagle
+        private GiantEagle _giantEagle = new GiantEagle(new Vector2(0f, 0f), new Vector2(4248f, 4248f));
+        private bool _isFlightActive = false;
 
         // -- Healing Values --
         private float _healPerTick = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
@@ -68,6 +66,8 @@ namespace WCSARS
         private float _coconutHeal = 5f;
         private float _campfireHealPer = 4f;
         private float _campfireHealRateSeconds = 1f;
+        private float _bleedoutRateSeconds = 1f; // bleed-out rate when downed [SAR default: 1s]
+        private byte _resHP = 25;                // HP remaining on downed players that just got picked up 
 
         // -- Dartgun-Related things --
         private int _ddgMaxTicks = 12; // DDG max amount of Damage ticks someone can get stuck with
@@ -75,12 +75,19 @@ namespace WCSARS
         private float _ddgTickRateSeconds = 0.6f; // the rate at which the server will attempt to make a DDG DamageTick check
         private int _ddgDamagePerTick = 9;
         private List<Player> _poisonDamageQueue; // List of PlayerIDs who're taking skunk damage > for cough sound -- 12/2/22
-        //public List<Player> PoisonDamageQueue { get => _poisonDamageQueue; } // Added / unused as of now (12/23/22)
-        
+                                                 //public List<Player> PoisonDamageQueue { get => _poisonDamageQueue; } // Added / unused as of now (12/23/22)
+
         // -- Level / RNG-Related --
-        private int _totalLootCounter, _lootSeed, _coconutSeed, _vehicleSeed; // Spawnable Item Generation Seeds
-        //private MersenneTwister _servRNG = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
+        //private int _lootSeed, _coconutSeed, _vehicleSeed; // Spawnable Item Generation Seeds
+        private MersenneTwister _serverRNG = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
         private bool svd_LevelLoaded = false; // Likely able to remove this without any problems
+        private SARLevel _level;
+
+        // Lobby Stuff
+        private bool _hasMatchStarted = false;
+        private bool _isMatchFull = false;
+        private double _lobbyRemainingSeconds;
+        //public double LobbyRemainingTime { get => _lobbyRemainingSeconds; }
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm (unsure section right now
         private bool _canCheckWins = false;
@@ -91,17 +98,17 @@ namespace WCSARS
         public Match(int port, string ip) // Original default constructor
         {
             // Initialize LootGenSeeds
-            _lootSeed = 351301;
+            /*_lootSeed = 351301;
             _coconutSeed = 5328522;
-            _vehicleSeed = 9037281;
-            LoadSARLevel(); // _totalLootCounter set here
+            _vehicleSeed = 9037281;*/
+            LoadSARLevel(351301, 5328522, 9037281);
             /*
             //Logger.Warn($"DateTime Ticks: {DateTime.UtcNow.Ticks}");
-            _lootSeed = (int)_servRNG.NextUInt(0, (uint)DateTime.UtcNow.Ticks);
+            _lootSeed = (int)_serverRNG.NextUInt(0, (uint)DateTime.UtcNow.Ticks);
             //Logger.Warn($"LootSeed: {_lootSeed}");
-            _coconutSeed = (int)_servRNG.NextUInt(0, (uint)_lootSeed * (uint)DateTime.UtcNow.Ticks);
+            _coconutSeed = (int)_serverRNG.NextUInt(0, (uint)_lootSeed * (uint)DateTime.UtcNow.Ticks);
             //Logger.Warn($"CocoSeed: {_coconutSeed}");
-            _vehicleSeed = (int)_servRNG.NextUInt(0, (uint)_coconutSeed * (uint)_coconutSeed);
+            _vehicleSeed = (int)_serverRNG.NextUInt(0, (uint)_coconutSeed * (uint)_coconutSeed);
             //Logger.Warn($"VehicleSeed: {_vehicleSeed}"); */
 
             // Initialize PlayerList stuff / ID stuff
@@ -117,7 +124,7 @@ namespace WCSARS
             _maxMoleCrates = 12;
             _moleCrates = new MoleCrate[_maxMoleCrates];
 
-            //TODO - finish settings this up at some point
+            //TODO - finish setting this up at some point
             _poisonDamageQueue = new List<Player>(32);
 
             _lobbyRemainingSeconds = 90.00;
@@ -175,39 +182,39 @@ namespace WCSARS
             _coconutHeal = cfg.CoconutHealAmount;
             _campfireHealPer = cfg.CampfireHealPerTick;
             _campfireHealRateSeconds = cfg.CampfireRateSeconds;
+            _bleedoutRateSeconds = cfg.BleedoutRateSeconds;
+            _resHP = cfg.ResurrectHP;
 
             // Set Dartgun stuff -- TBH could just use the stats found in the Dartgun...
             _ddgMaxTicks = cfg.MaxDartTicks;
             _ddgTickRateSeconds = cfg.DartTickRate;
             _ddgDamagePerTick = cfg.DartPoisonDamage;
-
-            // TODO: SkunkGas-DamageRate-Seconds
+            _ssgTickRateSeconds = cfg.SuperSkunkGasTickRate;
 
             // Others
+            _canCheckWins = !cfg.InfiniteMatch;
             _safeMode = cfg.Safemode;
             isSorting = false;
             isSorted = true;
             _maxMoleCrates = cfg.MaxMoleCrates;
             _moleCrates = new MoleCrate[_maxMoleCrates];
-            _lobbyRemainingSeconds = cfg.MaxLobbyTime;
+            _lobbyRemainingSeconds = cfg.LobbyTime;
             _gamemode = cfg.Gamemode;
+            _traps = new List<Trap>(64);
 
-            // Initialize LootGenSeeds / call LoadSARLevel()
-            if (cfg.useConfigSeeds)
-            {
-                _lootSeed = cfg.LootSeed;
-                _coconutSeed = cfg.CocoSeed;
-                _vehicleSeed = cfg.HampterSeed;
-            }
-            else
+            // Load the SAR Level and stuff!
+            int srngLoot = cfg.LootSeed;
+            int srngCoconut = cfg.CocoSeed;
+            int srngHamster = cfg.HampterSeed;
+            if (!cfg.useConfigSeeds)
             {
                 MersenneTwister twistItUp = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
-                _lootSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue);
-                _coconutSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue);
-                _vehicleSeed = (int)twistItUp.NextUInt(0u, uint.MaxValue); 
+                srngLoot = (int)twistItUp.NextUInt(0u, uint.MaxValue);
+                srngCoconut = (int)twistItUp.NextUInt(0u, uint.MaxValue);
+                srngHamster = (int)twistItUp.NextUInt(0u, uint.MaxValue); 
             }
-            Logger.Warn($"[Match] Using Seeds: LootSeed: {_lootSeed}; CoconutSeed: {_coconutSeed}; HampterSeed: {_vehicleSeed}");
-            LoadSARLevel();
+            Logger.Warn($"[Match] Using Seeds: LootSeed: {srngLoot}; CoconutSeed: {srngCoconut}; HampterSeed: {srngHamster}");
+            LoadSARLevel((uint)srngLoot, (uint)srngCoconut, (uint)srngHamster);
 
             // Initialize NetServer
             Logger.Basic($"[Match] Attempting to start server on \"{cfg.IP}:{cfg.Port}\".");
@@ -231,34 +238,39 @@ namespace WCSARS
         /// </summary>
         private void ServerNetLoop()
         {
-            // Make sure no invalid....
             Logger.Basic("[Match.ServerNetLoop] Network thread started!");
-            // Loop to handle any recieved message from the NetServer... Stops when the server is no longer in the running state.
             NetIncomingMessage msg;
             while (IsServerRunning())
             {
                 //Logger.DebugServer($"[{DateTime.UtcNow}] Waiting to receive message.");
-                server.MessageReceivedEvent.WaitOne(5000); // Halt this thread until the NetServer receives a message. Then continue
+                server.MessageReceivedEvent.WaitOne(5000); // Halt thread until NetServer (_server) receives a message OR 5s has passed.
                 //Logger.DebugServer($"[{DateTime.UtcNow}] Message has been received.");
                 while ((msg = server?.ReadMessage()) != null)
                 {
                     switch (msg.MessageType)
                     {
                         case NetIncomingMessageType.Data:
-                            HandleMessage(msg);
+                            try
+                            {
+                                HandleMessage(msg);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Failure($"[HandleMessage - Error] Unhandled, unanticipated, exception has occurred!\n{ex}");
+                            }
                             break;
                         case NetIncomingMessageType.StatusChanged:
                             switch (msg.SenderConnection.Status)
                             {
                                 case NetConnectionStatus.Connected:
                                     Logger.Success($"[NCS.Connected] New Client connected! Wahoo! Sender Address: {msg.SenderConnection}");
-                                    NetOutgoingMessage acceptMsgg = server.CreateMessage();
+                                    NetOutgoingMessage acceptMsgg = server.CreateMessage(2);
                                     acceptMsgg.Write((byte)0);
                                     acceptMsgg.Write(true);
                                     server.SendMessage(acceptMsgg, msg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
                                     break;
                                 case NetConnectionStatus.Disconnected:
-                                    HandleClientDisconnect(msg);
+                                    HandleClientDisconnect(msg); // todo - in-match dc players need to stick around instead of dipping
                                     Logger.Warn($"[NCS.Disconnected] Client GoodbyeMsg: {msg.ReadString()}");
                                     break;
                             }
@@ -315,7 +327,7 @@ namespace WCSARS
                             break;
                         case NetIncomingMessageType.WarningMessage:
                         case NetIncomingMessageType.ErrorMessage:
-                            Logger.Failure("EPIC BLUNDER! " + msg.ReadString());
+                            Logger.Failure("-- NetworkError - EPIC BLUNDER! --\n> " + msg.ReadString());
                             break;
                         case NetIncomingMessageType.ConnectionLatencyUpdated:
                             Logger.Header("--> ConnectionLatencyUpdated:");
@@ -358,7 +370,6 @@ namespace WCSARS
             // ... The only thing that doesn't work with this though, is opening the crate. Even when the match starts, you cannot interact with it.
             // - You can change a Player's health, tapes, drink amount; and proably armor as well in lobby.
 
-            // TODO - cleanese.
             Logger.Basic("[Match.ServerUpdateLoop] Update thread started!");
             if (!_safeMode) Logger.Warn("[Match] Warning! Safemode is set to FALSE! Crazy stuff might happen!!");
             if (!_canCheckWins) Logger.Warn("[Match] Warning! Match will NOT check for wins! Use \"/togglewin\" in-game to re-enable");
@@ -393,6 +404,7 @@ namespace WCSARS
                     CheckMoleCrates();
                     UpdatePlayerDataChanges();
                     UpdateDownedPlayers();
+                    UpdateStunnedPlayers();
 
                     // For the "tick" system
                     nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
@@ -423,6 +435,7 @@ namespace WCSARS
                     UpdatePlayerTaping();
                     UpdatePlayerEmotes();
                     UpdateDownedPlayers();
+                    UpdateStunnedPlayers();
                     check_DDGTicks(); // STILL TESTING -- (as of: 12/2/22)
                     svu_CheckCoughs(); // NEW TEST FROM 12/2/22 UPDATE
 
@@ -434,8 +447,10 @@ namespace WCSARS
                     CheckSkunkGas();
 
                     // Others
+                    UpdateGiantEagle();
                     CheckMoleCrates();
                     CheckCampfiresMatch();
+                    UpdateTraps();
 
                     // For the "tick" system
                     nextTick = nextTick.AddMilliseconds(MS_PER_TICK);
@@ -455,6 +470,7 @@ namespace WCSARS
             {
                 SendMatchStart();
                 _hasMatchStarted = true;
+                _isFlightActive = true;
             }
         }
 
@@ -486,8 +502,8 @@ namespace WCSARS
                     msg.Write(_players[i].ArmorTier);
                     msg.Write(_players[i].ArmorTapes);
                     msg.Write(_players[i].WalkMode);
-                    msg.Write(_players[i].Drinkies);
-                    msg.Write(_players[i].Tapies);
+                    msg.Write(_players[i].HealthJuice);
+                    msg.Write(_players[i].SuperTape);
                 }
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
@@ -500,7 +516,7 @@ namespace WCSARS
             {
                 if (_players[i] == null || !_players[i].isDrinking || _players[i].NextHealTime > DateTime.UtcNow) continue;
                 // Make sure they're not stuck in an infinite loop of drinking.
-                if (_players[i].Drinkies == 0 || _players[i].HP >= 100)
+                if (_players[i].HealthJuice == 0 || _players[i].HP >= 100)
                 {
                     SendPlayerEndDrink(_players[i]);
                     continue;
@@ -508,11 +524,11 @@ namespace WCSARS
                 // Heal Section
                 float hp = _healPerTick;
                 if ((hp + _players[i].HP) > 100) hp = (100 - _players[i].HP);
-                if ((_players[i].Drinkies - hp) < 0) hp = _players[i].Drinkies;
+                if ((_players[i].HealthJuice - hp) < 0) hp = _players[i].HealthJuice;
                 _players[i].HP += (byte)hp;
-                _players[i].Drinkies -= (byte)hp;
+                _players[i].HealthJuice -= (byte)hp;
                 _players[i].NextHealTime = DateTime.UtcNow.AddSeconds(_healRateSeconds);
-                if (_players[i].HP >= 100 || _players[i].Drinkies == 0) SendPlayerEndDrink(_players[i]);
+                if (_players[i].HP >= 100 || _players[i].HealthJuice == 0) SendPlayerEndDrink(_players[i]);
             }
         }
 
@@ -523,7 +539,7 @@ namespace WCSARS
                 if (_players[i] == null || !_players[i].isTaping) continue;
                 if (DateTime.UtcNow > _players[i].NextTapeTime) // isTaping *should* ONLY get set if tape-checks pass.
                 {
-                    _players[i].Tapies -= 1;
+                    _players[i].SuperTape -= 1;
                     _players[i].ArmorTapes += 1;
                     SendPlayerEndTape(_players[i]);
                 }
@@ -544,12 +560,85 @@ namespace WCSARS
             for (int i = 0; i < _players.Length; i++)
             {
                 if (_players[i] == null || !_players[i].isAlive || !_players[i].isDown) continue;
-                if (_players[i].isBeingRevived && (DateTime.UtcNow > _players[i].ReviveTime)) RevivePlayer(_players[i]);
-                else if (!_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].NextDownDamageTick))
+                if (_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].ReviveTime)) RevivePlayer(_players[i]);
+                else if (!_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].NextBleedTime))
                 {
-                    _players[i].NextDownDamageTick = DateTime.UtcNow.AddSeconds(1);
+                    _players[i].NextBleedTime = DateTime.UtcNow.AddSeconds(1);
                     test_damagePlayer(_players[i], 2 + (2 * _players[i].TimesDowned), _players[i].LastAttackerID, _players[i].LastWeaponID);
                     // Please see: https://animalroyale.fandom.com/wiki/Downed_state
+                }
+            }
+        }
+        
+        private void UpdateStunnedPlayers() // Appears OK
+        {
+            for (int i = 0; i < _players.Length; i++)
+            {
+                if (_players[i] == null || !_players[i].isStunned) continue;
+                if (DateTime.UtcNow >= _players[i].StunEndTime)
+                {
+                    _players[i].WalkMode = 1;
+                    _players[i].isStunned = false;
+                    SendPlayerDataChange(_players[i]);
+                }
+            }
+        }
+
+        // Held together with glue and duct tape -- improvement opporunity
+        private void UpdateTraps()
+        {
+            for (int i = 0; i < _traps.Count; i++)
+            {
+                _traps[i].RemainingTime -= (float)DeltaTime.TotalSeconds;
+                if (_traps[i].RemainingTime <= 0)
+                {
+                    _traps.Remove(_traps[i]);
+                    continue;
+                }
+
+                // bandage fix to prevent Player's getting damaged instantly when Entering>Leaving>Entering-agian with a skunk nade
+                if (_traps[i].TrapType == TrapType.SkunkNade)
+                {
+                    if (_traps[i].HitPlayers.Count > 0)
+                    {
+                        foreach (Player plr in _traps[i].HitPlayers.Keys)
+                        {
+                            if (plr == null) continue;
+                            if (!Vector2.ValidDistance(_traps[i].Position, plr.Position, _traps[i].EffectRadius, true)) _traps[i].HitPlayers.Remove(plr);
+                        }
+                    }
+                }
+                // go through all trap entries and see whether any players are nearby to "activate" the traps
+                for (int j = 0; j < _players.Length; j++)
+                {
+                    if (_players[j] == null || !_players[j].IsPlayerReal()) continue; // todo - vial speedbost + vial speedboost for teammates without killing them
+                    if (Vector2.ValidDistance(_traps[i].Position, _players[j].Position, _traps[i].EffectRadius, true))
+                    {
+                        switch (_traps[i].TrapType)
+                        {
+                            case TrapType.Banana:
+                                // if vehicleID == -1, then they're in a hamsterball. Msg88 handles removing the trap in this case
+                                if (_players[j].VehicleID != -1) continue;
+
+                                // player likely isn't in a hamsterball, so stun them
+                                _players[j].Stun();
+                                SendGrenadeFinished(_traps[i].OwnerID, _traps[i].ThrowableID, _traps[i].Position);
+                                if (!Vector2.ValidDistance(_players[j].Position, _traps[i].Position, 2f, true)) SendForcePosition(_players[j], _traps[i].Position);
+                                _traps.Remove(_traps[i]);
+                                return; // spaghetti fix; probably works idrk
+                            case TrapType.SkunkNade:
+                                if (_players[j].isGodmode || _players[j].IsPIDMyTeammate(_traps[i].OwnerID)) continue;
+                                if (_traps[i].HitPlayers.ContainsKey(_players[j]))
+                                {
+                                    if (_traps[i].HitPlayers[_players[j]] > DateTime.UtcNow) continue;
+                                    _traps[i].HitPlayers[_players[j]] = DateTime.UtcNow.AddSeconds(0.6f);
+                                    test_damagePlayer(_players[j], 13, _traps[i].OwnerID, _traps[i].WeaponID);
+                                    if (!_poisonDamageQueue.Contains(_players[j])) _poisonDamageQueue.Add(_players[j]);
+                                }
+                                else _traps[i].HitPlayers.Add(_players[j], DateTime.UtcNow.AddSeconds(0.6f));
+                                break;
+                        }
+                    }
                 }
             }
         }
@@ -560,11 +649,9 @@ namespace WCSARS
         /// <param name="player">Player to revive.</param>
         private void RevivePlayer(Player player)
         {
-            SendTeammateRevived(player.ReviverID, player.ID);
-            player.isDown = false;
-            player.ReviverID = -1;
-            player.HP = 10;
-            player.WalkMode = 1;
+            SendPickupFinished(player.SaviourID, player.ID);
+            if (TryPlayerFromID(player.SaviourID, out Player saviour)) saviour.SaviourFinishedRessing();
+            player.DownResurrect(_resHP);
         }
 
         private void svu_checkForWinnerWinnerChickenDinner()
@@ -586,7 +673,7 @@ namespace WCSARS
                 server.SendToAll(congratulationsyouvewoncongratulationsyouvewoncongratulationsyouvewon, NetDeliveryMethod.ReliableUnordered);
             }
         }
-        private void svu_CheckCoughs() // Added 12/2/22 // TODO: verify it works correctly
+        private void svu_CheckCoughs() // appears to work fine; todo - cleanup ?
         {
             if (_poisonDamageQueue.Count == 0) return;
             int listCount = _poisonDamageQueue.Count;
@@ -638,7 +725,7 @@ namespace WCSARS
                 switch (matchTime)
                 {
                     case 60:
-                        CreateSafezone(620, 720, 620, 720, 6000, 3000, 60, 72); // TODO -- Still need good first safezone
+                        CreateSafezone(620, 720, 620, 720, 6000, 3000, 60, 72);
                         break;
                     case 212:
 
@@ -671,7 +758,8 @@ namespace WCSARS
                 }
                 // Giant Eagle stuff
                 _players[i].hasLanded = false;
-                // TODO: Reset PlayerPosition to the origin point of the Giant Eagle
+                _players[i].hasEjected = false;
+                _players[i].Position = _giantEagle.Start;
 
                 // Attack / Weapons
                 _players[i].AttackCount = -1;
@@ -780,7 +868,7 @@ namespace WCSARS
                 {
                     for (int j = 0; j < _players.Length; j++)
                     {
-                        if (_players[j] == null) continue;
+                        if (_players[j] == null || !_players[j].IsPlayerReal()) continue;
                         if (Vector2.ValidDistance(_campfires[i].Position, _players[j].Position, 24f, true))
                         {
                             _campfires[i].hasBeenUsed = true;
@@ -876,8 +964,9 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered); // probbably could be unordered.
         }
 
-        private void CheckSkunkGas() // TODO:: try doing correct amount of gas damage
+        private void CheckSkunkGas()
         {
+            // todo - SSG damage that scales with each circle
             if (!isSkunkGasActive || !IsServerRunning()) return;
             for (int i = 0; i < _players.Length; i++)
             {
@@ -885,7 +974,7 @@ namespace WCSARS
                 Vector2 deltaMag = _players[i].Position - new Vector2(CurrentSafezoneX, CurrentSafezoneY);
                 if (deltaMag.magnitude >= CurrentSafezoneRadius && !_players[i].isGodmode)
                 {
-                    _players[i].NextGasTime = DateTime.UtcNow.AddSeconds(1.0d);
+                    _players[i].NextGasTime = DateTime.UtcNow.AddSeconds(_ssgTickRateSeconds);
                     if (_players[i].hasBeenInGas)
                     {
                         if (!_poisonDamageQueue.Contains(_players[i])) _poisonDamageQueue.Add(_players[i]);
@@ -934,6 +1023,22 @@ namespace WCSARS
                             _poisonDamageQueue.Add(_players[i]);
                         }
                     }
+                }
+            }
+        }
+
+        // Updates the current server-side "Giant Eagle" position. If any Players are still in flight, they will forcibly be ejected.
+        private void UpdateGiantEagle()
+        {
+            if (!IsServerRunning() || !_isFlightActive || !_hasMatchStarted) return;
+            _giantEagle.UpdatePosition((float)DeltaTime.TotalSeconds);
+            if (_giantEagle.HasReachedEnd)
+            {
+                _isFlightActive = false;
+                for (int i = 0; i <_players.Length; i++)
+                {
+                    if (_players[i] == null || _players[i].hasEjected) continue; // Null or Ejected already
+                    else SendForcePosition(_players[i], _giantEagle.End, true); // No more chill in eagle.
                 }
             }
         }
@@ -999,7 +1104,7 @@ namespace WCSARS
 
                     // Msg25 -- Client Sent Chat Message --> I no write anymore
                 case 25:
-                    serverHandleChatMessage(msg);
+                    HandleChatMessage(msg);
                     break;
 
                     // Msg27 -- Client SlotUpdate >>> Msg28 -- Server SlotUpdate
@@ -1013,30 +1118,21 @@ namespace WCSARS
                     break;
 
                     // Msg92 -- Client Request Finish Reload --> Msg 93 -- Server Confirm Reload Finished
-                case 92: // ToDo: See if there's something else to do for reload ignore bug; Future TODO: See if cancel reload ignoring is still a thing
+                case 92:
+                    // v0.90.2? | Seems like Server can't force-cancel reloads. The client reloading ignores it; despite everyone else seeing such
+                    // Perhaps in the future that is fixed, or there's another way to fix it in this current version. Or maybe it's just that way...
                     HandleReloadFinished(msg);
                     break;
 
-                    // Msg32 -- Client Done Landing! --> Msg??? -- Server Confirm Landing -- Just check if positions are right and force if not
+                    // Msg32 -- Client Landing Finished --> (optional) Msg8 [if spot is invalid, player is forced to a valid spot]
                 case 32:
-                    Logger.missingHandle("Message appears to be missing handle. ID: 32");
-                    try
-                    {
-                        if (TryPlayerFromConnection(msg.SenderConnection, out Player p)) p.hasLanded = true;
-                        else // TODO -- Handle this
-                        {
-                            Logger.Failure($"Couldn't find player");
-                            msg.SenderConnection.Disconnect($"LOL YOU'RE NOT REAL YOU'RE NOT REAL!!");
-                        }
-                    } catch (NetException netEx) // TODO -- FINISH ERROR HANDLE
-                    {
-                        Logger.Failure($"Error processing landing data!\n{netEx}");
-                    }
+                    HandlePlayerLanded(msg);
                     break;
 
                     // Msg36 -- Client Request Throwable Start --> Msg37 -- Server Confirm Throw Request
                 case 36:
                     {
+                        //Logger.Basic("msg 36");
                         if (TryPlayerFromConnection(msg.SenderConnection, out player))
                         {
                             try
@@ -1060,7 +1156,7 @@ namespace WCSARS
                             }
                             catch (NetException netEx)
                             {
-                                Logger.Failure($"[ThrowableInitiateReq] Player @ {msg.SenderConnection} gave NetException!\n{netEx}");
+                                Logger.Failure($"[ThrowableInitiateReq] Player @ {msg.SenderConnection} caused a NetException!\n{netEx}");
                                 msg.SenderConnection.Disconnect("Error processing your request. Message: \"No data in sent packet.\"");
                             }
                         }
@@ -1075,6 +1171,7 @@ namespace WCSARS
                     // Msg38 -- Client Request REALLY Start Throwing --> Msg39 -- Server Confirm REALLY Start Throwing
                 case 38: // Still need to make throwables actually do stuff. 
                     {
+                        //Logger.Basic("msg 38");
                         if (TryPlayerFromConnection(msg.SenderConnection, out player))
                         {
                             if (player.LootItems[2].WeaponType != WeaponType.Throwable) return;
@@ -1091,9 +1188,10 @@ namespace WCSARS
                                 short grenadeID = msg.ReadInt16();
                                 if (player.LootItems[2].WeaponIndex == grenadeID)
                                 {
-                                    if ((player.LootItems[2].GiveAmount - 1) <= 0) player.LootItems[2] = new LootItem(LootType.Collectable, "NONE", 0, 0, new Vector2(0, 0));
+                                    if ((player.LootItems[2].GiveAmount - 1) <= 0) player.LootItems[2] = new LootItem(player.LootItems[2].LootID, LootType.Collectable, "NONE", 0, 0, new Vector2(0, 0));
                                     else player.LootItems[2].GiveAmount -= 1;
                                     player.ThrowableCounter++;
+                                    player.ThrownNades.Add(player.ThrowableCounter, new Projectile(grenadeID, 0, targetX, targetY, 0f));
                                     NetOutgoingMessage throwmsg = server.CreateMessage();
                                     throwmsg.Write((byte)39);
                                     throwmsg.Write(player.ID);
@@ -1115,7 +1213,7 @@ namespace WCSARS
                             }
                             catch (NetException netEx)
                             {
-                                Logger.Failure($"[ThrowableStartingReq] Player @ {msg.SenderConnection} gave NetException!\n{netEx}");
+                                Logger.Failure($"[ThrowableStartingReq] Player @ {msg.SenderConnection} caused a NetException!\n{netEx}");
                                 msg.SenderConnection.Disconnect("Error processing your request. Message: \"Error reading packet data.\"");
                             }
                         }
@@ -1129,49 +1227,12 @@ namespace WCSARS
 
                     // Msg40 -- Client Throwable Landed --> Msg41 -- Server Confirm Throwable Landed
                 case 40: // Still need to make throwables actually do stuff other than get taken away
-                    {
-                        if (TryPlayerFromConnection(msg.SenderConnection, out player))
-                        {
-                            try
-                            {
-                                float x = msg.ReadFloat();
-                                float y = msg.ReadFloat();
-                                float height = msg.ReadFloat();
-                                short ID = msg.ReadInt16();
-                                //Logger.Warn($"Grenade Height: {height}\nGrenadeID: {ID}");
-                                //Logger.Warn($"Player ThrowableCount: {player.ThrowableCounter}");
-
-                                NetOutgoingMessage fragout = server.CreateMessage();
-                                fragout.Write((byte)41);    // Header
-                                fragout.Write(player.ID);   // Short | PlayerID << who sent the grenade out
-                                fragout.Write(ID);          // Short | GrenadeID
-                                fragout.Write(x);           // Float | Grenade.X
-                                fragout.Write(y);           // Float | Grenade.Y
-                                fragout.Write(height);      // Float | Grenade.Height
-                                fragout.Write((byte)0);     // Byte  | # of HitPlayers
-                                                            //fragout.Write(playerID)   // Short | HitPlayerID
-                                server.SendToAll(fragout, NetDeliveryMethod.ReliableOrdered);
-                            }
-                            catch (NetException netEx)
-                            {
-                                Logger.Failure($"[ThrowableFinishedReq] Player @ {msg.SenderConnection} gave NetException!\n{netEx}");
-                                msg.SenderConnection.Disconnect("Error processing your request. Message: \"Error reading packet data.\"");
-                            }
-                        }
-                        else
-                        {
-                            Logger.Failure($"[ThrowableFinishedReq] Player @ {msg.SenderConnection} is not in the PlayerList!");
-                            msg.SenderConnection.Disconnect("There was an error processing your request. Message: \"Invalid Action! Not in PlayerList!\"");
-                        }
-                    }
+                    HandleGrenadeFinished(msg);
                     break;
 
-                case 44: // Client - Request Current Spectator // TODO-- Implement
-                    /* msg.ReadFloat() // cam X
-                     * msg.ReadFloat() // cam Y
-                     * msg.ReadInt16() // player id (who they're watching)
-                     */
-                    //
+                    // Msg44 -- Spectator Update Request >>> (potentially) Msg78 Update Player Spectator Count
+                case 44:
+                    HandleSpectatorRequest(msg); // appears OK [v0.90.2]
                     break;
 
                     // Msg47 -- Initiate Healing Request >>> Msg48 -- Player Initiated Healing
@@ -1183,8 +1244,9 @@ namespace WCSARS
                     HandleCoconutRequest(msg);
                     break;
 
-                case 53: // Client - Sent Cutgras
-                    serverSendCutGrass(msg);
+                    // Msg53 -- Cut Grass Request >>> Msg54 -- Confirm Grass Cut | OK v0.90.2
+                case 53: // Appears OK
+                    HandleGrassCutRequest(msg);
                     break;
 
                     // Msg55 -- Enter Hamsterball Request >>> Msg56 -- Confirm Hamsterball Enter | OK: v0.90.2
@@ -1213,120 +1275,48 @@ namespace WCSARS
                     break;
 
                     // Msg66 -- Request Emote Begin >>> Msg67 -- Player Emote Begin | OK: v0.90.2
-                case 66: // TODO:: Valid EmoteID; EmotePosition not too far off.
+                case 66: // TODO:: Valid EmoteID
                     HandleEmoteRequest(msg);
                     break;
 
-                    // TODO -- Cleanup
+                    // TODO -- Cleanup/ Separate handle method
                 case 70: // Molecrate Open Request v0.90.2
-                    try // Honestly, think nestesd ifs would've been better bc this is kind of hard to read. Perhaps cleanup
-                    {
-                        if (!_hasMatchStarted) return; // Don't bother doing anything if the match hasn't started.
-                        // Is this connection actually a loaded-in Player?
-                        if (!TryPlayerFromConnection(msg.SenderConnection, out player))
-                        {
-                            Logger.Failure($"[HandleMolecrateOpen] [Error] Could not locate Player @ NetConnection \"{msg.SenderConnection}\"; Connection has been dropped.");
-                            msg.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\nMessage: ACTION INVALID! PLAYER NOT IN SERVER_LIST");
-                            return;
-                        }
-                        // If above is true, we get our Player and can start trying to read what they sent
-                        short molecrateID = msg.ReadInt16();
-                        if ((molecrateID < 0) || (molecrateID > _moleCrates.Length-1))
-                        {
-                            Logger.Failure($"[HandleMolecrateOpen] [Error] Player @ NetConnection \"{msg.SenderConnection}\" requested a MolecrateID that's outside the bounds of the array; Connection has been dropped.");
-                            msg.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\nMessage: Invalid MolecrateID.");
-                            return;
-                        }
-                        // Make sure this molecrate is valid
-                        // Is this too excessive though? As in, is it fair to kick people?
-                        if (_moleCrates[molecrateID] == null || !_moleCrates[molecrateID].isCrateReal)
-                        {
-                            Logger.Failure($"[HandleMolecrateOpen] [Error] Player @ NetConnection \"{msg.SenderConnection}\"'s requested Molecrate isn't opened yet; Connection has been dropped.");
-                            msg.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\nMessage: Molecrate unavailable.");
-                            return;
-                        }
-                        if (_moleCrates[molecrateID].isOpened) return; // Crate already opened. Just leave...
-                        // Calculate distance between player and molecrate:
-                        float distance = (_moleCrates[molecrateID].Position - player.Position).magnitude;
-                        //Logger.DebugServer($"Distance: {distance}"); // distance seems to be ~10 in any direction; but diag ~14-15
-                        if (distance <= 14.7f) // WHOOOAA-- MY GAAH- WHY-Y=YYY ARE YOU SOOO~ SILLY~ (before it was checking if distance was greater not within)
-                        {
-                            // If all other checks pass, then this Player opened the molecrate.
-                            NetOutgoingMessage openmsg = server.CreateMessage();
-                            openmsg.Write((byte)71);
-                            openmsg.Write(molecrateID);
-                            openmsg.Write(_moleCrates[molecrateID].Position.x);
-                            openmsg.Write(_moleCrates[molecrateID].Position.y);
-                            server.SendToAll(openmsg, NetDeliveryMethod.ReliableOrdered);
-                            // Do we need a separate Server-SendMolecrateOpened() method?
-                            // TODO -- Drop Molecrate loot
-                        }
-                        else
-                        {
-                            Logger.Failure($"[HandleMoleCrateDrop] Player was not within the threshold. Returning, but investigate.\nPlayer {player.ID} ({player.Name}) @ {msg.SenderConnection}");
-                        }
-                    } catch (Exception except)
-                    {
-                        Logger.Failure($"[HandleMolecrateOpen] ERROR\n{except}");
-                    }
+                    HandleMolecrateOpenRequest(msg);
                     break;
 
                     // TODO -- Cleanup
-                case 72: // CLIENT_DESTORY_DOODAD
-                    try // todo :: maybe do more with data obtained. maybe don't allocate more variables and stuff if not going to do anything
-                    {
-                        int checkX = msg.ReadInt32();
-                        int checkY = msg.ReadInt32();
-                        short projectileID = msg.ReadInt16();
-                        serverDoodadDestroy(checkX, checkY);
-                    }
-                    catch (Exception except)
-                    {
-                        Logger.Failure($"[Server Destroy Doodad] ERROR\n{except}");
-                    }
+                case 72:
+                    HandleDoodadDestroyed(msg);
                     break;
 
-                case 74: // Client - Sent Attack Windup
+                    // Msg74 -- Minigun Winding-up Request [ACT: "attackWindup", but has only been seen used by the Minigun? (is used in Bow & Sparrow update?)]
+                case 74: // Appears OK [6/6/23]
                     HandleAttackWindUp(msg);
                     break;
 
-                case 76: // Client - Sent Attack Winddown
+                    // Msg76 -- Minigun Winddown Request [ACT: "attackWinddown", but has only been seen used by the Minigun? (is used in Bow & Sparrow update?)]
+                case 76: // Appears OK [6/6/23]
                     HandleAttackWindDown(msg);
                     break;
 
-
+                    // Msg80 -- Teammate Pickup Request
                 case 80:
                     HandleTeammatePickupRequest(msg);
                     break;
 
-                //
+                    // Msg85 -- Mark Map Request
                 case 85:
                     HandleMapMarked(msg);
                     break;
 
-                    // TODO -- Cleanup
-                case 87: // Literally no clue what this one is because its so unspeciifc. Guessing this has something to do with grenades bc "GID"
-                    try // TODO -- Redo this whole thing like oh my goodness is this so silly
-                    {
-                        if (TryPlayerFromConnection(msg.SenderConnection, out player))
-                        {
-                            float posX = msg.ReadFloat();
-                            float posY = msg.ReadFloat();
-                            short gID = msg.ReadInt16();
-                            NetOutgoingMessage lol = server.CreateMessage();
-                            lol.Write((byte)111);
-                            lol.Write(player.ID);
-                            lol.Write(gID);
-                        }
-                        else
-                        {
-                            Logger.Failure("87 error");
-                        }
-                    }
-                    catch (Exception except)
-                    {
-                        Logger.Failure($"87 error\n{except}");
-                    }
+                    // Msg87 -- Trap Deployment Finish Request
+                case 87:
+                    HandleTrapDeployed(msg);
+                    break;
+
+                    // Msg88 -- Vehicle Hit Banana Request
+                case 88: // Appears OK [6/6/23]
+                    HandleVehicleHitBanana(msg);
                     break;
 
                     // Msg90 -- Client Request Reload Cancel --> Msg91 -- Server Confirm Reload Canceled 
@@ -1335,7 +1325,7 @@ namespace WCSARS
                     break;
 
                     // Msg97 -- Dummy >> Send back another dummy (Msg99)
-                case 97: // Appears OK
+                case 97:
                     SendDummyMessage();
                     break;
 
@@ -1369,20 +1359,32 @@ namespace WCSARS
                     // String | PartyMemberN.PlayFabID
             try
             {
+                // Read some values
                 string playFabID = msg.ReadString();
-                /*string uAnalyticsSessionTicket = msg.ReadString(); // If you want it, just uncomment. Works fine v0.90.2
-                bool fill = msg.ReadBoolean();
-                string playFabSessionTicket = msg.ReadString();
+                msg.ReadString(); // Unity Analytics Session Ticket; Don't want it, but must read to advance
+                //string uAnalyticsSessionTicket = msg.ReadString(); // OK v0.90.2
+                bool fills = msg.ReadBoolean();
+                msg.ReadString(); // PlayFab Session Ticket; Don't want it, but must read to advance
+                //string playFabSessionTicket = msg.ReadString();
                 int partyCount = msg.ReadByte();
-                string[] partyPlayFabIDs = null;
+
+                // TODO: start making the client real / do some checking
+                /*Client newClient = new Client(msg.SenderConnection, playFabID);
+                newClient.Fills = fills;
                 if (partyCount > 0)
                 {
-                    partyPlayFabIDs = new string[partyCount];
-                    for (int i = 0; i < partyCount; i++)
+                    int TEST_COUNT = partyCount + GetValidPlayerCount();
+                    Logger.DebugServer($"Calc Count: {TEST_COUNT} : length: {_players.Length}");
+                    if ( TEST_COUNT> _players.Length)
                     {
-                        partyPlayFabIDs[i] = msg.ReadString();
+                        msg.SenderConnection.Disconnect("Not enough slots for your entire party.");
+                        return;
                     }
+                    newClient.PartyMemberPlayFabIDs = new string[partyCount];
+                    for (int i = 0; i < partyCount; i++) newClient.PartyMemberPlayFabIDs[i] = msg.ReadString();
                 }*/
+
+
                 Logger.DebugServer($"[HandleAuthenticationRequest] Incoming PlayFabID: {playFabID}");
                 // See if this client's PlayFabID is in the banlist.
                 for (int i = 0; i < _bannedPlayers.Count; i++)
@@ -1401,29 +1403,29 @@ namespace WCSARS
                 {
                     _incomingConnections.Add(msg.SenderConnection, playFabID);
                 }
-                NetOutgoingMessage acceptMsg = server.CreateMessage();
+                NetOutgoingMessage acceptMsg = server.CreateMessage(2);
                 acceptMsg.Write((byte)2);
                 acceptMsg.Write(true);
                 server.SendMessage(acceptMsg, msg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
                 Logger.Success($"[ServerAuthentiate] [OK] Sent {msg.SenderConnection} an accept message!");
             } catch (NetException netEx)
             {
-                Logger.Failure($"{msg.SenderConnection} gave a NetException!\n{netEx}");
+                Logger.Failure($"[AuthenticationRequest] Player @ {msg.SenderConnection} caused a NetException!\n{netEx}");
                 msg.SenderConnection.Disconnect($"There was an error while reading your packet data.");
             }
         }
 
         private void HandleIncomingPlayerRequest(NetIncomingMessage msg) // Msg3 >> Msg4
         {
-            if (TryPlayerFromConnection(msg.SenderConnection, out Player p))
+            if (TryPlayerFromConnection(msg.SenderConnection, out Player p)) // todo - cleanup
             {
                 Logger.Failure($"[HandleIncomingPlayerRequest] [Error] There already exists a Player object with incoming connection {msg.SenderConnection}!");
                 return;
             }
             try
             {
-                // Read Sent Character Data
-                string steamName = msg.ReadString();
+                // read sent character data --  maybe-todo - verify all these ids and such; however... this requires more data files!
+                string steamName = msg.ReadString(); // have to mod game to do this
                 short animal = msg.ReadInt16();
                 short umbrella = msg.ReadInt16();
                 short gravestone = msg.ReadInt16();
@@ -1442,7 +1444,7 @@ namespace WCSARS
                     gsGunIDs[index] = msg.ReadInt16();
                     gsSkinIndicies[index] = msg.ReadByte();
                 }
-                // --- end of data read v0.90.2
+                // end of data read v0.90.2
                 SortPlayerEntries();
                 for (int i = 0; i < _players.Length; i++)
                 {
@@ -1455,8 +1457,10 @@ namespace WCSARS
 
                     // is playfab id in dataset? || TODO:: separate method + add to dataset if not.
                     string iPlayFabID = _incomingConnections[msg.SenderConnection];
-                    Logger.DebugServer("Incoming PlayFabID: " + iPlayFabID);
+                    //Logger.DebugServer("Incoming PlayFabID: " + iPlayFabID);
+                    newPlayer.PlayFabID = iPlayFabID; // todo - better playFabID handling; this is just temporary.
                     int playerDataCount = _playerData.Count; // For whatever reason, it is slightly faster to cache the length of lists than to call Count
+                    bool doesDataExist = false;
                     for (int j = 0; j < playerDataCount; j++)
                     {
                         if ((_playerData[j]["playfabid"] != null) && (_playerData[j]["playfabid"] == iPlayFabID))
@@ -1464,10 +1468,22 @@ namespace WCSARS
                             if (_playerData[j]["dev"]) _players[i].isDev = _playerData[j]["dev"];
                             if (_playerData[j]["mod"]) _players[i].isMod = _playerData[j]["mod"];
                             if (_playerData[j]["founder"]) _players[i].isFounder = _playerData[j]["founder"];
+                            doesDataExist = true;
                             break;
                         }
                     }
-                    // Teammates | TODO: Fills
+
+                    // todo - this but cooler and also async probably
+                    if (!doesDataExist)
+                    {
+                        Logger.DebugServer("had to add player!");
+                        JSONNode newPData = JSON.Parse($"{{playfabid:\"{iPlayFabID}\",name:\"{steamName}\",dev:false,mod:false,founder:false}}");
+                        _playerData.Add(newPData);
+                        string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                        JSONNode.SaveToFile(_playerData, baseloc + @"\player-data.json");
+                    } // end of stored data
+
+                    // Teammates | todo - fills
                     if (_gamemode != "solo")
                     {
                         int lim = 0;
@@ -1483,9 +1499,7 @@ namespace WCSARS
                             _players[x].Teammates.Add(_players[i]);
                         }
                     }
-
-                    // end of playfabChecj
-                    SendMatchInformation(msg.SenderConnection, assignID); // We're done. They can continue connecting now.
+                    SendMatchInformation(msg.SenderConnection, assignID); // server done storing data; send next message in sequence
                     break;
                 }
             } catch (NetException netEx)
@@ -1500,23 +1514,24 @@ namespace WCSARS
         /// </summary>
         private void SendMatchInformation(NetConnection client, short assignedID) // Msg4
         {
+            // TODO:: Gallery Targets & MatchUUID
             NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)4);                 // Byte   |  MessageID 
-            msg.Write(assignedID);              // Short  |  AssignedID
-            // Send RNG Seeds
-            msg.Write(_lootSeed);               // Int  |  LootGenSeed
-            msg.Write(_coconutSeed);            // Int  |  CocoGenSeed
-            msg.Write(_vehicleSeed);            // Int  |  VehicleGenSeed
+            msg.Write((byte)4);                 // 1 Byte   |  MessageID 
+            msg.Write(assignedID);              // 2 Short  |  AssignedID
+            // RNG Seeds
+            msg.Write(_level.LootSeed);         // 4 Int  |  LootGenSeed -- INT expected; sending UINT; game converts int back to uint anyways soo
+            msg.Write(_level.CoconutSeed);      // 4 Int  |  CocoGenSeed -- INT expected; sending UINT; game converts int back to uint anyways soo
+            msg.Write(_level.HamsterballSeed);  // 4 Int  |  VehicleGenSeed -- INT expected; sending UINT; game converts int back to uint anyways soo
             // Match / Lobby Info...
-            msg.Write(_lobbyRemainingSeconds);  // Double  |  LobbyTimeRemaining
-            msg.Write("yerhAGJ");               // String  |  MatchUUID  // TODO-- Unique IDs
-            msg.Write(_gamemode);               // String  |  Gamemode [solo, duo, squad]
-            // Flight Path  // TOOD-- RANDOMIZE
-            msg.Write(0f);                      // Float  | FlightPath X1
-            msg.Write(0f);                      // Float  | FlightPath Y1
-            msg.Write(4206f);                   // Float  | FlightPath X1
-            msg.Write(4206f);                   // Float  | FlightPath Y1
-            // Gallery Targets Positions // TODO -- MAKE REAL
+            msg.Write(_lobbyRemainingSeconds);  // 8 Double  |  LobbyTimeRemaining
+            msg.Write("yerhAGJ");               // V String  |  MatchUUID
+            msg.Write(_gamemode);               // V String  |  Gamemode [solo, duo, squad]
+            // Flight Path
+            msg.Write(_giantEagle.Start.x);     // 4 Float | FlightPath - StartX
+            msg.Write(_giantEagle.Start.y);     // 4 Float | FlightPath - StartY
+            msg.Write(_giantEagle.End.x);       // 4 Float | FlightPath - StartX
+            msg.Write(_giantEagle.End.y);       // 4 Float | FlightPath - StartY
+            // Gallery Targets Positions
             msg.Write((byte)0);
             msg.Write((byte)0);
             server.SendMessage(msg, client, NetDeliveryMethod.ReliableOrdered);
@@ -1538,7 +1553,7 @@ namespace WCSARS
                     msg.Write(_players[i].UmbrellaID);       // Short   | UmbrellaID
                     msg.Write(_players[i].GravestoneID);     // Short   | GravestoneID
                     msg.Write(_players[i].DeathExplosionID); // Short   | DeathExplosionID
-                    for (int j = 0; j < 6; j++)                 // Short[] | PlayerEmotes: Always 6 in v0.90.2
+                    for (int j = 0; j < 6; j++)              // Short[] | PlayerEmotes: Always 6 in v0.90.2
                     {
                         msg.Write(_players[i].EmoteIDs[j]);  // Short   | EmoteID[i]
                     }
@@ -1583,32 +1598,39 @@ namespace WCSARS
         /// <param name="pmsg">NetMessage to read the packet data from.</param>
         private void HandleEjectRequest(NetIncomingMessage pmsg) // Msg7
         {
+            if (!_hasMatchStarted) return; // Shouldn't get this request unless match has started.
             if (VerifyPlayer(pmsg.SenderConnection, "HandleEjectRequest", out Player player))
             {
-                // TODO:: When Giant Eagle is real, check this again.
-                if (!player.IsPlayerReal()) SendForcePosition(player, player.Position, true);
-                else Logger.Failure($"[HandleEjectRequest] Player  @ {pmsg.SenderConnection} tried ejecting but they're already real!");
+                if (!player.hasEjected)
+                {
+                    if (Vector2.ValidDistance(player.Position, _giantEagle.Position, 8f, true)) SendForcePosition(player, player.Position, true);
+                    else SendForcePosition(player, _giantEagle.Position, true);
+                } else Logger.Failure($"[HandleEjectRequest] Player  @ {pmsg.SenderConnection} tried ejecting but they already have!");
             }
         }
 
         /// <summary>
-        /// Sends a NetMessage to all NetPeers which forces the provided Player to the specified position; with the provided parachute mode.
+        /// Sends a NetMessage to all NetPeers which forces the provided Player to the specified position with the provided parachute mode.
         /// </summary>
         /// <param name="player">Player who is getting force-moved.</param>
         /// <param name="moveToPosition">Position to move this player to.</param>
-        /// <param name="isParachute">Whether the player should parachute.</param>
-        private void SendForcePosition(Player player, Vector2 moveToPosition, bool isParachute) // Msg8
+        /// <param name="isParachute">Whether the player should parachute (default is False).</param>
+        private void SendForcePosition(Player player, Vector2 moveToPosition, bool isParachute = false) // Msg8
         {
             // Set server-side stuff
             player.Position = moveToPosition;
-            if (isParachute) player.hasLanded = false;
-            // Send Message out
-            NetOutgoingMessage msg = server.CreateMessage(22); // 22 == Allocate 22 bytes; should really use this more
-            msg.Write((byte)8);          // Byte  | MsgID (8)  | 1?
-            msg.Write(player.ID);        // Short | PlayerID   | 4
-            msg.Write(moveToPosition.x); // Float | PositionX  | 8
-            msg.Write(moveToPosition.y); // Float | PositionY  | 8
-            msg.Write(isParachute);      // Bool  | Parachute? | 1?
+            if (isParachute)
+            {
+                player.hasLanded = false;
+                player.hasEjected = true;
+                player.isDiving = false;
+            }
+            NetOutgoingMessage msg = server.CreateMessage(14);
+            msg.Write((byte)8);          // 1 Byte  | MsgID (8)
+            msg.Write(player.ID);        // 2 Short | PlayerID
+            msg.Write(moveToPosition.x); // 4 Float | PositionX
+            msg.Write(moveToPosition.y); // 4 Float | PositionY
+            msg.Write(isParachute);      // 1 Bool  | Parachute?
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -1668,47 +1690,71 @@ namespace WCSARS
             if (!IsServerRunning()) return;
             if (VerifyPlayer(pmsg.SenderConnection, "HandlePositionUpdate", out Player player))
             {
-                if (!player.isAlive) return; // No, this isn't called when a player is dead. That's Msg44 silly. Go there!
+                // note - msg14 is NEVER sent by a dead player. dead players instead use msg44!
+                if (!player.isAlive) return;
                 try
                 {
-                    // Read Values
+                    // Client Data | What they *think* is true
                     float mouseAngle = pmsg.ReadInt16() / 57.295776f;
                     float posX = pmsg.ReadFloat();
                     float posY = pmsg.ReadFloat();
                     byte walkMode = pmsg.ReadByte(); // v0.90.2 OK:: do later versions use this still?
-                    if (walkMode > 5)
+                    if (walkMode > 6)
                     {
                         Logger.missingHandle($"Unhandled walkmode? Mode#: {walkMode}");
                         walkMode = 1;
                     }
-                    // Downed Player Movement-Mode::
+                    // Movemode-Downed | BandAid fix for playing forever thinking they're downed.
+					// TODO: What happens if we just send Msg45 (PlayerDataUpdated) with the correct states here? Does that fix the problem?
                     if (player.isDown && walkMode != 5) walkMode = 5;
                     else if (!player.isDown && walkMode == 5)
                     {
                         Logger.DebugServer($"Player {player.Name} keeps saying they're down but they ain't. what an idiot, am I right?");
                         walkMode = 1;
                     }
+                    // Movemode-Stunned | BandAid fix for forever stuns (hopefully)
+                    if (player.isStunned && walkMode != 6) walkMode = 6;
+                    else if (!player.isStunned && walkMode == 6)
+                    {
+                        Logger.DebugServer($"[PositionUpdate] {player} thinks they are still stun-locked, but they aren't!");
+                        walkMode = 1;
+                        player.WalkMode = walkMode;
+                        SendPlayerDataChange(player);
+                    }
 
-                    // Try setting some values
+                    // Server-Side Data | Setting & Checks
+                    // TODO: Better check for valid sent player position-- are they in a wall, are they going too fast, etc. (wait actually that's kinda it tbh)
+                    /*Vector2 sentPostion = new Vector2(posX, posY);
+                    if (Vector2.ValidDistance(sentPostion, player.Position, 10f, true)) player.Position = sentPostion; // If within 10units of prev spot, this sentPos is valid.
+                    else SendForcePosition(player, player.Position, false);*/
                     player.Position = new Vector2(posX, posY);
-                    //Vector2 sentPostion = new Vector2(posX, posY); // too buggy right now. do when giant eagle exists
-                    //if (Vector2.ValidDistance(sentPostion, player.Position, 10f, true)) player.Position = sentPostion;
-                    //else SendForcePosition(player, player.Position, false);
                     player.MouseAngle = mouseAngle;
                     player.WalkMode = walkMode;
 
                     // For "special" Movement-Modes
-                    if (walkMode == 2)
+                    if (walkMode == 2) // Believe this is jumping?
                     {
                         CheckMovementConflicts(player);
                         if (player.isReloading) SendCancelReload(player);
                     }
+					// Movemode - Hamsterball
                     if (walkMode == 4 && player.VehicleID != -1)
                     {
                         float vehicleX = (float)(pmsg.ReadInt16() / 10f);
                         float vehicleY = (float)(pmsg.ReadInt16() / 10f);
                         player.HamsterballVelocity = new Vector2(vehicleX, vehicleY);
                     }
+					// Ending Emotes if Player is emoting...
+                    // TODO:: if memeMode
+                    if (player.isEmoting && !Vector2.ValidDistance(player.Position, player.EmotePosition, 4f, true)) SendPlayerEndedEmoting(player);
+
+                    // Cancel pickup if this player moved too far away | if the player beleives hard enough they can break this
+                    // TODO:: this breaks sometimes still... gotta handle downed teammates differently, most likely
+                    if (player.isReviving && TryPlayerFromID(player.RevivingID, out Player whoImRessing) && !Vector2.ValidDistance(player.Position, whoImRessing.Position, 3f, true)) HandlePickupCanceled(player);
+                    if (player.isBeingRevived && TryPlayerFromID(player.SaviourID, out Player mySaviour) && !Vector2.ValidDistance(player.Position, mySaviour.Position, 3f, true)) HandlePickupCanceled(player);
+
+                    //if (player.isDrinking && !Vector2.ValidDistance(player.Position, player.HealPosition, 4f, true)) SendPlayerEndDrink(player);
+                    //if (player.isTaping && !Vector2.ValidDistance(player.Position, player.HealPosition, 4f, true)) SendPlayerEndTape(player);
                 }
                 catch (NetException netEx)
                 {
@@ -1718,53 +1764,47 @@ namespace WCSARS
             }
         }
 
+        // Msg15 | "Player Died" --- Sent to all connected NetPeers whenever a Player dies.
+        private void SendPlayerDeath(short playerID, Vector2 gravespot, short killerID, short weaponID)
+        {
+            NetOutgoingMessage msg = server.CreateMessage(15);
+            msg.Write((byte)15);    // 1 Byte  | MsgID (15)
+            msg.Write(playerID);    // 2 Short | Dying PlayerID
+            msg.Write(gravespot.x); // 4 Float | GraveSpawnX
+            msg.Write(gravespot.y); // 4 Float | GraveSpawnY
+            msg.Write(killerID);    // 2 Short | SourceID
+            msg.Write(weaponID);    // 2 Short | WeaponID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Handles the killing of Players
         private void HandlePlayerDied(Player player)
         {
             player.isAlive = false;
+            CheckMovementConflicts(player);
             SendPlayerDeath(player.ID, player.Position, player.LastAttackerID, player.LastWeaponID);
-            if (player?.Teammates.Count > 0)
-            {
-                Logger.Warn("hey so yeah this passes correctly. cool, right?");
-                for (int i = 0; i < player.Teammates.Count; i++)
-                {
-                    player.Teammates[i].isAlive = false;
-                    SendPlayerDeath(player.Teammates[i].ID, player.Teammates[i].Position, player.Teammates[i].LastAttackerID, player.Teammates[i].LastWeaponID);
-                }
-            }
+            // summon loot
+            Vector2 position = player.Position;
             _hasPlayerDied = true;
-        }
-
-        private void SendPlayerDeath(short playerID, Vector2 gravespot, short killerID, short weaponID)
-        {
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)15);    // Byte  | MsgID (15)
-            msg.Write(playerID);    // Short | Dying PlayerID
-            msg.Write(gravespot.x); // Float | GraveSpawnX
-            msg.Write(gravespot.y); // Float | GraveSpawnY
-            msg.Write(killerID);    // Short | SourceID
-            msg.Write(weaponID);    // Short | WeaponID
-            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-        }
-
-        /// <summary>
-        /// Sends a NetMessage to all connected clients that contains information about a particular Player dying.
-        /// </summary>
-        private void SendPlayerDeath(short deceasedID, float gravestoneX, float gravestoneY, short killerID, short weaponID)
-        {
-            NetOutgoingMessage deathMsg = server.CreateMessage();
-            deathMsg.Write((byte)15);       // Header                  | Byte
-            deathMsg.Write(deceasedID);     // Deceased ID             | Short
-            deathMsg.Write(gravestoneX);    // Deceased Gravestone X   | Float
-            deathMsg.Write(gravestoneY);    // Deceased Gravestone Y   | Float
-            deathMsg.Write(killerID);       // Killing PlayerID        | Short  // -3 = Banan; -2 = Gas; -1 = Nothing??; 0+ = Player; 
-            deathMsg.Write(weaponID);       // WeaponID                | Short  // -1/-4 = Nothing?; -3 = Explosion; -2 = Hamsterball; 0+ Weapon
-            server.SendToAll(deathMsg, NetDeliveryMethod.ReliableOrdered);
+            if (player.ArmorTier > 0) SendSpawnedLoot(_level.NewLootArmor(player.ArmorTier, player.ArmorTapes, position));
+            if (player.HealthJuice > 0) SendSpawnedLoot(_level.NewLootJuice(player.HealthJuice, position));
+            if (player.SuperTape > 0) SendSpawnedLoot(_level.NewLootTape(player.SuperTape, position));
+            for (int i = 0; i < player.Ammo.Length; i++)
+            {
+                if (player.Ammo[i] > 0) SendSpawnedLoot(_level.NewLootAmmo((byte)i, player.Ammo[i], position));
+            }
+            for (int j = 0; j < player.LootItems.Length; j++)
+            {
+                if (player.LootItems[j] == null) continue;
+                if (player.LootItems[j].LootType != LootType.Collectable) SendSpawnedLoot(_level.NewLootWeapon(player.LootItems[j].WeaponIndex, player.LootItems[j].Rarity, player.LootItems[j].GiveAmount, position));
+            }
         }
 
         /// <summary>
         /// Handles an incoming message marked as a "PlayerAttackRequest" packet. If in match, Players are kicked for invalid actions.
         /// </summary>
         /// <param name="amsg">Incoming message to handle.</param>
+		// TODO: likely needs another refresher/ utilize the new VerifyPlayer method... although that may need some improvements as well...
         private void HandleAttackRequest(NetIncomingMessage amsg)
         {
             if (TryPlayerFromConnection(amsg.SenderConnection, out Player player))
@@ -1778,8 +1818,8 @@ namespace WCSARS
                     short weaponID = amsg.ReadInt16();
                     byte slotID = amsg.ReadByte();
                     // Now, if the sent slot isn't the Melee slot; then figure out if its valid.
-                    Logger.DebugServer($"Sent SlotID: {slotID}");
-                    Logger.DebugServer($"AttackHandle Ammo NOW: {player.LootItems[slotID].GiveAmount}");
+                    //Logger.DebugServer($"Sent SlotID: {slotID}");
+                    //Logger.DebugServer($"AttackHandle Ammo NOW: {player.LootItems[slotID].GiveAmount}");
                     if (_hasMatchStarted && slotID != 2) // If not 2, then *should be a weapon*; If it isn't
                     {
                         if (!player.IsGunAndSlotValid(weaponID, slotID))
@@ -1802,11 +1842,21 @@ namespace WCSARS
                     float spawnY = amsg.ReadFloat();
                     bool isValid = amsg.ReadBoolean();
                     bool hitDestructible = amsg.ReadBoolean();
-                    if (hitDestructible) serverDoodadDestroy(amsg.ReadInt16(), amsg.ReadInt16());
+                    if (hitDestructible)
+                    {
+                        Vector2 hitPos = new Vector2((float)amsg.ReadInt16(), (float)amsg.ReadInt16());
+                        if (_level.TryDestroyingDoodad(hitPos, out Doodad[] hitDoodads, _hasMatchStarted))
+                        {
+                            for (int i = 0; i < hitDoodads.Length; i++)
+                            {
+                                SendDestroyedDoodad(hitDoodads[i]);
+                            }
+                        }
+                    }
                     // Make sure AttackIDs line up
                     short attackID = amsg.ReadInt16();
-                    player.AttackCount++; // Added with Lance Test
-                    Logger.DebugServer($"AttackID: {attackID}; Plr.AttackCount: {player.AttackCount}");
+                    player.AttackCount++;
+                    //Logger.DebugServer($"AttackID: {attackID}; Plr.AttackCount: {player.AttackCount}");
                     if (player.AttackCount != attackID)
                     {
                         Logger.Failure($"[HandleAttackRequest] Player @ {amsg.SenderConnection} Attack count mis-aligned.");
@@ -2006,29 +2056,32 @@ namespace WCSARS
             }
         }
 
-        // TODO -- This can likely be improved. I want to be comfortable using this method without wondering whether or not it is OK
+        // I feel fairly confident that this function is working as it should now; so it want to rename this simply to "DamagePlayer" you could.
+        // However, in the event teammates are worked on/ damage is calculated differently... yeah this needs updating again!
         private void test_damagePlayer(Player player, int damage, short sourceID, short weaponID)
         {
-            // Check to see if the Player is DEAD or... /GOD
             if (!player.isAlive || player.isGodmode) return; // Don't worry about logging this...
             player.SetLastDamageSource(sourceID, weaponID);
             // Try and Damage
             Logger.DebugServer($"Player {player.Name} (ID: {player.ID}) Health: {player.HP}\nDamage Attempt: {damage}");
             if ((player.HP - damage) <= 0)
             {
-                if (player.Teammates != null && player.Teammates.Count > 0)
+                if (!player.isDown && player.Teammates?.Count > 0) // team-based modes; should get downed if teammates are available
                 {
-                    for (int i = 0; i < player.Teammates.Count; i++)
+                    if (player.AliveNonDownTeammteCount() > 0)
                     {
-                        if (player.Teammates[i].isAlive && !player.Teammates[i].isDown) // Alive and NOT down
+                        HandlePlayerDowned(player, sourceID, weaponID);
+                        return; // prevent falling onto the HandlePlayerDeath()
+                    }
+                    else // I ain't got no teammates
+                    {
+                        for (int i = 0; i < player.Teammates.Count; i++)
                         {
-                            HandlePlayerDowned(player, sourceID, weaponID);
-                            return;
+                            if (!player.Teammates[i].isAlive) continue; // we don't wanna hear them dying again... trust me
+                            HandlePlayerDied(player.Teammates[i]); // Gahhh!
                         }
-                        Logger.Warn("Player had no teammates left that were ALIVE and NOT-DOWN");
                     }
                 }
-                Logger.DebugServer("This damage attempt resulted in the death of the player.");
                 HandlePlayerDied(player);
             }
             else
@@ -2054,714 +2107,1033 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
-        /// <summary>
-        /// Handles a chat message the server has received.
-        /// </summary>
-        /// <param name="message"></param>
-        private void serverHandleChatMessage(NetIncomingMessage message) // TODO - Cleanup; fix/redo or remove the """Command""" feature
+        // Msg25 >> Msg26 OR Msg94 OR Msg106 | "Client ChatMsg Request" -- Called whenever a player sends a chat... message... what did you expect?
+        private void HandleChatMessage(NetIncomingMessage pmsg)
         {
-            Logger.Header("Chat message. Wonderful!");
-            //this is terrible. we are aware. have fun.
-            if (TryPlayerFromConnection(message.SenderConnection, out Player LOL))
+            if (VerifyPlayer(pmsg.SenderConnection, "HandleChatMessage", out Player player))
             {
-                if (message.PeekString().StartsWith("/"))
+                if (!player.isReady)
                 {
-                    string[] command = message.PeekString().Split(" ", 9);
-                    string responseMsg = "command executed... no info given...";
-                    short id, id2, amount;
-                    float cPosX, cPosY;
-                    Logger.Warn($"Player {LOL.ID} ({LOL.Name}) sent command \"{command[0]}\"");
-                    switch (command[0])
+                    Logger.Failure($"[HandleChatMessage] Player sent a chat message, but they aren't marked as ready. Assuming this is an error on that part; or something else entirely is wrong.");
+                    return;
+                }
+                try
+                {
+                    string text = pmsg.ReadString();
+                    if (text.StartsWith("/"))
                     {
-                        case "/help":
-                            Logger.Success("user has used help command");
-                            if (command.Length >= 2)
-                            {
-                                switch (command[1])
+                        string[] command = text.Split(" ");
+                        string responseMsg = "command executed... no info given...";
+                        Logger.Warn($"Player {player} sent command \"{command[0]}\"");
+                        switch (command[0])
+                        {
+                            case "/help": // most of these ""commands"" are just for testing out features... so they may or may not be removed at any point
+                                Logger.Success("/help has been used!");
+                                if (command.Length >= 2)
                                 {
-                                    case "help":
-                                        responseMsg = "\nThis command will give information about other commands!\nUsage: /help {page} [WARNING: NOT UPDATED CONSISTENTLY!!]";
-                                        break;
-                                    case "heal":
-                                        responseMsg = "\nHeals a certain player's health by the inputed value.\nExample: /heal 0 50";
-                                        break;
-                                    case "teleport":
-                                        responseMsg = "\nTeleports the user to provided cordinates.\nExample: /teleport 200 500";
-                                        break;
-                                    case "tp":
-                                        responseMsg = "\nTeleports given player_1 TO given player_2.\nExample: /teleport 2 0";
-                                        break;
-                                    case "moveplayer":
-                                        responseMsg = "\nTeleports provided player to given cordinates.\nExample: /teleport 0 5025 1020";
-                                        break;
-                                    /*case "2":
-                                        responseMsg = "Command Page 2 -- List of usabble Commands\n/help {page/command}\n/heal {ID} {AMOUNT}";
-                                        break;
-                                    case "3":
-
-                                        break;*/
-                                    default:
-                                        responseMsg = $"Invalid help entry '{command[1]}'.\nPlease see '/help' for a list of usable commands.";
-                                        break;
-                                }
-                            }
-                            else
-                            {
-                                responseMsg = "\n(1) List of usable commads:" +
-                                    "\n/help {page}" +
-                                    "\n/heal {ID} {AMOUNT}" +
-                                    "\n/sethp {ID} {AMOUNT}" +
-                                    "\n/teleport {positionX} {positionY}" +
-                                    "\n/tp {playerID1} {playerID2}" +
-                                    "\n/moveplayer {playerID} {X} {Y}" +
-                                    "\nType '/help [command]' for more information";
-                            }
-                            break;
-
-                        case "/safemode":
-                            _safeMode = !_safeMode;
-                            responseMsg = $"Safemode has been set to \"{_safeMode.ToString().ToUpper()}\".\nI sure hope you know what you're doing...";
-                            break;
-                        case "/mole": // only for testing right now. sorry
-                            {
-                                float t = 3f;
-                                Vector2 start = new Vector2(2000f, 2000f);
-                                Vector2[] points = new Vector2[]
-                                {
-                                new Vector2(2020f, 2020f),
-                                new Vector2(2000f, 2020f),
-                                new Vector2(1990, 2030),
-                                new Vector2(1950, 2000),
-                                new Vector2(1860, 1984),
-                                new Vector2(1890, 1600)
-                                };
-                                responseMsg = "Couldn't find a valid slot to put the mole in. Likely reached the limit";
-                                for (int i = 0; i < _moleCrates.Length; i++)
-                                {
-                                    if (_moleCrates[i] != null) continue;
-
-                                    // Send junk to client...
-                                    NetOutgoingMessage msg = server.CreateMessage();
-                                    msg.Write((byte)68); // msg id      -- byte
-                                    msg.Write((short)i); // molecrate id -- short
-                                    msg.Write(t);        // waittime    -- float
-                                    msg.Write(start.x);  // start x     -- float
-                                    msg.Write(start.y);  // start y     -- float
-                                    msg.Write((byte)points.Length); // amount of endpoints  -- byte
-                                    for (int j = 0; j < points.Length; j++)
+                                    switch (command[1])
                                     {
-                                        msg.Write(points[j].x); // newPointx    -- float
-                                        msg.Write(points[j].y); // newPointx    -- float
-                                    }
-                                    server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-
-                                    // Actual Server-Side stuff
-                                    _moleCrates[i] = new MoleCrate(start, points, t);
-                                    responseMsg = $"MoleCrate Message Sent! ID: {i}\nStart: ({start.x}, {start.y})\nMove0: {points[0].x}, {points[0].y}\nTotal wait: {t + 2.7f}s; real: {t}s";
-                                    SendForcePosition(LOL, start, false);
-                                    break;
-                                }
-                            }
-                            break;
-                        case "/camptest":
-                            for (int i = 0; i < _campfires.Length; i++)
-                            {
-                                if (_campfires[i] == null) continue;
-                                Campfire bruh = _campfires[i];
-                                SendForcePosition(LOL, bruh.Position, false);
-                                Thread.Sleep(400);
-                            }
-                            break;
-                        /*case "/shutdown":
-                        case "/stop":
-                            server.Shutdown("The server is shutting down...");
-                        break;*/
-
-                        case "/gun":
-                            try
-                            {
-                                if (TryPlayerFromConnection(message.SenderConnection, out Player player))
-                                {
-                                    if (command.Length >= 2)
-                                    {
-                                        if (!short.TryParse(command[1], out short wepID))
-                                        {
-                                            responseMsg = $"Could not parse value as INT! (Read Value: {command[1]}";
-                                        }
-                                        // Find Weapon
-                                        Weapon[] _gunList = Weapon.GetAllGunsList(_weapons);
-                                        if (wepID <= 0 || (wepID > _gunList.Length)) // Make sure not going out of bounds
-                                        {
-                                            responseMsg = $"Value \"{wepID}\" is out of bounds!\nTotal Amount: {_gunList.Length} (IDs start at 1!)";
+                                        case "help":
+                                            responseMsg = "\n<<Warning: not updated often; may be out of date/wrong!>>\nProvides information on other commands.\nUsage: /help [page#] OR /help [command] (ex: /help tp)";
                                             break;
-                                        }
-                                        Weapon weapon = _gunList[wepID - 1]; // Acquire the weapon (EnteredID is +1 from actual; goes 1,2,3; NOT 0,1,2!
-                                        byte rarity = weapon.RarityMaxVal; // In the event didn't provide a desired rarity, let's just set it to the max :]
-                                                                           // Figure out if tried inputting a certain desired rarity
-                                        if (command.Length >= 3 && int.TryParse(command[2], out int desiredRarity))
-                                        {
-                                            if (_safeMode)
-                                            {
-                                                //Logger.DebugServer($"Desired Rarity: {desiredRarity}; Min, Max: {weapon.RarityMaxVal}, {weapon.RarityMinVal}");
-                                                //bool flag = (desiredRarity <= weapon.RarityMaxVal) && (desiredRarity >= weapon.RarityMinVal);
-                                                if (desiredRarity < weapon.RarityMinVal) rarity = weapon.RarityMinVal;
-                                                if (desiredRarity > weapon.RarityMaxVal) rarity = weapon.RarityMaxVal;
-                                            }
-                                            else
-                                            {
-                                                rarity = (byte)desiredRarity;
-                                            }
-                                        }
-                                        // Send Loot
-                                        SendNewGunItem(weapon.JSONIndex, rarity, (byte)weapon.ClipSize, player.Position);
-                                        responseMsg = $"Created an instance of \"{weapon.Name}\" (ID = {weapon.JSONIndex}) @ Player {player.ID} ({player.Name})";
-                                    }
-                                    else
-                                    {
-                                        responseMsg = "Invalid amount of arguments provided. This command takes 1-2.\nUsage: /gun {GunID} [OPTIONAL: RARITY]";
+                                        case "sethp":
+                                            responseMsg = "\n> Sets the provided player's HP to the provided value.\nIf no player is provided, sets the user's HP instead.\nUsage: /sethp [player] [amount] OR /sethp [amount] (ex: /sethp 0 25)";
+                                            break;
+                                        case "teleport":
+                                            responseMsg = "\n> Teleports a player to the provided coordinaes.\nIf no player is specified, the user will be teleported.\nUsage: /teleport [player] [x] [y] OR /teleport [x] [y] (ex: /teleport 500 500)";
+                                            break;
+                                        case "tp":
+                                            responseMsg = "\n> Teleports one player to another player.\nIf only one player is provided, the user will be teleported to them.\nUsage: /tp [playerA] [playerB] OR /teleport [player] (ex: /teleport 2 1; /teleport 2; /teleport A B";
+                                            break;
+                                        case "gun":
+                                            responseMsg = "\n> Spawns a weapon near the user of the command.\nIf no rarity is specified, the gun will be at its lowest rarity.\nUsage: /gun [gun#] [rarity] OR /gun [gun#] (ex: /gun 5 [this spawns a common shotgun])";
+                                            break;
+                                        case "throwable":
+                                            responseMsg = "\n> Spawns a throwable weapons near the user of the command.\nIf no amount is specified, only one (1) is spawned.\nUsage: /throwable [nade#] [amount] OR /throwable [nade#]";
+                                            break;
+                                        case "safemode":
+                                            responseMsg = "\n> Toggles the \"safemode\" variable.\nTypically, this enables game-breaking commands to be used (notably weapons with invalid rarities [beyond legend])\nEnabling this is NOT recommended (use at your own risk).";
+                                            break;
+                                        case "startshow":
+                                            responseMsg = "\n> Initiates a \"show\" in the Beakeasy located in Giant Eagle Landing.\nUsage: /show [show#]\n1 = BlueJayZ; 2 = KellyLarkson; 3 = LadyCawCaw; anything else and I force you to listen to BlueJayZ.";
+                                            break;
+                                        case "time":
+                                            responseMsg = "\n> [NoArgs] Displays the amount of time remaining in the lobby.\n[WithArgs] Sets the remaining time in lobby to the provided value.\nUsage: /time OR /time [time]";
+                                            break;
+                                        case "safezone":
+                                            responseMsg = "\n> Creates a new \"safezone\" with the provided parameters.\nJust try running it and figure it out, It's a bit complicated to explain each parameter...";
+                                            break;
+                                        case "divemode":
+                                            responseMsg = "\n> Updates the provided player's \"divemode\".\nIf no player is specified, then the user has their dive-mode updated.";
+                                            break;
+                                        case "forceland":
+                                            responseMsg = "\n> Forces the provided player to eject from the Giant Eagle.\nIf no player is specified, then the user is ejected.";
+                                            break;
+                                        case "":
+                                            responseMsg = "\nI mean honestly, you're not supposed to see this lol; try inputting a command listed in /help lol";
+                                            break;
+                                        /*case "2":
+                                            responseMsg = "Command Page 2 -- List of usabble Commands\n/help {page/command}\n/heal {ID} {AMOUNT}";
+                                            break;
+                                        case "3":
+
+                                            break;*/
+                                        default:
+                                            responseMsg = $"Invalid help entry '{command[1]}'.\nPlease see '/help' for a list of usable commands.";
+                                            break;
                                     }
                                 }
                                 else
                                 {
-                                    Logger.Failure($"[ServerHandle - ChatMessage (Command)] Could not locate Player @ NetConnection \"{message.SenderConnection}\"; Connection has been dropped.");
-                                    message.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\nERROR: ACTION INVALID! PLAYER NOT IN SERVER_LIST");
+                                    //"\n/ <P> [X] (optional: X)" +
+                                    responseMsg = "\n(1) List of usable commads:" +
+                                        "\n> /help [page#:command]" +
+                                        "\n> /divemode <optional: player>  | alias: /dive" +
+                                        "\n> /forceland <optional: player> | alias: /eject" +
+                                        "\n> /gun [gun#] (optional: rarity)" +
+                                        "\n> /safezone [circle1X] [circle1Y] [circle1Radius] [circle2X] [circle2Y] [circle2Radius] [warningTime] [approachDuration]" +
+                                        "\n> /sethp <player> [amount] OR /sethp [amount]" +
+                                        "\n> /startshow [show#]" +
+                                        "\n> /teleport <player> [x] [y] OR /teleport [x] [y]" +
+                                        "\n> /throwable [throwable#] (optional: amount)" +
+                                        "\n> /time (optional: newTime)" +
+                                        "\n> /togglewin" +
+                                        "\n> /tp <playerA> <playerB> OR /tp <player>" +
+                                        "\n> Type '/help [command]' for more information";
                                 }
+                                break;
 
-                            }
-                            catch (Exception except)
-                            {
-                                Logger.Failure($"Command Error:\n{except}");
-                            }
-                            break;
-                        case "/heal":
-                            Logger.Success("user has heal command");
-                            if (command.Length > 2)
-                            {
-                                try
-                                {
-                                    id = short.Parse(command[1]);
-                                    amount = short.Parse(command[2]);
-                                    if (amount - _players[id].HP <= 0)
-                                    {
-                                        _players[id].HP += (byte)amount;
-                                        if (_players[id].HP > 100) { _players[id].HP = 100; }
-                                        responseMsg = $"Healed player {id} ({_players[id].Name} by {amount})";
-                                    }
-                                    else
-                                    {
-                                        responseMsg = "Wrong player ID or provided health value is too high.";
-                                    }
-                                }
-                                catch
-                                {
-                                    responseMsg = "One or both arguments were not integer values. please try again.";
-                                }
-                            }
-                            else { responseMsg = "Insufficient amount of arguments provided. usage: /heal {ID} {AMOUNT}"; }
-                            break;
-                        case "/sethp":
-                            if (command.Length > 2)
-                            {
-                                try
-                                {
-                                    id = short.Parse(command[1]);
-                                    amount = short.Parse(command[2]);
-                                    if (amount > 100) { amount = 100; }
-                                    _players[id].HP = (byte)amount;
-                                    responseMsg = $"Set player {id} ({_players[id].Name})'s health to {amount}";
-                                }
-                                catch
-                                {
-                                    responseMsg = "One or both arguments were not integer values. please try again.";
-                                }
-                            }
-                            else { responseMsg = "Insufficient amount of arguments provided. usage: /sethp {ID} {AMOUNT}"; }
-                            break;
-                        case "/teleport":
-                            if (command.Length > 3)
-                            {
-                                try
-                                {
-                                    id = short.Parse(command[1]);
-                                    cPosX = float.Parse(command[2]);
-                                    cPosY = float.Parse(command[3]);
-
-                                    NetOutgoingMessage forcetoPos = server.CreateMessage();
-                                    forcetoPos.Write((byte)8); forcetoPos.Write(id);
-                                    forcetoPos.Write(cPosX); forcetoPos.Write(cPosY); forcetoPos.Write(false);
-                                    server.SendToAll(forcetoPos, NetDeliveryMethod.ReliableOrdered);
-
-                                    _players[id].Position.x = cPosX;
-                                    _players[id].Position.y = cPosY;
-                                    responseMsg = $"Moved player {id} ({_players[id].Name}) to ({cPosX}, {cPosY}). ";
-                                }
-                                catch
-                                {
-                                    responseMsg = "One or both arguments were not integer values. please try again.";
-                                }
-                            }
-                            else { responseMsg = "Insufficient amount of arguments provided. usage: /teleport {ID} {positionX} {positionY}"; }
-                            break;
-                        case "/tp":
-                            if (command.Length > 2)
-                            {
-                                try
-                                {
-                                    id = short.Parse(command[1]);
-                                    id2 = short.Parse(command[2]);
-
-                                    NetOutgoingMessage forcetoPos = server.CreateMessage();
-                                    forcetoPos.Write((byte)8); forcetoPos.Write(id);
-                                    forcetoPos.Write(_players[id2].Position.x);
-                                    forcetoPos.Write(_players[id2].Position.y);
-                                    forcetoPos.Write(false);
-                                    server.SendToAll(forcetoPos, NetDeliveryMethod.ReliableOrdered);
-
-                                    _players[id].Position = _players[id2].Position;
-                                    responseMsg = $"Moved player {id} ({_players[id].Name}) to player {id2} ({_players[id2].Name}). ";
-                                }
-                                catch
-                                {
-                                    responseMsg = "One or both arguments were not integer values. please try again.";
-                                }
-                            }
-                            else { responseMsg = "Insufficient amount of arguments provided. usage: /tp {playerID1} {playerID2}"; }
-                            break;
-                        case "/time":
-                            if (!_hasMatchStarted)
-                            {
-                                if (command.Length == 2)
-                                {
-                                    double newTime;
-                                    if (double.TryParse(command[1], out newTime))
-                                    {
-                                        responseMsg = $"New time which the game will start: {newTime}";
-                                        _lobbyRemainingSeconds = newTime;
-                                        NetOutgoingMessage sTimeMsg2 = server.CreateMessage();
-                                        sTimeMsg2.Write((byte)43);
-                                        sTimeMsg2.Write(_lobbyRemainingSeconds);
-                                        server.SendToAll(sTimeMsg2, NetDeliveryMethod.ReliableOrdered);
-                                    }
-                                    else
-                                    {
-                                        responseMsg = $"Inputed value '{command[1]}' is not a valid time.\nValid input example: /time 20";
-                                    }
-                                }
-                                else
-                                {
-                                    responseMsg = $"The game will begin in {_lobbyRemainingSeconds} seconds.";
-                                    NetOutgoingMessage sTimeMsg = server.CreateMessage();
-                                    sTimeMsg.Write((byte)43);
-                                    sTimeMsg.Write(_lobbyRemainingSeconds);
-                                    server.SendToAll(sTimeMsg, NetDeliveryMethod.ReliableOrdered);
-                                }
-                            }
-                            else
-                            {
-                                responseMsg = "You cannot change the start time. The match has already started.";
-                            }
-                            break;
-                        case "/safezone":
-                            if (!_hasMatchStarted) responseMsg = "Cannot modify the safezone while in-lobby. Try again once the match begins.";
-                            else if (command.Length == 9)
-                            {
-                                try
-                                {
-                                    float gx1 = float.Parse(command[1]);
-                                    float gy1 = float.Parse(command[2]);
-                                    float gr1 = float.Parse(command[3]);
-                                    float gx2 = float.Parse(command[4]);
-                                    float gy2 = float.Parse(command[5]);
-                                    float gr2 = float.Parse(command[6]);
-                                    float gwarn = float.Parse(command[7]);
-                                    float gadvtime = float.Parse(command[8]);
-                                    isSkunkGasActive = false; // skunk gas is always turned off temporairly with this "command"
-                                    CreateSafezone(gx1, gy1, gr1, gx2, gy2, gr2, gwarn, gadvtime);
-                                    responseMsg = $"Started Gas Warning:\n-- Start Circle -- \nCenter: ({gx1}, {gy1})\nRadius: {gr1}\n-- End Circle -- :\nCenter: ({gx2}, {gy2})\nRadius: {gr2}\n\nTime until Approachment: ~{gwarn} seconds.\nMay Banan have mercy on your soul";
-                                }
-                                catch
-                                {
-                                    responseMsg = "Error occurred while parsing values. Likely invalid type-- this command takes FLOATS.";
-                                }
-                            }
-                            else responseMsg = "Invalid argument count. Usage: /safezone {C1.CPosX} {C1.CPosY} {C1.Radius} {C2.CPosX} {C2.CPosY} {C2.Radius} {Delay} {Duration}";
-                            break;
-                        case "/list":
-                            try
-                            {
-                                int _initSize = GetValidPlayerCount() * 16;
-                                System.Text.StringBuilder listText = new System.Text.StringBuilder("|-- Players --\n", _initSize);
-                                //string list = "-- Player--\n";
+                            case "/p": // you shouldn't use this unless you know what you're doing
                                 for (int i = 0; i < _players.Length; i++)
                                 {
-                                    if (_players[i] != null)
+                                    if (_players[i] != null) continue;
+                                    _players[i] = new Player((short)i, 0, 0, 0, 0, new short[] { -1, -1, -1, -1, -1, -1 }, 0, 0, 0, 0, 0, 0, new short[] { }, new byte[] { }, "tmp", player.Sender);
+                                    _players[i].Teammates.Add(player); // team tester comment 1/2
+                                    _players[i].isReady = true;
+                                    player.Teammates.Add(_players[i]); // team tester comment 2/2
+                                    for (int j = 0; j < player.Teammates.Count; j++) 
                                     {
-                                        listText.AppendLine($"| {_players[i].ID} ({_players[i].Name})");
+                                        if (player.Teammates[j] == null || player.Teammates[j] == _players[i]) continue;
+                                        player.Teammates[j].Teammates.Add(_players[i]);
+                                        _players[i].Teammates.Add(player.Teammates[j]);
                                     }
-                                }
-                                listText.Append($"|-------------");
-                                string _dump = listText.ToString();
-                                NetOutgoingMessage msg = server.CreateMessage();
-                                msg.Write((byte)96);
-                                msg.Write(_dump);
-                                server.SendMessage(msg, message.SenderConnection, NetDeliveryMethod.ReliableOrdered);
-                                responseMsg = "The PlayerList has been copied to your clipboard.";
-                            }
-                            catch (Exception except)
-                            {
-                                Logger.Failure($"Command Error:\n{except}");
-                            }
-                            break;
-                        case "/forceland":
-                            if (command.Length > 1)
-                            {
-                                if (!TryPlayerFromString(command[1], out Player eject))
-                                {
-                                    responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    HandleReadyReceived(pmsg);
+                                    responseMsg = "added a new player...";
                                     break;
                                 }
-                                SendForcePosition(eject, eject.Position, true);
-                                responseMsg = $"Force-Ejected {eject.Name} ({eject.ID}) from the Giant Eagle.";
-                            }
-                            else
-                            {
-                                SendForcePosition(LOL, LOL.Position, true);
-                                responseMsg = $"Force-Ejected {LOL.Name} ({LOL.ID}) from the Giant Eagle.";
-                            }
-                            break;
+                                break;
 
-                        case "/down":
-                        case "/forcedown":
-                            if (command.Length > 1)
-                            {
-                                if (TryPlayerFromString(command[1], out Player player))
+                            case "/d":
+                                if (command.Length >= 2 && command[1] != "")
                                 {
-                                    HandlePlayerDowned(player, LOL.ID, -1);
-                                    responseMsg = $"Forcibly downed player {player.ID} ({player.Name}).\nGet fricking... owned...";
-                                }
-                                else responseMsg = $"Couldn't locate player \"{command[1]}\"";
-                            }
-                            else
-                            {
-                                HandlePlayerDowned(LOL, LOL.ID, -1);
-                                responseMsg = $"Forcibly downed player {LOL.ID} ({LOL.Name}). Get fricking... owned...";
-                            }
-                            break;
-
-                        case "/res":
-                        case "/forceres":
-                            if (command.Length > 1)
-                            {
-                                if (TryPlayerFromString(command[1], out Player player))
-                                {
-                                    player.ReviverID = LOL.ID;
-                                    RevivePlayer(player);
-                                    responseMsg = $"Forced {player.ID} ({player.Name}) to get picked up.";
-                                }
-                                else responseMsg = $"Couldn't locate player \"{command[1]}\"";
-                            }
-                            else
-                            {
-                                LOL.ReviverID = LOL.ID;
-                                RevivePlayer(LOL);
-                                responseMsg = $"Forced {LOL.ID} ({LOL.Name}) to get picked up.";
-                            }
-                            //else responseMsg = $"Not enough arguments provided. Use: /res [PlayerID] | [PlayerName]";
-                            break;
-
-                        case "/divemode":
-                            if (command.Length > 1)
-                            {
-                                if (!TryPlayerFromString(command[1], out Player diver))
-                                {
-                                    responseMsg = $"Couldn't locate player \"{command[1]}\"";
-                                    break;
-                                }
-                                diver.isDiving = !diver.isDiving;
-                                SendParachuteUpdate(diver.ID, diver.isDiving);
-                                responseMsg = $"Parachute mode for {diver.Name} ({diver.ID}) updated to {diver.isDiving}";
-                            }
-                            else
-                            {
-                                LOL.isDiving = !LOL.isDiving;
-                                SendParachuteUpdate(LOL.ID, LOL.isDiving);
-                                responseMsg = $"Parachute mode for {LOL.Name} ({LOL.ID}) updated to {LOL.isDiving}";
-                            }
-                            break;
-                        case "/startshow": // msg 104
-                            if (command.Length > 1)
-                            {
-                                if (byte.TryParse(command[1], out byte showNum))
-                                {
-                                    NetOutgoingMessage cParaMsg = server.CreateMessage();
-                                    cParaMsg.Write((byte)104);
-                                    cParaMsg.Write(showNum);
-                                    server.SendToAll(cParaMsg, NetDeliveryMethod.ReliableOrdered);
-                                    responseMsg = $"Played AviaryShow #{showNum}";
-                                }
-                                else
-                                {
-                                    responseMsg = $"Provided value '{command[1]}' is not a valid show.\nValid shows IDs: [0, 1, 2]";
-                                }
-                            }
-                            else
-                            {
-                                responseMsg = $"Insufficient amount of arguments provided. This command takes 1. Given: {command.Length - 1}.";
-                            }
-                            break;
-
-                        // Msg110 test --> Banan Praised
-                        case "/pray": // msg 110
-                            {
-                                NetOutgoingMessage banan = server.CreateMessage();
-                                banan.Write((byte)110); // Byte  | MsgID (110)
-                                banan.Write(LOL.ID);    // Short | PlayerID
-                                banan.Write(0f);        // Float | Interbal to spawn bananas
-                                banan.Write((byte)255); // Byte  | Amount of Nanners to spawn
-                                for (int i = 0; i < 8; i++)
-                                {
-                                    for (int j = 0; j < 32; j++)
+                                    if (TryPlayerFromString(command[1], out Player dcP))
                                     {
-                                        if (i + j >= 256) continue;
-                                        banan.Write((float)(3683f + j)); //x 
-                                        banan.Write((float)(3549f - i)); //y
+                                        // only s
+                                        NetOutgoingMessage msg = server.CreateMessage(4);
+                                        msg.Write((byte)46);            // Byte  | MsgID (46)
+                                        msg.Write(dcP.ID);                 // Short | DC PlayerID
+                                        msg.Write(false);               // Bool  | isGhostMode (?) -- will always be false... for now -- todo!
+                                        server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+
+                                        SendTeammateDisconnected(dcP);
+                                        _availableIDs.Insert(0, dcP.ID);
+                                        _players[dcP.ID] = null; // Find a better way to give pIDs
+                                                                //SortPlayerEntries();
+                                        isSorted = false;
+                                        responseMsg = "";
                                     }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
                                 }
-                                banan.Write((byte)1);   // Byte | # of Players to give Milestone to
-                                banan.Write(LOL.ID);    // ID for Player to give Milestone to
-                                server.SendToAll(banan, NetDeliveryMethod.ReliableOrdered);
-                                responseMsg = "Praise Banan.";
-                            }
-                            break;
-                        case "/kill":
-                            if (command.Length > 1)
-                            {
-                                if (TryPlayerFromString(command[1], out Player killLol))
+                                else responseMsg = "Missing some stuff...";
+                                break;
+
+                            case "/kick":
+                                if (player.isMod || player.isDev)
                                 {
-                                    if (!killLol.isAlive)
+                                    if (command.Length >= 2 && command[1] != "")
                                     {
-                                        responseMsg = $"Can't kill player {killLol.Name} ({killLol.ID})! They're already dead!";
+                                        if (TryPlayerFromString(command[1], out Player kicker))
+                                        {
+                                            responseMsg = $"Kicked {kicker}.";
+                                            kicker.Sender.Disconnect("You've been kicked!");
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    }
+                                    else responseMsg = "Insufficient # of arguments provided! /kick takes at least one!";
+                                }
+                                else responseMsg = "You do not have the required permissions to use this command. You must be a DEV or MOD!";
+                                break;
+
+                            case "/ban":
+                                // todo - improve & bans that expire
+                                if (player.isDev)
+                                {
+                                    if (command.Length >= 2 && command[1] != "")
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player banP))
+                                        {
+                                            string reason = "";
+                                            if (command.Length >= 3 && command[2] != "") reason = command[2]; // reasons have to be one-line for now...
+
+                                            JSONNode ban = JSON.Parse($"{{playfabid:\"{banP.PlayFabID}\",name:\"{banP.Name}\",source:\"{player.Name}\",reason:\"{reason}\"}}");
+                                            _bannedPlayers.Add(ban);
+                                            // dump --- todo - better dump
+                                            string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                                            JSONNode.SaveToFile(_bannedPlayers, baseloc + @"\banned-players.json");
+                                            responseMsg = $"Banned {banP}";
+                                            if (reason == "") reason = "No reason provided.";
+                                            banP.Sender.Disconnect($"\nYou've been banned from this server.\nReason: {reason}");
+                                        }
+                                    }
+                                    else responseMsg = "Command Error! /ban [] <-- Here | No Player specified!";
+                                }
+                                else responseMsg = $"You must have Developer privileges to utilize that command.";
+                                //string date = DateTime.UtcNow.ToString();
+                                //DateTime newDateTime = DateTime.Parse(date);
+                                break;
+
+                            case "/banip":
+                            case "/ipban":
+                                // todo - improve & bans that expire
+                                if (player.isDev)
+                                {
+                                    if (command.Length >= 2 && command[1] != "")
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player banP))
+                                        {
+                                            string ip = banP.Sender.RemoteEndPoint.Address.ToString();
+                                            string reason = "";
+                                            if (command.Length >= 3 && command[2] != "") reason = command[2];
+
+                                            JSONNode ban = JSON.Parse($"{{ip:\"{ip}\",playfabid:\"{banP.PlayFabID}\",name:\"{banP.Name}\",source:\"{player.Name}\",reason:\"{reason}\"}}");
+                                            _bannedIPs.Add(ban);
+                                            // dump --- todo - better dump
+                                            string baseloc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                                            JSONNode.SaveToFile(_bannedIPs, baseloc + @"\banned-ips.json");
+                                            responseMsg = $"Banned {banP}";
+                                            if (reason == "") reason = "No reason provided.";
+                                            banP.Sender.Disconnect($"\nYou've been banned from this server.\nReason: {reason}");
+                                        }
+                                    }
+                                    else responseMsg = "Command Error! /ban [] <-- Here | No Player specified!";
+                                }
+                                else responseMsg = $"You must have Developer privileges to utilize that command.";
+                                break;
+
+                            case "/safemode":
+                                _safeMode = !_safeMode;
+                                if (_safeMode) responseMsg = "> Safemode has been ENABLED!";
+                                else responseMsg = "> Safemode has been DISABLED!\n(I sure hope you know what you are doing...)";
+                                break;
+
+                            // another test thing
+                            case "/mole": // only for testing right now. sorry
+                                {
+                                    float t = 3f;
+                                    Vector2 start = new Vector2(2000f, 2000f);
+                                    Vector2[] points = new Vector2[]
+                                    {
+                                    new Vector2(2020f, 2020f),
+                                    new Vector2(2000f, 2020f),
+                                    new Vector2(1990, 2030),
+                                    new Vector2(1950, 2000),
+                                    new Vector2(1860, 1984),
+                                    new Vector2(1890, 1600)
+                                    };
+                                    responseMsg = "Couldn't find a valid slot to put the mole in. Likely reached the limit";
+                                    for (int i = 0; i < _moleCrates.Length; i++)
+                                    {
+                                        if (_moleCrates[i] != null) continue;
+
+                                        // Send junk to client...
+                                        NetOutgoingMessage msg = server.CreateMessage();
+                                        msg.Write((byte)68); // msg id      -- byte
+                                        msg.Write((short)i); // molecrate id -- short
+                                        msg.Write(t);        // waittime    -- float
+                                        msg.Write(start.x);  // start x     -- float
+                                        msg.Write(start.y);  // start y     -- float
+                                        msg.Write((byte)points.Length); // amount of endpoints  -- byte
+                                        for (int j = 0; j < points.Length; j++)
+                                        {
+                                            msg.Write(points[j].x); // newPointx    -- float
+                                            msg.Write(points[j].y); // newPointx    -- float
+                                        }
+                                        server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+
+                                        // Actual Server-Side stuff
+                                        _moleCrates[i] = new MoleCrate(start, points, t);
+                                        responseMsg = $"MoleCrate Message Sent! ID: {i}\nStart: ({start.x}, {start.y})\nMove0: {points[0].x}, {points[0].y}\nTotal wait: {t + 2.7f}s; real: {t}s";
+                                        SendForcePosition(player, start);
                                         break;
                                     }
-                                    killLol.isGodmode = false;
-                                    test_damagePlayer(killLol, killLol.HP, -3, -1);
-                                    responseMsg = $"Killed player {killLol.Name} ({killLol.ID}).";
                                 }
-                                else responseMsg = $"Could not locate player \"{command[1]}\".";
-                            }
-                            else responseMsg = $"Not enough arguments provided! Usage: /kill (playerName) | (playerID)";
-                            break;
-                        case "/godmode":
-                        case "/god":
-                            try
-                            {
-                                if (command.Length == 1 || (command.Length >= 2 && command[1] == "")) // If it was just meant to be the /command (the || prevents spaces from making this check fail)
+                                break;
+                            case "/camptest": // another test thing
+                                for (int i = 0; i < _campfires.Length; i++)
                                 {
-                                    if (TryPlayerFromConnection(message.SenderConnection, out Player sender))
-                                    {
-                                        sender.isGodmode = !sender.isGodmode;
-                                        responseMsg = string.Format("Godmode set to {0} for Player {1} ({2})", sender.isGodmode.ToString().ToUpperInvariant(), sender.ID, sender.Name);
-                                    }
+                                    if (_campfires[i] == null) continue;
+                                    Campfire bruh = _campfires[i];
+                                    SendForcePosition(player, bruh.Position);
+                                    Thread.Sleep(400);
                                 }
-                                else if (command.Length >= 2) // The /command + any arguments
-                                {
-                                    if (TryPlayerFromName(command[1], out Player newgod) || (int.TryParse(command[1], out int Id) && TryPlayerFromID(Id, out newgod)))
-                                    {
-                                        newgod.isGodmode = !newgod.isGodmode;
-                                        responseMsg = string.Format("Godmode set to {0} for Player {1} ({2}).", newgod.isGodmode.ToString().ToUpperInvariant(), newgod.ID, newgod.Name);
-                                    }
-                                    else
-                                    {
-                                        responseMsg = $"Could not locate player \"{command[1]}\".";
-                                    }
-                                }
-                            }
-                            catch (Exception except)
-                            {
-                                // In theory you never see this. So yeah logging to see what went wrong I guess
-                                Logger.Failure($"[Command Handle] [Error] There was an error while processing the \"/god\" command.\n{except}");
-                                responseMsg = "An error occurred while parsing the command! Try again?\nUsage: /god (PlayerID, PlayerName, or NoArgs)";
-                            }
-                            break;
-                        case "/ghost": // msg 105 -- Command is currently testing only!
-                            // Lets you move around like ghost, but your body sticks around for some reason. Oh well...
-                            NetOutgoingMessage ghostMsg = server.CreateMessage();
-                            ghostMsg.Write((byte)105);
-                            server.SendMessage(ghostMsg, message.SenderConnection, NetDeliveryMethod.ReliableUnordered);
-                            break;
-                        case "/roll": // msg 106
-                            NetOutgoingMessage roll = server.CreateMessage();
-                            roll.Write((byte)106);
-                            roll.Write((short)0);
-                            roll.Write("45 lol"); // "PLAYER_NAME rolls a NUM! (NUM / ODDS)"
-                            server.SendMessage(roll, message.SenderConnection, NetDeliveryMethod.ReliableSequenced);
-                            break;
-                        /* this works it's just useless
-                        case "/removeweapons":
-                            NetOutgoingMessage rmMsg = server.CreateMessage();
-                            rmMsg.Write((byte)125);
-                            rmMsg.Write(getPlayerID(message.SenderConnection));
-                            server.SendToAll(rmMsg, NetDeliveryMethod.ReliableUnordered);
-                            responseMsg = $"Weapons removed for {_playerList[getPlayerArrayIndex(message.SenderConnection)].Name}";
+                                break;
+                            /*case "/shutdown":
+                            case "/stop":
+                                server.Shutdown("The server is shutting down...");
                             break;*/
-                        case "/rain":
-                            if (command.Length > 1)
-                            {
-                                if (float.TryParse(command[1], out float duration))
+
+                            case "/gun":
+                                if (command.Length >= 2 && command[1] != "")
                                 {
-                                    NetOutgoingMessage rainTime = server.CreateMessage();
-                                    rainTime.Write((byte)35);
-                                    rainTime.Write(duration);
-                                    server.SendToAll(rainTime, NetDeliveryMethod.ReliableSequenced);
-                                    responseMsg = $"It's raining it's pouring the old man is snoring! (rain duration: ~{duration} seconds)";
-                                }
-                                else
-                                {
-                                    responseMsg = $"Invalid duration '{command[1]}'";
-                                }
-                            }
-                            else
-                            {
-                                responseMsg = "Please enter a duration amount.";
-                            }
-                            break;
-                        case "/togglewin":
-                            _canCheckWins = !_canCheckWins;
-                            responseMsg = $"_canCheckWins set to \"{_canCheckWins.ToString().ToUpper()}\"";
-                            break;
-                        case "/drink":
-                            Logger.Success("drink command");
-                            try
-                            {
-                                if (TryPlayerFromConnection(message.SenderConnection, out Player drinky)) // band aid fix
-                                {
-                                    if (command.Length == 2)
+                                    if (int.TryParse(command[1], out int reqWeaponID))
                                     {
-                                        drinky.Drinkies = byte.Parse(command[1]);
+                                        Weapon[] tmp_guns = Weapon.GetAllGuns(_weapons);
+                                        if (reqWeaponID > 0 && reqWeaponID <= tmp_guns.Length) // input range: [1 to MAX] NOT [0 to MAX-1]
+                                        {
+                                            Weapon gun = tmp_guns[reqWeaponID - 1]; // actual gun we're working with here
+                                            byte spawnRarity = gun.RarityMinVal;
+                                            // custom rarity value if you'd like!
+                                            if (command.Length >= 3 && command[2] != "")
+                                            {
+                                                if (int.TryParse(command[2], out int desiredRarity))
+                                                {
+                                                    if (_safeMode)
+                                                    {
+                                                        if (desiredRarity < gun.RarityMinVal) desiredRarity = gun.RarityMinVal;
+                                                        if (desiredRarity > gun.RarityMaxVal) desiredRarity = gun.RarityMaxVal;
+                                                    }
+                                                    spawnRarity = (byte)desiredRarity;
+                                                }
+                                                else
+                                                {
+                                                    responseMsg = $"Command Error: /gun {reqWeaponID} [{command[2]}] <-- Here | Invalid INT!";
+                                                    break;
+                                                }
+                                            }
+                                            // spawn this gun; if 2 args, we'll use the custom rarity; otherwise... minimum rarity!
+                                            SendSpawnedLoot(_level.NewLootWeapon(gun.JSONIndex, spawnRarity, (byte)gun.ClipSize, player.Position));
+                                            responseMsg = $"Created an instance of \"{gun.Name}\" (ID = {gun.JSONIndex}) @ {player}!";
+                                        }
+                                        else responseMsg = $"Command Error: /gun [{reqWeaponID}] <-- Here | Out of Range! (range: 1 to {tmp_guns.Length})";
+                                    }
+                                    else responseMsg = $"Command Error: /gun [{command[1]}] <-- Here | Invalid INT!";
+                                }
+                                else responseMsg = "Insufficient # of arguments provided.\n\"/gun\" takes at least 1!\nUsage: /gun [gunID] OR /gun [gunID] [rarity]";
+                                break;
+
+                            case "/nade":
+                            case "/throwable":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (int.TryParse(command[1], out int reqNadeID))
+                                    {
+                                        Weapon[] tmp_throwables = Weapon.GetAllThrowables();
+                                        if (reqNadeID > 0 && reqNadeID <= tmp_throwables.Length) // get in range: [1 to MAX ] as opposed to [1 to MAX-1]
+                                        {
+                                            Weapon nade = tmp_throwables[reqNadeID - 1];
+                                            byte spawnAmount = 1;
+                                            if (command.Length > 2 && command[2] != "")
+                                            {
+                                                if (int.TryParse(command[2], out int desiredAmount))
+                                                {
+                                                    if (_safeMode)
+                                                    {
+                                                        if (desiredAmount <= 0) desiredAmount = 1;
+                                                        if (desiredAmount > nade.MaxCarry) desiredAmount = nade.MaxCarry;
+                                                    }
+                                                    spawnAmount = (byte)desiredAmount;
+                                                }
+                                                else
+                                                {
+                                                    responseMsg = $"Command Error: /throwable {reqNadeID} [{command[2]}] <-- Here | Invalid INT!";
+                                                    break;
+                                                }
+                                            }
+                                            SendSpawnedLoot(_level.NewLootWeapon(nade.JSONIndex, 0, spawnAmount, player.Position));
+                                            responseMsg = $"Spawned {nade.Name} ({spawnAmount}) @ {player}.";
+                                        }
+                                        else responseMsg = $"Command Error: /throwable [{reqNadeID}] <-- Here | Out of Range! (range: 1 to {tmp_throwables.Length})";
+                                    }
+                                    else responseMsg = $"Command Error: /throwable [{command[1]}] <-- Here | Invalid INT";
+                                }
+                                else responseMsg = "Insufficient # of arguments provided.\n\"/throwable\" takes at least 1!\nUsage: /throwable [nadeID] OR /throwable [nadeID] [amount]";
+                                break;
+
+                            case "/hp":
+                            case "/sethp":
+                                Logger.Success("/sethp has been used!");
+                                if (command.Length > 1)
+                                {
+                                    if (command.Length >= 3 && command[1] != "")
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player targetPlayer))
+                                        {
+                                            if (int.TryParse(command[2], out int desiredHP))
+                                            {
+                                                if (desiredHP < 0 || desiredHP > 100) desiredHP = 100;
+                                                targetPlayer.HP = (byte)desiredHP;
+                                                responseMsg = $"Set {targetPlayer} HP to {desiredHP}.";
+                                            }
+                                            else responseMsg = $"Invalid HP value \"{command[2]}\".";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\".";
+                                    }
+                                    else if (int.TryParse(command[1], out int desiredHP))
+                                    {
+                                        if (desiredHP < 0 || desiredHP > 100) desiredHP = 100;
+                                        player.HP = (byte)desiredHP;
+                                        responseMsg = $"Set {player} HP to {desiredHP}.";
+                                    }
+                                    else responseMsg = $"Invalid value \"{command[1]}\".";
+                                }
+                                else responseMsg = $"Insufficient # of arguments provided.\n\"/sethp takes at least 1!\"\nUsage: /sethp [amount] OR /sethp [player] [amount]";
+                                break;
+
+                            /*case "/async": // testing async stuff; pretty neat; just executes the method elsewhere and program gets to continue
+                                Logger.Header($"{DateTime.UtcNow} ASYNC command used...");
+                                Test_Awaiting(LOL);
+                                Logger.Header($"{DateTime.UtcNow} I can move on with my life now");
+                                responseMsg = "check the logs lol";
+                                break;*/
+
+                            case "/tele":
+                            case "/teleport":
+                                if (command.Length >= 3 && command[1] != "")
+                                {
+                                    if (command.Length >= 4)
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player tpee))
+                                        {
+                                            if (float.TryParse(command[2], out float parseX) && float.TryParse(command[3], out float parseY))
+                                            {
+                                                Vector2 newPos = new Vector2(parseX, parseY);
+                                                SendForcePosition(tpee, newPos);
+                                                responseMsg = $"Teleported {tpee} to {newPos}";
+                                            }
+                                            else responseMsg = "There was an error processing the coordinates...";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
                                     }
                                     else if (command.Length == 3)
                                     {
-                                        short searchid = short.Parse(command[1]);
-                                        if (TryPlayerFromID(searchid, out Player plr))
+                                        if (float.TryParse(command[1], out float parseX) && float.TryParse(command[2], out float parseY))
                                         {
-                                            plr.Drinkies = byte.Parse(command[2]);
+                                            Vector2 newPos = new Vector2(parseX, parseY);
+                                            SendForcePosition(player, newPos);
+                                            responseMsg = $"Teleported {player} to {newPos}";
                                         }
+                                        else responseMsg = "There was an error processing the coordinates...";
+                                    }
+                                }
+                                else responseMsg = "Insufficient amount of arguments provided. usage: /teleport {ID} {positionX} {positionY}";
+                                break;
+
+                            case "/tp":
+                                if (command.Length > 1)
+                                {
+                                    if (command.Length > 2)
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player movingPlayer))
+                                        {
+                                            if (TryPlayerFromString(command[2], out Player targetPlayer))
+                                            {
+                                                SendForcePosition(movingPlayer, targetPlayer.Position);
+                                                responseMsg = $"Teleported {movingPlayer} to {targetPlayer}!";
+                                            }
+                                            else responseMsg = $"Could not locate Player \"{command[2]}\"";
+                                        }
+                                        else responseMsg = $"Could not locate Player \"{command[1]}\"";
                                     }
                                     else
                                     {
-                                        responseMsg = "Invalid parameters. Usage: /drink [ID] [AMOUNT] OR /drink [AMOUNT]";
+                                        if (TryPlayerFromString(command[1], out Player targetPlayer))
+                                        {
+                                            SendForcePosition(player, targetPlayer.Position);
+                                            responseMsg = $"Teleported {player} to {targetPlayer}!";
+                                        }
+                                        else responseMsg = $"Could not locate Player \"{command[1]}\"";
                                     }
                                 }
-                            }
-                            catch
-                            {
-                                responseMsg = "There was an error while processing your request.";
-                            }
-                            break;
-                        case "/tapes":
-                            Logger.Success("Armor-Tick Set Command!");
-                            if (command.Length > 2)
-                            {
+                                else responseMsg = "Insufficient # of arguments provided.\n\"/tp\" takes 2!\nUsage: /tp [movingPlayerID] [targetPlayerID]";
+                                break;
+
+                            case "/time":
+                                if (!_hasMatchStarted)
+                                {
+                                    if (command.Length == 1 || (command.Length >= 2 && command[1] == ""))
+                                    {
+                                        SendCurrentLobbyCountdown(_lobbyRemainingSeconds);
+                                        responseMsg = $"The match will start in about {(int)_lobbyRemainingSeconds} seconds...";
+                                    }
+                                    else
+                                    {
+                                        if (double.TryParse(command[1], out double newTime))
+                                        {
+                                            _lobbyRemainingSeconds = newTime;
+                                            SendCurrentLobbyCountdown(_lobbyRemainingSeconds);
+                                            responseMsg = $"Updated time remaining in lobby: {newTime}";
+                                        }
+                                        else responseMsg = $"Invalid input \"{command[1]}\".\nTry \"/time 20\"";
+                                    }
+                                }
+                                else responseMsg = "You cannot modify the lobby time... The match has already started!!!";
+                                break;
+
+                            case "/safezone":
+                                if (!_hasMatchStarted) responseMsg = "Cannot modify the safezone while in-lobby. Try again once the match begins.";
+                                else if (command.Length == 9)
+                                {
+                                    try
+                                    {
+                                        float gx1 = float.Parse(command[1]);
+                                        float gy1 = float.Parse(command[2]);
+                                        float gr1 = float.Parse(command[3]);
+                                        float gx2 = float.Parse(command[4]);
+                                        float gy2 = float.Parse(command[5]);
+                                        float gr2 = float.Parse(command[6]);
+                                        float gwarn = float.Parse(command[7]);
+                                        float gadvtime = float.Parse(command[8]);
+                                        isSkunkGasActive = false; // skunk gas is always turned off temporairly with this "command"
+                                        CreateSafezone(gx1, gy1, gr1, gx2, gy2, gr2, gwarn, gadvtime);
+                                        responseMsg = $"Started Gas Warning:\n-- Start Circle -- \nCenter: ({gx1}, {gy1})\nRadius: {gr1}\n-- End Circle -- :\nCenter: ({gx2}, {gy2})\nRadius: {gr2}\n\nTime until Approachment: ~{gwarn} seconds.\nMay Banan have mercy on your soul";
+                                    }
+                                    catch
+                                    {
+                                        responseMsg = "Error occurred while parsing values. Likely invalid type-- this command takes FLOATS.";
+                                    }
+                                }
+                                else responseMsg = "Invalid argument count. Usage: /safezone {C1.CPosX} {C1.CPosY} {C1.Radius} {C2.CPosX} {C2.CPosY} {C2.Radius} {Delay} {Duration}";
+                                break;
+                            case "/list":
                                 try
                                 {
-                                    id = short.Parse(command[1]);
-                                    amount = short.Parse(command[2]);
-                                    _players[id].ArmorTapes = (byte)amount;
-                                    responseMsg = $"done {amount}";
+                                    int _initSize = GetValidPlayerCount() * 16;
+                                    System.Text.StringBuilder listText = new System.Text.StringBuilder("|-- Players --\n", _initSize);
+                                    //string list = "-- Player--\n";
+                                    for (int i = 0; i < _players.Length; i++)
+                                    {
+                                        if (_players[i] != null)
+                                        {
+                                            listText.AppendLine($"| {_players[i].ID} ({_players[i].Name})");
+                                        }
+                                    }
+                                    listText.Append($"|-------------");
+                                    string _dump = listText.ToString();
+                                    NetOutgoingMessage msg = server.CreateMessage();
+                                    msg.Write((byte)96);
+                                    msg.Write(_dump);
+                                    server.SendMessage(msg, pmsg.SenderConnection, NetDeliveryMethod.ReliableOrdered);
+                                    responseMsg = "The PlayerList has been copied to your clipboard.";
                                 }
-                                catch
+                                catch (Exception except)
                                 {
-                                    responseMsg = "One or both arguments were not integer values. please try again.";
+                                    Logger.Failure($"Command Error:\n{except}");
                                 }
-                            }
-                            else { responseMsg = "Insufficient amount of arguments provided. usage: /tape {ID} {AMOUNT}"; }
-                            break;
-                        case "/getpos":
-                        case "/pos":
-                            if (command.Length > 1)
-                            {
-                                if (TryPlayerFromString(command[1], out Player pos)) responseMsg = $"Player {pos.Name} ({pos.ID}) @ {pos.Position}.";
-                                else responseMsg = $"Couldn't find player \"{command[1]}\"";
-                            }
-                            else if (command.Length == 1) responseMsg = $"Player {LOL.Name} ({LOL.ID}) @ {LOL.Position}.";
-                            break;
-                        case "/spawnjuice":
-                        case "/spawndrink":
-                            Logger.Success("Health Juice spawn used!");
-                            {
-                                if (command.Length == 1)
+                                break;
+
+                            // The ability to use this command at any point is 100% & is likely not not change for quite some time.
+                            // The ability to do that is simply useful for other applications such as testing CollisionGrids and stuff
+                            case "/eject":
+                            case "/forceland":
+                                if (command.Length >= 2 && command[1] != "")
                                 {
-                                    SendNewJuiceItem(0, LOL.Position); // "LOL" set up near the start of the Switch
-                                    responseMsg = "Spawned 1 tape!";
-                                }
-                                else if (command.Length > 1 && int.TryParse(command[1], out int juiceAmount))
-                                {
-                                    SendNewTapeItem((short)juiceAmount, LOL.Position);
-                                    responseMsg = $"Spawned tape x{juiceAmount}!";
-                                }
-                                else responseMsg = $"Invalid value \"{command[1]}\".";
-                            }
-                            break;
-                        case "/spawntape":
-                            Logger.Success("Tape spawn used!");
-                            {
-                                if (command.Length == 1)
-                                {
-                                    SendNewTapeItem(1, LOL.Position); // "LOL" set up near the start of the Switch
-                                    responseMsg = "Spawned 1 tape!";
-                                }
-                                else if (command.Length > 1 && int.TryParse(command[1], out int tapeCount))
-                                {
-                                    SendNewTapeItem((short)tapeCount, LOL.Position);
-                                    responseMsg = $"Spawned tape x{tapeCount}!";
-                                }
-                                else responseMsg = $"Invalid value \"{command[1]}\".";
-                            }
-                            break;
-                        case "/stopp":
-                            try
-                            {
-                                int pid = int.Parse(command[1]);
-                                if (_players[pid] != null)
-                                {
-                                    SendCancelReload(_players[pid]);
-                                    responseMsg = $"ended player {_players[pid].ID} ({_players[pid].Name})";
+                                    if (TryPlayerFromString(command[1], out Player eject))
+                                    {
+                                        SendForcePosition(eject, eject.Position, true);
+                                        responseMsg = $"Force-Ejected {eject} from the Giant Eagle.";
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
                                 }
                                 else
                                 {
-                                    responseMsg = $"that is a null player entry! {command[1]}";
+                                    SendForcePosition(player, player.Position, true);
+                                    responseMsg = $"Force-Ejected {player} from the Giant Eagle.";
                                 }
-                            }
-                            catch
-                            {
-                                responseMsg = "some errror occrured...";
-                            }
-                            break;
-                        default:
-                            Logger.Failure("Invalid command used.");
-                            responseMsg = "Invalid command provided. Please see '/help' for a list of commands.";
-                            break;
+                                break;
+
+                            case "/down":
+                            case "/forcedown":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player downPlayer))
+                                    {
+                                        HandlePlayerDowned(downPlayer, downPlayer.ID, -1);
+                                        responseMsg = $"Forcibly downed player {downPlayer}.";
+                                    }
+                                    else responseMsg = $"Couldn't locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    HandlePlayerDowned(player, player.ID, -1);
+                                    // this isn't really that funny, I was just extremely bored and very frustrated with life. the bad thoughts won again.
+                                    string header = $"\nAnonymous {DateTime.Today.Date.ToShortDateString()}({DateTime.Today.DayOfWeek.ToString().Substring(0, 3)}){DateTime.UtcNow.ToShortTimeString()} No.{(uint)DateTime.UtcNow.Ticks}";
+                                    responseMsg = $"{header}\n>be me\n>playing wcsars\n>use /forcedown\n>\"Get fricked.\"\n>altf4\nunfunny joke. day ruined.";
+                                }
+                                break;
+
+                            case "/res":
+                            case "/forceres":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player resPlayer))
+                                    {
+                                        resPlayer.SaviourID = resPlayer.ID;
+                                        RevivePlayer(resPlayer);
+                                        responseMsg = $"Forced {resPlayer} to get picked up.";
+                                    }
+                                    else responseMsg = $"Couldn't locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    player.SaviourID = player.ID;
+                                    RevivePlayer(player);
+                                    responseMsg = $"Peace be with you, {player.Name}.";
+                                }
+                                break;
+
+                            case "/dive":
+                            case "/divemode":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player diver))
+                                    {
+                                        diver.isDiving = !diver.isDiving;
+                                        SendParachuteUpdate(diver.ID, diver.isDiving);
+                                        responseMsg = $"Parachute mode for {diver} updated to {diver.isDiving}";
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    player.isDiving = !player.isDiving;
+                                    SendParachuteUpdate(player.ID, player.isDiving);
+                                    responseMsg = $"Parachute mode for {player} updated to {player.isDiving}";
+                                }
+                                break;
+
+                            case "/starte":
+                                if (_hasMatchStarted) responseMsg = "Match has already begun.";
+                                else
+                                {
+                                    _lobbyRemainingSeconds = 0;
+                                    SendCurrentLobbyCountdown(0);
+                                    Thread.Sleep(100);
+                                    for (int i = 0; i < _players.Length; i++)
+                                    {
+                                        if (_players[i] != null) SendForcePosition(_players[i], new Vector2(500, 500), true);
+                                    }
+                                    responseMsg = "mmm uh huh! yeah? you like that? yeah you like that buddy? yeah uh huh!"; // the eyes they are watching you
+                                }
+                                break;
+                            // the Rebel Hideout is going to need even more work...
+                            // we can clear the space easily, but the spots that need to stay's harder to figure out...
+                            /*case "/tarp":
+                                {
+                                    Logger.Warn("tarp junk...");
+                                    Int32Point[] tarpOpenSpots = _level.OpenRebelSpot();
+                                    if (tarpOpenSpots == null)
+                                    {
+                                        responseMsg = "Couldn't open tarp. Thing's null...";
+                                        break;
+                                    }
+                                    NetOutgoingMessage open = server.CreateMessage();
+                                    open.Write((byte)114);
+                                    open.Write(LOL.ID);
+                                    open.Write((short)tarpOpenSpots.Length);
+                                    for (int i = 0; i < tarpOpenSpots.Length; i++)
+                                    {
+                                        open.Write((short)tarpOpenSpots[i].x);
+                                        open.Write((short)tarpOpenSpots[i].y);
+                                    }
+                                    open.Write((byte)1);
+                                    open.Write(LOL.ID);
+                                    server.SendToAll(open, NetDeliveryMethod.ReliableUnordered);
+
+                                    // actually freeing the spots for the client... idk why but OK
+                                    NetOutgoingMessage free = server.CreateMessage();
+                                    free.Write((byte)115);
+                                    free.Write((short)tarpOpenSpots.Length);
+                                    for (int i = 0; i < tarpOpenSpots.Length; i++)
+                                    {
+                                        free.Write((short)tarpOpenSpots[i].x);
+                                        free.Write((short)tarpOpenSpots[i].y);
+                                    }
+                                    server.SendToAll(free, NetDeliveryMethod.ReliableUnordered);
+                                    responseMsg = "Should've opened tarp spot...";
+                                    // below this is even older; can probs fix/ or delete
+                                    Logger.Warn($"Tarp Spot: {_level._tarpSpawnPosition}");
+                                    NetOutgoingMessage tarp2 = server.CreateMessage();
+                                    tarp2.Write((byte)114);
+                                    tarp2.Write(LOL.ID);
+                                    tarp2.Write((short)(97 * 65));
+                                    for (int x = 0; x < 97; x++)
+                                    {
+                                        for (int y = 0; y < 65; y++)
+                                        {
+                                            tarp2.Write((short)(_level._tarpSpawn.x + x));
+                                            tarp2.Write((short)(_level._tarpSpawn.y + y));
+                                        }
+                                    }
+                                    if (_level._rebelHideoutDoor == null) Logger.Failure("No barn door doodad :[");
+                                    else
+                                    {
+                                        Logger.Warn("We have a stored barn door doodad...");
+                                        for (int i = 0; i < _level._rebelHideoutDoor.HittableSpots.Length; i++)
+                                        {
+                                            tarp2.Write((short)_level._rebelHideoutDoor.HittableSpots[i].x);
+                                            tarp2.Write((short)_level._rebelHideoutDoor.HittableSpots[i].y);
+                                        }
+                                    }
+                                    tarp2.Write((byte)0);
+                                    server.SendToAll(tarp2, NetDeliveryMethod.ReliableUnordered);
+
+                                    NetOutgoingMessage tarp = server.CreateMessage();
+                                    tarp.Write((byte)115);
+                                    tarp.Write((short)(97 * 65));
+                                    for (int x = 0; x < 97; x++)
+                                    {
+                                        for (int y = 0; y < 65; y++)
+                                        {
+                                            tarp.Write((short)(_level._tarpSpawn.x + x));
+                                            tarp.Write((short)(_level._tarpSpawn.y + y));
+                                        }
+                                    }
+                                    server.SendToAll(tarp, NetDeliveryMethod.ReliableUnordered);
+                                }
+                                break;*/
+
+                            case "/startshow": // messing with the song played at the Beakeasy location
+                                if ((command.Length > 1) && (command[1] != ""))
+                                {
+                                    if (int.TryParse(command[1], out int aviaryShowID))
+                                    {
+                                        if ((aviaryShowID < 0) || (aviaryShowID > 2)) aviaryShowID = 0;
+                                        SendAviaryShow((byte)aviaryShowID);
+                                        responseMsg = $"Played Aviary Show #{aviaryShowID + 1} [actualID: {aviaryShowID}]";
+                                    }
+                                    else responseMsg = $"Invalid value \"{command[1]}\"";
+                                }
+                                else responseMsg = "Insufficient # of arguments provided.\"/startshow\" takes at least 1!\nUsage: /startshow [aviaryShowID]";
+                                break;
+
+                            // Msg110 test --> Banan Praised
+                            case "/pray": // msg 110
+                                {
+                                    NetOutgoingMessage banan = server.CreateMessage();
+                                    banan.Write((byte)110); // Byte  | MsgID (110)
+                                    banan.Write(player.ID);    // Short | PlayerID
+                                    banan.Write(0f);        // Float | Interbal to spawn bananas
+                                    banan.Write((byte)255); // Byte  | Amount of Nanners to spawn
+                                    for (int i = 0; i < 8; i++)
+                                    {
+                                        for (int j = 0; j < 32; j++)
+                                        {
+                                            if (i + j >= 256) continue;
+                                            banan.Write((float)(3683f + j)); //x 
+                                            banan.Write((float)(3549f - i)); //y
+                                        }
+                                    }
+                                    banan.Write((byte)1);   // Byte | # of Players to give Milestone to
+                                    banan.Write(player.ID);    // ID for Player to give Milestone to
+                                    server.SendToAll(banan, NetDeliveryMethod.ReliableOrdered);
+                                    responseMsg = "Praise Banan.";
+                                }
+                                break;
+
+                            case "/kill": // user can murder themself if no input other names/ fixed up some stuff
+                                Logger.Success("/kill has been used!");
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player killPlayerLOL))
+                                    {
+                                        if (killPlayerLOL.isAlive)
+                                        {
+                                            killPlayerLOL.isGodmode = false;
+                                            test_damagePlayer(killPlayerLOL, killPlayerLOL.HP, -3, -1);
+                                            responseMsg = $"<insert unfunny joke here> killed {killPlayerLOL}.";
+                                        }
+                                        else responseMsg = $"Can't kill {killPlayerLOL}, they're already dead!";
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else if (player.isAlive)
+                                {
+                                    player.isGodmode = false;
+                                    test_damagePlayer(player, player.HP, -3, -1);
+                                    responseMsg = $"<insert unfunny joke here> killed {player}.";
+                                }
+                                else responseMsg = $"Can't kill {player}, they're already dead LOL!";
+                                break;
+
+                            case "/godmode":
+                            case "/god": // small cleanup to utilize TryPlayerFromString effectively
+                                Logger.Success("/god has been used!");
+                                // Yes, spamming stuff here looks stupid. cry about it-- the whole command system sucks. gotta fix it at some point!
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player foundGod))
+                                    {
+                                        foundGod.isGodmode = !foundGod.isGodmode;
+                                        responseMsg = $"Godmode set to {foundGod.isGodmode.ToString().ToUpperInvariant()} for {foundGod}";
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    player.isGodmode = !player.isGodmode;
+                                    responseMsg = $"Godmode set to {player.isGodmode.ToString().ToUpperInvariant()} for {player}";
+                                }
+                                break;
+
+                            case "/ghost":
+                                if (player.isDev || player.isMod)
+                                {
+                                    if (command.Length >= 2 && command[1] != "")
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player ghoster))
+                                        {
+                                            if (ghoster.isGhosted) break; // chat messages are ignored in ghost mode
+                                            ghoster.isGhosted = true;
+                                            SendGhostmodeEnabled(ghoster.Sender);
+                                            SendPlayerDisconnected(ghoster.ID, true);
+                                            responseMsg = $"Ghost Mode enabled for {ghoster}!";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    }
+                                    else
+                                    {
+                                        if (player.isGhosted) break; // chat messages are ignored in ghost mode
+                                        responseMsg = "";
+                                        player.isGhosted = true;
+                                        SendGhostmodeEnabled(player.Sender);
+                                        SendPlayerDisconnected(player.ID, true);
+                                    }
+                                }
+                                else responseMsg = "You do not have the permissions required to use /ghost...";
+                                break;
+
+                            case "/roll": // from actual sar
+                                // v1.8 format (at least) -- "<PlayerName> rolls <generatedNumber> (1-<maximum>)"
+                                // so... Billy > /roll 6 --> "Billy rolls 5 (1-6)"
+                                int maxRollValue = 6;
+                                if (command.Length >= 2 && command[1] != "" && int.TryParse(command[1], out int desiredMaxRoll))
+                                {
+                                    if (desiredMaxRoll <= 0) desiredMaxRoll = 1;
+                                    maxRollValue = desiredMaxRoll;
+                                }
+                                int roll = _serverRNG.NextInt2(1, maxRollValue);
+                                SendRollMsg(player.ID, $"{player} rolls a {roll}! (1-{maxRollValue})");
+                                responseMsg = "";
+                                break;
+
+                            case "/rain":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (float.TryParse(command[1], out float rainDuration))
+                                    {
+                                        SendRainEvent(rainDuration);
+                                        responseMsg = $"It's raining it's pouring the old man is snoring!\n(rain duration: ~{rainDuration} seconds)";
+                                    }
+                                    else responseMsg = $"Command Error: /rain [{command[1]}] <-- Here | Invalid FLOAT!";
+                                }
+                                else responseMsg = $"Command Error: /rain [] <-- Here | Insufficient # of arguments!";
+                                break;
+
+                            case "/togglewin":
+                                _canCheckWins = !_canCheckWins;
+                                responseMsg = $"_canCheckWins set to \"{_canCheckWins.ToString().ToUpper()}\"";
+                                break;
+
+                            case "/setdrinks":
+                            case "/drinks":
+                                Logger.Success("/drink has been used!");
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (command.Length > 2)
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player modDrinkPlayer))
+                                        {
+                                            if (byte.TryParse(command[2], out byte setDrinksModPlayer))
+                                            {
+                                                modDrinkPlayer.HealthJuice = setDrinksModPlayer;
+                                                responseMsg = $"Set {modDrinkPlayer}'s HealthJuiceOz to {setDrinksModPlayer}";
+                                            }
+                                            else responseMsg = $"Invalid input \"{command[2]}\"";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    }
+                                    else
+                                    {
+                                        if (byte.TryParse(command[1], out byte setJuice))
+                                        {
+                                            player.HealthJuice = setJuice;
+                                            responseMsg = $"Set {player}'s HealthJuiceOz to {setJuice}";
+                                        }
+                                        else responseMsg = $"Invalid input \"{command[1]}\"";
+                                    }
+                                }
+                                else responseMsg = "Invalid # of arguments provided.\"/drink\" requires at least 1!\nUsage: /drink [healthJuiceCount] OR /drink [playerID] [healthJuiceCount]";
+                                break;
+
+                            case "/tapes":
+                                Logger.Success("/tapes has been used!");
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (command.Length >= 3)
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player tapePlayer))
+                                        {
+                                            if (byte.TryParse(command[2], out byte setTapes))
+                                            {
+                                                tapePlayer.SuperTape = setTapes;
+                                                responseMsg = $"{tapePlayer} now has {setTapes} Super Tape.";
+                                            }
+                                            else responseMsg = $"Command Error: /tapes {tapePlayer.Name} [{command[2]}] <-- Here | Invalid BYTE!";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    }
+                                    else if (byte.TryParse(command[1], out byte setTapes))
+                                    {
+                                        player.SuperTape = setTapes;
+                                        responseMsg = $"{player} now has {setTapes} Super Tape.";
+                                    }
+                                    else responseMsg = $"Command Error: /tapes [{command[1]}] <-- Here | Invalid BYTE!";
+                                }
+                                else responseMsg = $"Insufficient # of arguments provided. \"/tapes takes at least 1!\"\nUsage: /tapes [amount] OR /tapes <player> [amount]";
+                                break;
+
+                            case "/armorticks":
+                            case "/ticks": // this is a testing command... ; can make a give-armor command if want, it's possible
+                                Logger.Success("/ticks has been used!");
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (command.Length >= 3)
+                                    {
+                                        if (TryPlayerFromString(command[1], out Player ticksPlayer))
+                                        {
+                                            if (int.TryParse(command[2], out int setTicks))
+                                            {
+                                                if (_safeMode)
+                                                {
+                                                    if (setTicks < 0) setTicks = 0;
+                                                    if (setTicks > ticksPlayer.ArmorTier) setTicks = ticksPlayer.ArmorTier;
+                                                }
+                                                ticksPlayer.ArmorTapes = (byte)setTicks;
+                                                responseMsg = $"{ticksPlayer} now has {setTicks}/{ticksPlayer.ArmorTier} ticks!";
+                                            }
+                                            else responseMsg = $"Command Error: /ticks {ticksPlayer.Name} [{command[2]}] <-- Here | Invalid INT!";
+                                        }
+                                        else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                    }
+                                    else if (int.TryParse(command[1], out int setTicks))
+                                    {
+                                        if (_safeMode)
+                                        {
+                                            if (setTicks < 0) setTicks = 0;
+                                            if (setTicks > player.ArmorTier) setTicks = player.ArmorTier;
+                                        }
+                                        player.ArmorTapes = (byte)setTicks;
+                                        responseMsg = $"{player} now has {setTicks}/{player.ArmorTier} ticks!.";
+                                    }
+                                    else responseMsg = $"Command Error: /ticks [{command[1]}] <-- Here | Invalid INT!";
+                                }
+                                else responseMsg = $"Insufficient # of arguments provided. \"/ticks takes at least 1!\"\nUsage: /armortapes [amount] OR /armortapes <player> [amount]";
+                                break;
+
+                            case "/getpos":
+                            case "/pos":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player pos)) responseMsg = $"{pos} is @ {pos.Position}.";
+                                    else responseMsg = $"Couldn't locate player \"{command[1]}\"";
+                                }
+                                else responseMsg = $"{player} is @ {player.Position}.";
+                                break;
+                            case "/stopp": // force-canceling reloads testing... doesn't work... sorta
+                                // other players see the player we cancel stopping their reload... the one we're trying to cancel ignores this, however.
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player reloadCanceler))
+                                    {
+                                        SendCancelReload(reloadCanceler);
+                                        responseMsg = $"Sent reload cancel request with {reloadCanceler}'s details.";
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    SendCancelReload(player);
+                                    responseMsg = $"Sent reload cancel request with {player}'s details.";
+                                }
+                                break;
+                            default:
+                                Logger.Failure("Invalid command used.");
+                                responseMsg = "Invalid command provided. Please see '/help' for a list of commands.";
+                                break;
+                        }
+                        //now send response to player...
+                        if (responseMsg != "") SendChatMessageWarning(player, responseMsg);
+                        return;
                     }
-                    //now send response to player...
-                    NetOutgoingMessage allchatmsg = server.CreateMessage();
-                    allchatmsg.Write((byte)94);
-                    allchatmsg.Write(LOL.ID); //ID of player who sent msg
-                    allchatmsg.Write(responseMsg);
-                    server.SendToAll(allchatmsg, NetDeliveryMethod.ReliableUnordered);
-                    //server.SendMessage(allchatmsg, message.SenderConnection, NetDeliveryMethod.ReliableUnordered);
+                    bool wasToTeam = pmsg.ReadBoolean();
+                    if (wasToTeam)
+                    {
+                        // fight me
+                        for (int i = 0; i < player.Teammates?.Count; i++) SendChatMessageTeammate(player.ID, text, player.Teammates[i].Sender);
+                        SendChatMessageTeammate(player.ID, text, player.Sender); // don't forget to send chat message to the person sending as well...
+                    }
+                    // obviously, if it's not to the team then it's an all-chat message
+                    else if (player.isAlive) SendChatMessageToAll(player.ID, text);
                 }
-                else // Regular Message
+                catch (NetException netEx)
                 {
-                    NetOutgoingMessage allchatmsg = server.CreateMessage();
-                    allchatmsg.Write((byte)26);             // Byte   | MsgID (26)
-                    allchatmsg.Write(LOL.ID);               // Short  | PlayerID
-                    allchatmsg.Write(message.ReadString()); // String | MessageText
-                    allchatmsg.Write(false);                // Bool   | ToTeam? (Must make sure message only gets sent to teammate if it's true)
-                    server.SendToAll(allchatmsg, NetDeliveryMethod.ReliableUnordered);
+                    Logger.Failure($"[HandleChatMessage - NetError] There was a NetError while processing this chat message...\n{netEx}");
+                    pmsg.SenderConnection.Disconnect("There was an error while processing your data... Sorry about that (ChatMessage)");
+                }
+                catch (Exception ex)
+                {
+                    SendChatMessageWarning(player, "<<Error>> There was an error processing your chat message... Considering you're still standing, it's probably just a busted command. Check the console!");
+                    Logger.Failure($"[HandleChatMessage - General Error] There was some sort of error while processing a chat message.\n\n{ex}");
                 }
             }
         }
 
+        // Msg26 | "Send ChatMsg" -- Sent whenever a client sends a chat message to public chat.
+        private void SendChatMessageToAll(short playerID, string text)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(4 + text.Length);
+            msg.Write((byte)26);    // 1 Byte   | MsgID (26)
+            msg.Write(playerID);    // 2 Short  | PlayerID
+            msg.Write(text);        // V String | ChatMsgContents
+            msg.Write(false);       // 1 Bool   | ToTeam? [False]
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg26 | "Send ChatMsg - Teammates" -- Sent to the client & their teammates whenever they (OP) sends a message in team chat.
+        private void SendChatMessageTeammate(short playerID, string text, NetConnection destAddress)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(4 + text.Length);
+            msg.Write((byte)26);    // 1 Byte   | MsgID (26)
+            msg.Write(playerID);    // 2 Short  | PlayerID (who sent it)
+            msg.Write(text);        // V String | ChatMsgContents
+            msg.Write(true);        // 1 Bool   | ToTeam? [True; also, only send to teammates]
+            server.SendMessage(msg, destAddress, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg94 | "Warning Message" -- Sent whenever a client is to receive a "warning" chat message (E.g. swearing/ has been muted)
+        private void SendChatMessageWarning(Player player, string text)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(4 + text.Length);
+            msg.Write((byte)94);    // 1 Byte   | MsgID (94)
+            msg.Write(player.ID);   // 2 Short  | SendPlayerID (yes, still required-- also playerID can be any valid playerId in the match)
+            msg.Write(text);        // V String | MessageContents
+            server.SendMessage(msg, player.Sender, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg27 | "Slot Update Request"
         private void HandleSlotUpdate(NetIncomingMessage pmsg) // Msg27 >> Msg28
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleSlotUpdate", out Player player))
@@ -2787,6 +3159,33 @@ namespace WCSARS
             }
         }
 
+        // Msg 32 | "Player Landed" -- This message type is received after a player lands.
+        private void HandlePlayerLanded(NetIncomingMessage pmsg) // OK-enough
+        {
+            if (VerifyPlayer(pmsg.SenderConnection, "HandlePlayerLanded", out Player player))
+            {
+                try
+                {
+                    bool wasLandingValid = pmsg.ReadBoolean();
+                    float xDir = pmsg.ReadFloat();
+                    float yDir = pmsg.ReadFloat();
+                    Logger.DebugServer($"[PlayerLanded] Was landing safe? {wasLandingValid}; X:Y--[{xDir}, {yDir}]");
+                    if (!wasLandingValid || !_level.IsThisPlayerSpotValid(player.Position))
+                    {
+                        Vector2 moveSpot = _level.FindValidPlayerPosition(player.Position, xDir, yDir); // method doesn't actually utilize x/y directions lol
+                        SendForcePosition(player, moveSpot);
+                    }
+                    player.isDiving = false;
+                    player.hasLanded = true;
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandlePlayerLanded] Player @ NetConnection \"{pmsg.SenderConnection}\" gave NetError!\n{netEx}");
+                    pmsg.SenderConnection.Disconnect("There was an error procssing your request. Message: Read past buffer size... [PlayerLand]");
+                }
+            }
+        }
+
         // Msg34 | "Super Skunk Gas Approach" -- Sent once the Server acknowledges the SSG should approach. Duration is how long the gas will last
         private void SendSSGApproachEvent(float duration)
         {
@@ -2795,6 +3194,67 @@ namespace WCSARS
             msg.Write((byte)34);    // Byte  | MsgID (34)
             msg.Write(duration);    // Float | ApproachmentDuration
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg35 | "Weather (rain) Event" --- When this should be sent is unknown; likely random-- what is known is that this causes rain to fall (snow falls in the taundra).
+        private void SendRainEvent(float duration)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(5);
+            msg.Write((byte)35);    // 1 Byte | MsgID (35)
+            msg.Write(duration);    // 4 Byte | Rain Duration
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg40 | "Grenade Finished Request" --> Msg41 | "Confirm Grenade Finished" -- Chain: [Msg36 to Msg37] --> [Msg38 to Msg39] --> [Msg40 to Msg41]
+        private void HandleGrenadeFinished(NetIncomingMessage msg)
+        {
+            //Logger.Basic("Msg40 has been sent! :D");
+            if (TryPlayerFromConnection(msg.SenderConnection, out Player player))
+            {
+                try
+                {
+                    float x = msg.ReadFloat();
+                    float y = msg.ReadFloat();
+                    float height = msg.ReadFloat();
+                    short ID = msg.ReadInt16();
+                    //Logger.Warn($"Grenade Height: {height}\nGrenadeID: {ID}");
+                    //Logger.Warn($"Player ThrowableCount: {player.ThrowableCounter}");
+                    Weapon nade = _weapons[ID];
+                    
+                    // todo: calculate whether any players were hit; would have to update SendGrenadeFinished though...
+                    SendGrenadeFinished(player.ID, ID, new Vector2(x, y), height);
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleGrenadeFinished] Player @ {msg.SenderConnection} gave NetException!\n{netEx}");
+                    msg.SenderConnection.Disconnect("Error processing your request. Message: \"Error reading packet data.\"");
+                }
+            }
+            else
+            {
+                Logger.Failure($"[HandleGrenadeFinished] Player @ {msg.SenderConnection} is not in the PlayerList!");
+                msg.SenderConnection.Disconnect("There was an error processing your request. Message: \"Invalid Action! Not in PlayerList!\"");
+            }
+        }
+
+        // Msg41 | "Grenade Finished" --- Sent whenever a grenade has landed and should explode. OR whenever a banana has been stepped on! (does appear to have an effect on skunk nades!)
+        private void SendGrenadeFinished(short playerID, short thrownNadeID, Vector2 position, float height = 0f, List<short> hitIDs = null) // v0.90.2 OK [6/6/23]
+        {
+            int hitPlrCount = hitIDs == null ? 0 : hitIDs.Count;
+            NetOutgoingMessage msg = server.CreateMessage(18 + (2 * hitPlrCount));
+            msg.Write((byte)41);            // 1 Byte | MsgID (41)
+            msg.Write(playerID);            // 2 Short | PlayerID (owner)
+            msg.Write(thrownNadeID);        // 2 Short | ThrowableID (id in a list of total thrown nades, similar to attackCount)
+            msg.Write(position.x);          // 4 Float | actionPosition.x
+            msg.Write(position.y);          // 4 Float | actionPosition.y
+            msg.Write(height);              // 4 Float | Height
+            msg.Write((byte)hitPlrCount);   // 1 Byte | Numer of Players hit by a nade. For nanners, it's none... I think?
+            for (int i = 0; i < hitPlrCount; i++)
+            {
+                msg.Write(hitIDs[i]);       // 2 Short | playerN.ID
+            }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
         /// <summary>
@@ -2816,9 +3276,10 @@ namespace WCSARS
                         if (player.Ammo[_weapons[weaponID].AmmoType] == 0)
                         {
                             Logger.Warn($"Server Desync? Player doesn't have any ammo in this slot!");
+                            SendChatMessageWarning(player, "mis-match with your and the server's ammo count!");
                             return; // No ammo! What the hey hey!!
                         }
-                        Logger.DebugServer("[HandleReloadRequest] All Passed!");
+                        //Logger.DebugServer("[HandleReloadRequest] All Passed!");
                         player.isReloading = true;
                         //player.ReloadFinishTime = DateTime.Ut
                     }
@@ -2879,12 +3340,96 @@ namespace WCSARS
             }
         }
 
-        private void SendCurrentLobbyCountdown(double countdown) // Msg43
+        // Msg43 | "Lobby Countdown Update" --- Sent periodically to make sure that the server and client lobby times are sync'd up!
+        private void SendCurrentLobbyCountdown(double countdown) // appears OK! [v0.90.2]
         {
             NetOutgoingMessage msg = server.CreateMessage(9);
-            msg.Write((byte)43);    // Byte   | MsgID (43)
-            msg.Write(countdown);   // Double | LobbyCountdownSeconds
+            msg.Write((byte)43);    // 1 Byte   | MsgID (43)
+            msg.Write(countdown);   // 8 Double | LobbyCountdownSeconds
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+        }
+
+        // Msg44 | "Spectator Info" --- Received whenever a dead, spectator client wishes to inform the server who they think they're spectating.
+        private void HandleSpectatorRequest(NetIncomingMessage pMsg)
+        {
+            if (!IsServerRunning()) return;
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleSpectatorRequest", out Player player))
+            {
+                // note - clients basically have the authority over who they're spectating
+                // side-note - there may be a specific packet to override this that just hasn't been found/ used correctly (similar to bananas not disappearing)
+                // side-side-note - clients NEVER send this packet if they are alive, only when "dead". This includes ghosts!!
+                if (player.isAlive && !player.isGhosted)
+                {
+                    Logger.DebugServer($"[HandleSpectatorRequest] {player} is alive and un-ghosted, yet they sent Msg44?");
+                    return;
+                }
+                try
+                {
+                    // read packet data
+                    float x = pMsg.ReadFloat();
+                    float y = pMsg.ReadFloat();
+                    short  id = pMsg.ReadInt16();
+                    if (id == -1) return; // note - ghosted players & recently died players can/ will send this... doesn't seem of any use though!
+
+                    // server-side setting and checking time
+                    player.Position = new Vector2(x, y); // no genuine reason to modify the client-player's position at this point anymore honestly...
+                     // note - it would appear v0.90.2's ghost mode is very basic; i.e., there is no way to click onto players and follow them around
+                     // this may or may not be true however. it may be more advanced, and it is just unknown HOW to get it to work properly at this time...
+                     // ...similar to how it took a while to realize DC messages played a role in enabling ghost modes
+                    if (player.isGhosted) return;
+
+                    // otherwise... any other pID should be valid
+                    if (TryPlayerFromID(id, out Player spectating))
+                    {
+                        // is the person they're trying to spectate even alive?
+                        if (spectating.isAlive)
+                        {
+                            // ok so everything about who they want to spectate is right... now check if the server has already acknowledge these updates
+                            if (player.WhoImSpectating == spectating.ID) return;
+
+                            // if ogSpectator is -1, requester isn't watching anyone
+                            if (player.WhoImSpectating != -1)
+                            {
+                                if (TryPlayerFromID(player.WhoImSpectating, out Player oldSpectator))
+                                {
+                                    if (!oldSpectator.MySpectatorsIDs.Remove(player.ID)) Logger.Warn($"[HandleSpectatorRequest] [Warn] {player} wasn't actually in {oldSpectator}'s spectator list???");
+                                    SendUpdatedSpectatorCount(oldSpectator.ID, (byte)oldSpectator.MySpectatorsIDs.Count);
+                                }
+                                else Logger.Warn($"[HandleSpectatorRequest] [Warn] {player} tried switching to pID \"{player.WhoImSpectating}\", but they couldn't be located!");
+                            }
+                            // OK they've been cleared up, now move this client to their new spectator
+
+                            // set requester's spectating-player to what they want, and make sure to update the list
+                            player.WhoImSpectating = spectating.ID;
+                            if (!spectating.MySpectatorsIDs.Contains(player.ID))
+                            {
+                                spectating.MySpectatorsIDs.Add(player.ID);
+                                SendUpdatedSpectatorCount(spectating.ID, (byte)spectating.MySpectatorsIDs.Count);
+                            }
+                            else Logger.Warn($"[HandleSpectatorRequest] [Warn] {player} already in {spectating}'s spectator list for some reason... whoopsies!");
+                        }
+                        else Logger.Warn($"[HandleSpectatorRequest] [Warn] {player} spectating {spectating}, who's dead!!");
+                    }
+                    // otherwise-otherwise... this requested pID should be invalid.
+                    else Logger.Warn($"[HandleSpectatorRequest] [Warn] {player} requested pID \"{id}\" could not be found.");
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleSpectatorRequest] [Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [SpectateUpdate]");
+                }
+            }
+        }
+
+        // Msg78 | "Spectator Count Update" -- Sent whenever a client-player has the number of spectators watching them changed.
+        private void SendUpdatedSpectatorCount(short pPlayerID, byte pSpecCount) // appears OK [v0.90.2]
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(4);
+            msg.Write((byte)78);    // 1 Byte  | MsgID
+            msg.Write(pPlayerID);   // 2 Short | PlayerID (who everyone's watching)
+            msg.Write(pSpecCount);  // 1 Byte  | # of Spectators
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
         // Msg 45 | "HP / Armor / MoveMode; etc. Changes" -- Sent when players have their data changed in some way; Should be a large list, here it is just one player
@@ -2899,18 +3444,30 @@ namespace WCSARS
             msg.Write(player.ArmorTier);    // Byte  | ArmorTier
             msg.Write(player.ArmorTapes);   // Byte  | ArmorTicks / ArmorTapes
             msg.Write(player.WalkMode);     // Byte  | WalkMode
-            msg.Write(player.Drinkies);     // Byte  | # of Juice
-            msg.Write(player.Tapies);       // Byte  | # of Tape
+            msg.Write(player.HealthJuice);     // Byte  | # of Juice
+            msg.Write(player.SuperTape);       // Byte  | # of Tape
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+
+        // Msg46 | "Player Disconnected" -- Sent whenever a client disconnects... or goes into ghost mode!
+        private void SendPlayerDisconnected(short pID, bool wasGhostMode = false) // appears OK [v0.90.2]
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(4);
+            msg.Write((byte)46);        // 1 Byte  | MsgID (46)
+            msg.Write(pID);             // 2 Short | PlayerID
+            msg.Write(wasGhostMode);    // 1 Bool  | isGhostModeDC << doesn't appear to affect anything in v0.90.2
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
         // Msg49 | "Player Ended Drinking" -- Sent once a player has finished drinking.
         private void SendPlayerEndDrink(Player player)
         {
+            if (!IsServerRunning()) return;
             player.isDrinking = false;
-            NetOutgoingMessage msg = server.CreateMessage(5);
-            msg.Write((byte)49);    // Byte  | MsgID (49)
-            msg.Write(player.ID);   // Short | PlayerID
+            NetOutgoingMessage msg = server.CreateMessage(3);
+            msg.Write((byte)49);    // 1 Byte  | MsgID (49)
+            msg.Write(player.ID);   // 2 Short | PlayerID
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -2960,28 +3517,111 @@ namespace WCSARS
         }
 
         // ClientSentCutGrass[53] >> ServerSentCutGrass[54]
-        private void serverSendCutGrass(NetIncomingMessage message) // POTENTIAL CRASH SPOT
+        private void HandleGrassCutRequest(NetIncomingMessage pMsg)
         {
-            if (TryPlayerFromConnection(message.SenderConnection, out Player player))
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleGrassCut", out Player player))
             {
-                // TOOD - Generate some item loot after cutting grass ?
-                byte bladesCut = message.ReadByte();
-                NetOutgoingMessage grassMsg = server.CreateMessage();
-                grassMsg.Write((byte)54);
-                grassMsg.Write(player.ID);
-                grassMsg.Write(bladesCut);
-                for (byte i = 0; i < bladesCut; i++)
+                try
                 {
-                    grassMsg.Write(message.ReadInt16()); //x
-                    grassMsg.Write(message.ReadInt16()); //y
+                    // init Int16Point array...
+                    int cutCount = pMsg.ReadByte();
+                    Int16Point[] hitSpots = new Int16Point[cutCount];
+
+                    // alloc values used later in the FOR loop...
+                    GameGrass grass;
+                    short x, y;
+
+                    // read remaining message data; if valid grass loc, try spawning some loot.
+                    // todo - ask Clogg NICELY if he'll tell us the real rng values
+                    for (int i = 0; i < cutCount; i++)
+                    {
+                        x = pMsg.ReadInt16();
+                        y = pMsg.ReadInt16();
+                        hitSpots[i] = new Int16Point(x, y);
+                        grass = _level.GetGrassAtSpot(x, y);
+                        if (grass == null)
+                        {
+                            Logger.DebugServer($"[HandleGrassCut - Erorr!] {player} sent invalid spot @ {(x, y)}!");
+                            continue;
+                        }
+                        if (!_hasMatchStarted) continue;
+
+                        // rng & remove from list if need to; otherwise NO item drops + don't remove
+                        if (!grass.Type.Rechoppable)
+                        {
+                            // remove from list....
+                            _level.RemoveGrassFromList(grass); // not currently using any other properties so what's it matter really?
+                            
+                            // if it isn't rechoppable, then it's regular grass that drops loot
+                            uint roll = _serverRNG.NextUInt(0, 255);
+                            if (roll < 41)
+                            {
+                                LootItem spawnLoot;
+                                roll = _serverRNG.NextUInt(0, 5);
+                                switch (roll)
+                                {
+                                    case 0: // health juice
+                                    case 1:
+                                    default:
+                                        spawnLoot = _level.NewLootJuice(5, new Vector2(x, y));
+                                        break;
+
+                                    case 2: // banana
+                                    case 3:
+                                        spawnLoot = _level.NewLootWeapon(69, 0, 1, new Vector2(x, y));
+                                        break;
+
+                                    case 4: // ammo
+                                        // todo - dynamically load ammo
+                                        spawnLoot = _level.NewLootAmmo((byte)_serverRNG.NextUInt(0, 5), 3, new Vector2(x, y));
+                                        break;
+                                }
+                                SendSpawnedLoot(spawnLoot);
+                                SendGrassLootFoundSound(player.Sender);
+                                // meme
+                                // Minigun Stats --- ID: 67; RarMin 3 (purp), RarMin 4 (gold), MaxAmmo 100
+                                //SendSpawnedLoot(_level.NewLootWeapon(67, 3, 100, new Vector2(x, y)));
+                            }
+                        }
+                    }
+                    SendGrassCut(hitSpots);
                 }
-                server.SendToAll(grassMsg, NetDeliveryMethod.ReliableOrdered);
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleGrassCut] [Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [GrassCut]");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Failure($"General exception has been thrown!\n{ex}");
+                    SendChatMessageWarning(player, "An error occurred while handing MsgID (53) request. Please check the console.");
+                }
             }
-            else
+        }
+
+        // Msg54 (GrassCut) -- Sent to all other clients after a client sends a valid Msg53 (GrassCut Request)
+        private void SendGrassCut(Int16Point[] grassLocs)
+        {
+            if (!IsServerRunning()) return;
+            if (grassLocs.Length > 255) throw new ArgumentOutOfRangeException("grassLocs", "grassLocs length is greater than 255!");
+            NetOutgoingMessage msg = server.CreateMessage(2 + (grassLocs.Length * 4));
+            msg.Write((byte)54);                // 1 Byte | MsgID (54)
+            msg.Write((byte)grassLocs.Length);  // 1 Byte | Length
+            for (int i = 0; i < grassLocs.Length; i++)
             {
-                Logger.Failure($"Grass Cut- Player not in player list.");
-                message.SenderConnection.Disconnect("Invalid Action! Not in PlayerList!");
+                msg.Write(grassLocs[i].x);      // 2 Short | Grass[n].X
+                msg.Write(grassLocs[i].y);      // 2 Short | Grass[n].Y
             }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg59 -- (GrassLootSoundCue) -- Sent to a client whenever loot is found within cut grass.
+        private void SendGrassLootFoundSound(NetConnection dest)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(1);
+            msg.Write((byte)59);    // Byte | MsgID (59)
+            server.SendMessage(msg, dest, NetDeliveryMethod.ReliableUnordered); // ok we're done
         }
 
         /// <summary>Sends a "Player Exit Hamsterball" packet to all connected NetPeers using the provided parameters.</summary>
@@ -2990,12 +3630,12 @@ namespace WCSARS
         /// <param name="exitPosition">Position the Hamsterball will be placed at after exiting.</param>
         private void SendExitHamsterball(short playerID, short hamsterballID, Vector2 exitPosition)
         {
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)58);        // Byte  | MsgID (58)
-            msg.Write(playerID);        // Short | PlayerID
-            msg.Write(hamsterballID);   // Short | HamsterballID
-            msg.Write(exitPosition.x);  // Float | ExitPositionX
-            msg.Write(exitPosition.y);  // Float | ExitPositionY
+            NetOutgoingMessage msg = server.CreateMessage(13);
+            msg.Write((byte)58);        // 1 Byte  | MsgID (58)
+            msg.Write(playerID);        // 2 Short | PlayerID
+            msg.Write(hamsterballID);   // 2 Short | HamsterballID
+            msg.Write(exitPosition.x);  // 4 Float | ExitPositionX
+            msg.Write(exitPosition.y);  // 4 Float | ExitPositionY
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -3007,19 +3647,72 @@ namespace WCSARS
         /// <param name="targetBallID">ID of the TargetPlayer's Hamsterball. (use -1 if they're not in a ball)</param>
         private void SendHamsterballHurtPlayer(short attackerID, short targetID, bool didKill, short attackerBallID, short targetBallID)
         {
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)61);        // Byte  | MsgID (61)
-            msg.Write(attackerID);      // Short | AttackerID
-            msg.Write(targetID);        // Short | AttackerID
-            msg.Write(didKill);         // Bool  | DidKillPlayer
-            msg.Write(attackerBallID);  // Short | HamsterballID (Attacker)
-            msg.Write(targetBallID);    // Short | HamsterballID (Target)
-            if (targetBallID >= 0)      // Byte  | Remaining Hamsterball HP (Target)
+            NetOutgoingMessage msg = server.CreateMessage(11);
+            msg.Write((byte)61);        // 1 Byte  | MsgID (61)
+            msg.Write(attackerID);      // 2 Short | AttackerID
+            msg.Write(targetID);        // 2 Short | AttackerID
+            msg.Write(didKill);         // 1 Bool  | DidKillPlayer
+            msg.Write(attackerBallID);  // 2 Short | HamsterballID (Attacker)
+            msg.Write(targetBallID);    // 2 Short | HamsterballID (Target)
+            if (targetBallID >= 0)      // 1 Byte  | Remaining Hamsterball HP (Target)
             {
                 if (!_hamsterballs.ContainsKey(targetBallID)) msg.Write((byte)0);
                 else msg.Write(_hamsterballs[targetBallID].HP);
             }
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+        }
+
+        // Msg20 | "LootItem Spawned" --- Sent whenver the server spawns LootItems
+        private void SendSpawnedLoot(LootItem lootItem)
+        {
+            //Logger.DebugServer($"LootID: {lootID} - \"{lootItem.Name}\"\nType: {lootItem.LootType}, Rarity: {lootItem.Rarity}, Give: {lootItem.GiveAmount}\nWorldPos: {lootItem.Position}");
+            NetOutgoingMessage msg = server.CreateMessage(lootItem.LootType == LootType.Weapon ? 27 : 25);
+            msg.Write((byte)20);                // Byte   | MsgID
+            msg.Write(lootItem.LootID);         // Int    | LootID
+            msg.Write((byte)lootItem.LootType); // Byte   | LootType
+            switch (lootItem.LootType)          // Short  | DataValue -- Weapon: WeaponIndex; Armor: ArmorTicksLeft; Others: typically how much to give
+            {
+                case LootType.Weapon:
+                    msg.Write((short)lootItem.WeaponIndex);
+                    break;
+                default: // upon further inspection, it would seem all other LootTypes can simply use this
+                    msg.Write((short)lootItem.GiveAmount);
+                    break;
+            }
+            // Positions | ToDo: What is the second pair of posiions actually used for?
+            msg.Write(lootItem.Position.x); // Float  | Position1.x
+            msg.Write(lootItem.Position.y); // Float  | Position1.y
+            msg.Write(lootItem.Position.x); // Float  | Position2.x
+            msg.Write(lootItem.Position.y); // Float  | Position2.y
+            // Last Branch | Other "info" about the loot:: Weapon: Ammo / grenadeCount; Armor: armorTier; Others: absolutely nothing
+            switch (lootItem.LootType)      // Byte | AllLoot EXCEPT Armor & Weapons:: nothing --- Weapons: ammo/nade count + rarity; Arrmor: armorTier
+            {
+                case LootType.Weapon:
+                    msg.Write((byte)lootItem.GiveAmount);   // Byte   | AmmoCount --- Weapons use "GiveAmount" to store Ammo
+                    msg.Write(lootItem.Rarity.ToString());  // String | RarityInfoString -- No clue why it is like this, but it is
+                    break;
+                case LootType.Ammo:  // Byte | ammoSpawnAmmount
+                case LootType.Armor: // Byte | armorTier / armorLevel
+                    msg.Write((byte)lootItem.Rarity);
+                    break;
+                default: // upon further inspection, it would seem all other LootTypes can simply use this
+                    msg.Write((byte)0);
+                    break;
+            }
+            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
+            // ----------------------------------------
+            // | --- Msg20 Format ---
+            // | 1 Byte   | MsgID (20)
+            // | 4 Int    | LootID
+            // | 1 Byte   | LootType
+            // | 2 Short  | DataValue [Weapons: weaponJSONIndex --- Armor: armorTicksLeft --- All Other Types: amountToGive]
+            // | 4 Float  | Position1.x
+            // | 4 Float  | Position1.y
+            // | 4 Float  | Position2.x <--- unsure what this is truly for... haven't messed with it
+            // | 4 Float  | Position2.y <--- unsure what this is truly for... haven't messed with it
+            // | 1 Byte   | DataValue2 [Weapon: ammoCount --- Armor: armorTier -- Ammo: ammoType --- All Other Types: <<nothing>> / 0]
+            // | 2 String | InfoString? [Weapons: Rarity.ToString() --- All Other Types: do not include]
+            // ----------------------------------------
         }
 
         /// <summary>
@@ -3028,11 +3721,11 @@ namespace WCSARS
         /// <param name="amsg">Incoming message to handle and read data from.</param>
         private void HandleLootRequestMatch(NetIncomingMessage amsg)
         {
-            Logger.DebugServer("LootItems request.");
+            //Logger.DebugServer("LootItems request.");
             if (TryPlayerFromConnection(amsg.SenderConnection, out Player player))
             {
                 // Is the Player dead? Has the Player landed yet?
-                if (!player.IsPlayerReal() || player.NextLootTime > DateTime.UtcNow) return;
+                if (!player.IsPlayerReal()) return; // || player.NextLootTime > DateTime.UtcNow
                 try
                 {
                     // Read Data. Verify if it is real.
@@ -3040,9 +3733,9 @@ namespace WCSARS
                     byte slotID = amsg.ReadByte();
 
                     // Verify is real.
-                    Logger.DebugServer($"[BetterHandleLootItem] Sent Slot: {slotID}");
+                    //Logger.DebugServer($"[BetterHandleLootItem] Sent Slot: {slotID}");
                     if (slotID < 0 || slotID > 3) return; // NOTE: Seems like the game will always try to send the correct slot to change.
-                    if (!_lootItems.ContainsKey(reqLootID)) // Add infraction thing so like if they do to much kicky?
+                    if (!_level.LootItems.ContainsKey(reqLootID)) // Add infraction thing so like if they do to much kicky?
                     {
                         Logger.Failure($"[Handle MatchLootRequest] Player @ {amsg.SenderConnection} requested a loot item that wasn't in the list.");
                         return;
@@ -3050,49 +3743,48 @@ namespace WCSARS
                     }
 
                     // Check if player is close enough.
-                    LootItem item = _lootItems[reqLootID];  // Item is set here!
-                    // TODO -- Spawn Loot Vertically so this doesn't give false negative. << Need to know all valid tile spots though...
-                    if (!Vector2.ValidDistance(item.Position, player.Position, 10.5f, true)) // Still testing thresholds...
+                    LootItem item = _level.LootItems[reqLootID];  // Item is set here!
+                    if (!Vector2.ValidDistance(player.Position, item.Position, 10.5f, true)) // Still testing thresholds...
                     {
+                        Logger.DebugServer($"ItemPosition: {item.Position}");
                         Logger.Failure($"[HandleMatchLootReq] Player not close enough to loot...");
                     }
                     CheckMovementConflicts(player);
 
                     // Ok give the item.
-                    string itemdata = $"-- Found Item! --\nName: {item.Name}; Type: {item.LootType}; WeaponType: {item.WeaponType}\nRarity: {item.Rarity}; Give: {item.GiveAmount}; Position: {item.Position}\n";
-                    Logger.DebugServer(itemdata);
-
+                    //string itemdata = $"-- Found Item! --\nName: {item.Name}; Type: {item.LootType}; WeaponType: {item.WeaponType}\nRarity: {item.Rarity}; Give: {item.GiveAmount}; Position: {item.Position}\n";
+                    //Logger.DebugServer(itemdata);
                     switch (item.LootType)
                     {
                         // Health Juice
                         case LootType.Juice:
-                            if (player.Drinkies == 200) return;
-                            if ( (player.Drinkies + item.GiveAmount) > 200)
+                            if (player.HealthJuice == 200) return;
+                            if ( (player.HealthJuice + item.GiveAmount) > 200)
                             {
-                                item.GiveAmount -= (byte)(200 - player.Drinkies);
-                                player.Drinkies = 200;
-                                SendNewJuiceItem(item.GiveAmount, item.Position); // Player kind of spams requests when getting loot. Oops...
+                                item.GiveAmount -= (byte)(200 - player.HealthJuice);
+                                player.HealthJuice = 200;
+                                SendSpawnedLoot(_level.NewLootJuice(item.GiveAmount, item.Position));
                             }
-                            else player.Drinkies += item.GiveAmount;
+                            else player.HealthJuice += item.GiveAmount;
                             break;
 
                         // Tape
                         case LootType.Tape:
-                            if (player.Tapies == 5) return;             // If at max -> stop; otherwise...
-                            if ((player.Tapies + item.GiveAmount) > 5)
+                            if (player.SuperTape == 5) return;             // If at max -> stop; otherwise...
+                            if ((player.SuperTape + item.GiveAmount) > 5)
                             {
-                                item.GiveAmount -= (byte)(5 - player.Tapies);
-                                player.Tapies = 5;
-                                SendNewTapeItem(item.GiveAmount, item.Position);
+                                item.GiveAmount -= (byte)(5 - player.SuperTape);
+                                player.SuperTape = 5;
+                                SendSpawnedLoot(_level.NewLootTape(item.GiveAmount, item.Position));
                             }
-                            else player.Tapies += item.GiveAmount;
+                            else player.SuperTape += item.GiveAmount;
                             break;
 
                         // Armor
                         case LootType.Armor:
                             if (player.ArmorTier != 0) // Has armor
                             {
-                                SendNewArmorItem(player.ArmorTier, player.ArmorTapes, item.Position);
+                                SendSpawnedLoot(_level.NewLootArmor(player.ArmorTier, player.ArmorTapes, item.Position));
                                 player.ArmorTier = item.Rarity;
                                 player.ArmorTapes = item.GiveAmount;
                             }
@@ -3104,9 +3796,10 @@ namespace WCSARS
                             break;
 
                         // Ammo -- No clue if worky. Have to track ammo and stuff first. Probably works fine
-                        case LootType.Ammo: // Forgot there is an ammo data file- could use that maybe to define types at some point?
+                        // TODO: fix when AmmoData is added; cleanup because hard to read.
+                        case LootType.Ammo:
                             int ammoArrayIndex = item.Rarity;
-                            Logger.Header($"Sent AmmoType: {ammoArrayIndex}\nGive: {item.GiveAmount}");
+                            //Logger.Header($"Sent AmmoType: {ammoArrayIndex}\nGive: {item.GiveAmount}");
                             if ( (ammoArrayIndex < 0) || (ammoArrayIndex > (_maxAmmo.Length - 1) ) ) return;
                             if (player.Ammo[ammoArrayIndex] == _maxAmmo[ammoArrayIndex]) return;
 
@@ -3114,10 +3807,10 @@ namespace WCSARS
                             {
                                 item.GiveAmount -= (byte)(_maxAmmo[ammoArrayIndex] - player.Ammo[ammoArrayIndex]);
                                 player.Ammo[ammoArrayIndex] = _maxAmmo[ammoArrayIndex];
-                                SendNewAmmoItem((byte)ammoArrayIndex, item.GiveAmount, item.Position);
+                                SendSpawnedLoot(_level.NewLootAmmo((byte)ammoArrayIndex, item.GiveAmount, item.Position));
                             }
                             else player.Ammo[ammoArrayIndex] += item.GiveAmount;
-                            Logger.Basic($"Player[{ammoArrayIndex}]: {player.Ammo[ammoArrayIndex]}");
+                            //Logger.Basic($"Player[{ammoArrayIndex}]: {player.Ammo[ammoArrayIndex]}");
                             break;
 
                         // Weapon -- May be messy!
@@ -3136,13 +3829,14 @@ namespace WCSARS
                                         {
                                             item.GiveAmount -= (byte)(maxCount - player.LootItems[2].GiveAmount);
                                             player.LootItems[2].GiveAmount = (byte)maxCount;
-                                            SendNewThrowableItem(item.WeaponIndex, item.GiveAmount, item.Position);
+                                            SendSpawnedLoot(_level.NewLootWeapon(item.WeaponIndex, 0, item.GiveAmount, item.Position));
                                         }
                                         else player.LootItems[2].GiveAmount += item.GiveAmount;
                                     }
                                     else
                                     {
-                                        SendNewThrowableItem(player.LootItems[2].WeaponIndex, player.LootItems[2].GiveAmount, item.Position);
+                                        LootItem oldThrowable = player.LootItems[2];
+                                        SendSpawnedLoot(_level.NewLootWeapon(oldThrowable.WeaponIndex, 0, oldThrowable.GiveAmount, item.Position));
                                         player.LootItems[2] = item;
                                     }
                                 }
@@ -3154,17 +3848,16 @@ namespace WCSARS
                                 if (player.LootItems[wepSlot].LootType != LootType.Collectable)
                                 {
                                     // Spawn old weapon on the ground
-                                    SendNewGunItem((short)player.LootItems[wepSlot].WeaponIndex, player.LootItems[wepSlot].Rarity, player.LootItems[wepSlot].GiveAmount, item.Position);
-                                    // Now replace the slot with the newly found item.
+                                    LootItem oldWeapon = player.LootItems[wepSlot];
+                                    SendSpawnedLoot(_level.NewLootWeapon(oldWeapon.WeaponIndex, oldWeapon.Rarity, oldWeapon.GiveAmount, item.Position));
                                     player.LootItems[wepSlot] = item;
                                 }
                                 else player.LootItems[wepSlot] = item; // Item is NOT in this slot, so just replace it
                             }
                             break;
                     }
-
                     // Send LootItems OK!
-                    _lootItems.Remove(reqLootID);
+                    _level.RemoveLootItem(item);
                     SendPlayerDataChange(player);
                     NetOutgoingMessage msg = server.CreateMessage();
                     msg.Write((byte)22);    // Byte  |  MsgID
@@ -3173,7 +3866,6 @@ namespace WCSARS
                     msg.Write(slotID);      // Byte  |  SlotID lol
                     msg.Write((byte)0);     // Byte  |  No clue lol
                     server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
-                    player.NextLootTime = DateTime.UtcNow.AddMilliseconds(100);
                 }
                 catch (NetException netEx)
                 {
@@ -3195,7 +3887,8 @@ namespace WCSARS
         /// Handles a LootMessage for while in the Lobby!
         /// </summary>
         /// <param name="aMsg"></param>
-        private void ServerHandleLobbyLootRequest(NetIncomingMessage aMsg) // TODO: Forced-Rarity updates per-player, right now not so! Also maybe keep track of LootItems in lobby?
+        private void ServerHandleLobbyLootRequest(NetIncomingMessage aMsg)
+		// TODO: general updates; rarity of picked-up weapon changes per player as they normally should.
         {
             try
             {
@@ -3366,10 +4059,10 @@ namespace WCSARS
                     return;
                 }
                 player.HamsterballVelocity = new Vector2(0, 0);
-                NetOutgoingMessage bounce = server.CreateMessage();
-                bounce.Write((byte)63);
-                bounce.Write(player.ID);
-                bounce.Write(player.VehicleID);
+                NetOutgoingMessage bounce = server.CreateMessage(5);
+                bounce.Write((byte)63);         // 1 Byte  | MsgID (63)
+                bounce.Write(player.ID);        // 2 Short | PlayerID
+                bounce.Write(player.VehicleID); // 2 Short | HamsterballID
                 server.SendToAll(bounce, NetDeliveryMethod.ReliableOrdered);
             }
         }
@@ -3428,9 +4121,8 @@ namespace WCSARS
             }
         }
 
-        /// <summary>Handles an incoming EmoteRequest packet (Msg66).</summary>
-        /// <param name="pmsg">NetMessage to read data from.</param>
-        private void HandleEmoteRequest(NetIncomingMessage pmsg) // Msg66 >> Msg67
+        // Msg66 >> Msg67 | "Emote Request" -- Called whenever a player attempts to perform an emote
+        private void HandleEmoteRequest(NetIncomingMessage pmsg)
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleEmoteRequest", out Player player))
             {
@@ -3442,6 +4134,11 @@ namespace WCSARS
                     float posY = pmsg.ReadFloat();
                     float duration = pmsg.ReadFloat();
                     Vector2 reqPos = new Vector2(posX, posY);
+                    if (!Vector2.ValidDistance(player.Position, reqPos, 2f, true))
+                    {
+                        Logger.Warn($"[HandleEmoteRequest] {player} requested emote position {reqPos} too far from actual position: {player.Position}");
+                        return;
+                    }
                     CheckMovementConflicts(player);
                     SendPlayerEmote(player, emoteID, reqPos, duration);
                 }
@@ -3469,13 +4166,13 @@ namespace WCSARS
 
             player.isEmoting = true;
             player.EmoteID = emoteID;
-            player.Position = emotePosition;
+            player.EmotePosition = emotePosition;
             if (duration > -1) player.EmoteEndTime = DateTime.UtcNow.AddSeconds(duration);
             else player.EmoteEndTime = DateTime.MaxValue;
         }
 
         /// <summary>
-        /// Sends a "Player Finished Emoting" packet (Msg67) to all NetPeers. Does NOT set any server-side variables.
+        /// Sends a "Player Finished Emoting" packet (Msg67) to all NetPeers.
         /// </summary>
         private void SendPlayerEndedEmoting(Player player) // Msg67
         {
@@ -3488,120 +4185,283 @@ namespace WCSARS
             server.SendToAll(emote, NetDeliveryMethod.ReliableSequenced);
         }
 
-        /// <summary>
-        /// Attempts to locate a Doodad at the given Coordinates and then destroys it!
-        /// </summary>
-        private void serverDoodadDestroy(int checkX, int checkY) // todo :: check for explosions
+        // Msg70 | "Molecrate Open Request" --> Msg71 | "Confrim Molecrate Open" -- Received whenever a client attempts to open a Molecrate.
+        private void HandleMolecrateOpenRequest(NetIncomingMessage pMsg)
         {
-            int _doodadCount = _doodadList.Count; // Performance from caching this maybe significant I forgot. But this list is HUGE
-            Int32Point hitCoords = new Int32Point(checkX, checkY);
-            for (int i = 0; i < _doodadCount; i++)
+            // todo - improvements to molecrates as a whole is in order.
+            // it is possible to get the molecrate to spawn and move around in the lobby. however, players can't open them...
+            // normally... normally aside from the fact the crate is in the lobby in the first place, but that's besides the point here.
+            if (!_hasMatchStarted) return;
+            if (VerifyPlayer(pMsg.SenderConnection, "MolecrateOpen", out Player player))
             {
-                bool flipper = false;
-                if (!flipper && (_doodadList[i].X == checkX) && (_doodadList[i].Y == checkY))
+                try
                 {
-                    Logger.DebugServer("[DoodadDestroy] [FOUND] This is the simple check working.");
-                    flipper = true;
-                }
-                if (!flipper && (_doodadList[i].OffsetCollisionPoints != null))
-                {
-                    int ptsCount = _doodadList[i].OffsetCollisionPoints.Count; // for whatever reason, .Count is slower than caching
-                    for (int j = 0; j < ptsCount; j++)
+                    short crateID = pMsg.ReadInt16();
+                    if (crateID < 0 || crateID >= _moleCrates.Length)
                     {
-                        if (_doodadList[i].OffsetCollisionPoints[j] == hitCoords)
-                        {
-                            Logger.DebugServer("[DoodadDestroy] [BAD-CHECK] [FOUND] This is the more inefficient method of locating a doodad returning true");
-                            flipper = true;
-                        }
+                        Logger.Failure($"[HandleMolecrateOpen - Error] {player} @ {player.Sender} requested an out-of-bounds MolecrateID!");
+                        player.Sender.Disconnect("There was an error processing your request.\nMessage: out-of-bounds molecrateID!");
+                        return;
                     }
-                }
-                if (flipper)
-                {
-                    NetOutgoingMessage test = server.CreateMessage();
-                    test.Write((byte)73);
-                    test.Write((short)420); // For whatever reason, expects a short before all other data. | v??? -> v0.90.2 -> v???
-                    test.Write((short)_doodadList[i].X);
-                    test.Write((short)_doodadList[i].Y);
-                    int d_count = _doodadList[i].OffsetCollisionPoints.Count;
-                    test.Write((short)d_count);
-                    for (int m = 0; m < d_count; m++)
+                    if (_moleCrates[crateID] == null || !_moleCrates[crateID].isCrateReal)
                     {
-                        test.Write((short)_doodadList[i].OffsetCollisionPoints[m].x);
-                        test.Write((short)_doodadList[i].OffsetCollisionPoints[m].y);
-                        test.Write((byte)1);
+                        Logger.Failure($"[HandleMolecrateOpen - Error] {player} @ {player.Sender} requested a molecrate still moving. Desync?");
+                        if (_safeMode) player.Sender.Disconnect("There was an error processing your request.\nMessage: that molecrate can't be opened.");
+                        return;
                     }
-                    test.Write((byte)0);
-                    //test.Write((short)PLAYERID) << would only use this if someone got hit
-                    server.SendToAll(test, NetDeliveryMethod.ReliableSequenced);
-                    if (_hasMatchStarted) _doodadList.RemoveAt(i); // only pop from list if match is in progress
-                    break;
-                }
-            }
-        }
-        // Receive 74, Send 75 [[Seems to have something to do with minigun]]
-        private void HandleAttackWindUp(NetIncomingMessage aMsg) // TODO - Check if vaid action
-        {
-            try
-            {
-                if (TryPlayerFromConnection(aMsg.SenderConnection, out Player player))
-                {
-                    short weaponID = aMsg.ReadInt16(); // WeaponID | Short
-                    byte slot = aMsg.ReadByte();       // SlotID   | Byte
-                    // Weapon1 = 0; Weapon2 = 1; Melee = 2
-                    // Figure out if player actually has weapon in that slot
-                    if ( (player.LootItems[slot].WeaponIndex == weaponID) || !_hasMatchStarted)
+                    if (_moleCrates[crateID].isOpened) return;
+
+                    // check if actually close enough to open & then open
+                    if (Vector2.ValidDistance(player.Position, _moleCrates[crateID].Position, 14.7f, true))
                     {
-                        NetOutgoingMessage msg = server.CreateMessage();
-                        msg.Write((byte)75);    // Byte   |  MessageID
-                        msg.Write(player.ID); // Short  |  PlayerID
-                        msg.Write(weaponID);    // Short  |  WeaponID
-                        msg.Write(slot);        // Byte   |  SlotIndex
-                        server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+                        SendMolecrateOpened(crateID, _moleCrates[crateID].Position);
+                        // todo - spawn molecrate loot
                     }
-                    else
-                    {
-                        Logger.Failure($"[ServerHandle - AttackWindUp] Player @ NetConnection \"{aMsg.SenderConnection}\" sent AttackWindUp message, but WeaponID is not in Slot#; Connection has been dropped.");
-                        aMsg.SenderConnection.Disconnect($"There was an error processing your request. Sorry for the inconvenience.\n(NO WEAPON IN SLOT [ID, Slot: {weaponID}, {slot}])");
-                    }
+                    else Logger.DebugServer($"[HandleMolecrateOpen - Error/Debug] Appears {player} wasn't close enough to the crate...");
                 }
-                else
+                catch (NetException netEx)
                 {
-                    Logger.Failure($"[ServerHandle - AttackWindUp] Could not locate Player @ NetConnection \"{aMsg.SenderConnection}\"; Connection has been dropped.");
-                    aMsg.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\n(CONNECTION NOT IN PLAYERLIST)");
+                    Logger.Failure($"[HandleMolecrateOpen - Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [MolecrateOpen]");
                 }
-            } catch (Exception except)
-            {
-                Logger.Failure($"[ServerHandle - AttackWindUp] ERROR\n{except}");
+                catch (Exception ex) // todo - remove this once this handle working 100%
+                {
+                    Logger.Failure($"General exception has been thrown!\n{ex}");
+                    SendChatMessageWarning(player, "An error occurred while handing MsgID (70) request. Please check the console.");
+                }
             }
         }
 
-        // Receive 76, Send 77 [[Seems to have something to do with minigun]]
-        private void HandleAttackWindDown(NetIncomingMessage aMsg) // TODO -- Clients can actually send this AFTER looting sometimes, which kicks them. Kind of funny, but probably should be fixed
+        // Msg71 | "Molecrate Opened"
+        private void SendMolecrateOpened(short crateID, Vector2 position)
         {
-            try
+            NetOutgoingMessage msg = server.CreateMessage(11);
+            msg.Write((byte)71);    // 1 Byte  | MsgID (71)
+            msg.Write(crateID);     // 2 Short | MolecrateID
+            msg.Write(position.x);  // 4 Float | Open Position.x
+            msg.Write(position.y);  // 4 Float | Open Position.x
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg72 | "Doodad Destroyed" --> Msg73 | "Server Confirm Doodad Destroyed"
+        // todo - cleanup + restructure! HANDLES execute server-side functions; SENDS create & send NetMsgs! Sends should NOT do HANDLES + SEND functions!!
+        private void HandleDoodadDestroyed(NetIncomingMessage pmsg) // v0.90.2 OK
+        {
+            if (VerifyPlayer(pmsg.SenderConnection, "HandleDoodadDestroyed", out Player player))
             {
-                if (!TryPlayerFromConnection(aMsg.SenderConnection, out Player player))
+                try
                 {
-                    Logger.Failure($"[ServerHandle - AttackWindDown] Could not locate Player @ NetConnection \"{aMsg.SenderConnection}\"; Connection has been dropped.");
-                    aMsg.SenderConnection.Disconnect("There was an error processing your request. Sorry for the inconvenience.\n(CONNECTION NOT IN PLAYERLIST)");
+                    // read the packet data... v0.90.2
+                    float hitX = pmsg.ReadInt32();
+                    float hitY = pmsg.ReadInt32();
+                    short projectileID = pmsg.ReadInt16();
+
+                    // is the projectile id valid? [-1 = melee; 0+ = attackIDs]
+                    if (!player.IsValidProjectileID(projectileID))
+                    {
+                        Logger.Failure($"[HandleDoodadDestroyed] Player @ {pmsg.SenderConnection} sent invalid ProjectileID \"{projectileID}\"");
+                        pmsg.SenderConnection.Disconnect($"There was an error processing your request. (doodadHit)");
+                        return;
+                    }
+
+                    // try searching for the Doodad that the client claims is at the spot they hit
+                    Vector2 hitPos = new Vector2(hitX, hitY);
+                    if (_level.TryDestroyingDoodad(hitPos, out Doodad[] hitDoodads, _hasMatchStarted))
+                    {
+                        // if the above method returns true, then yaaay we get a bunch of Doodads to delete
+                        for (int i = 0; i < hitDoodads.Length; i++)
+                        {
+                            // as mentioned, todo - this SEND should **ONLY** send. we're already manipulating the Doodad anyways. ...
+                            // ... method defaults exist, and really should've been looked into a long time ago.
+                            SendDestroyedDoodad(hitDoodads[i]);
+                        }
+                    }
+                    else Logger.DebugServer($"[hDoodadDestroyed] - Failed to locate Doodad @ reqPos: {hitPos}");
                 }
-                short weaponID = aMsg.ReadInt16();
-                byte slot = aMsg.ReadByte();
-                // If you can read the values above, just use them to make the message for ending the rev.
-                // Perhaps it isn't the best idea to be doing this, but it's the easiest solution to prevent kicking for no reason.
-                NetOutgoingMessage msg = server.CreateMessage();
-                msg.Write((byte)77);    // Byte   |  MessageID
-                msg.Write(player.ID); // Short  |  PlayerID
-                msg.Write(weaponID);    // Short  |  WeaponID  //msg.Write(slot); // Appears un-needed as of now
-                server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
-                if ((player.LootItems[slot].WeaponIndex != weaponID) && _hasMatchStarted) // Let's you know when this fails
+                // if any of the of the packet data reading fails, then this happens
+                catch (NetException netEx)
                 {
-                    Logger.Failure($"[ServerHandle - AttackWindDown] Player @ NetConnection \"{aMsg.SenderConnection}\" sent AttackWindDown message, but WeaponID is not in Slot#.");
+                    Logger.Failure($"[HandleDoodadDestroyed] Client @ {pmsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pmsg.SenderConnection.Disconnect("Error while processing your request, sorry about that :<");
                 }
-            } catch (Exception except)
-            {
-                Logger.Failure($"[ServerHandle - AttackWindDown] ERROR\n{except}");
             }
+        }
+
+        // Msg73 | "Confirm Doodad Destroyed"
+        private void SendDestroyedDoodad(Doodad doodad) // v0.90.2 OK-enough TODO:: damage drop-off
+        {
+            // | v0.90.2 Msg73 Format
+            // | -----------------------
+            // | 1 Byte  | MsgID (73)
+            // | 2 Short | ??? (game wants a short at the start, yet it does NOTHING with it)
+            // | 2 Short | DoodadPos.x 
+            // | 2 Short | DoodadPos.y
+            // | 2 Short | #ofHitSpots
+            // | 2 Short | CollisionSpot[n]-x
+            // | 2 Short | CollisionSpot[n]-y
+            // | 1 Byte  | CollisionSpot[n]-NewCollisionType
+            // | 1 Byte  | # of hit Players
+            // | 2 Short | Hit PlayerID [n]
+
+            NetOutgoingMessage msg = server.CreateMessage(24);
+            msg.Write((byte)73);    // 1 Byte  | MsgID (73)
+            msg.Write((short)420);  // 2 Short | ??? (game wants a short at the start, yet it does NOTHING with it)
+            msg.Write((short)doodad.Position.x);    // 2 Short | DoodadPos.x 
+            msg.Write((short)doodad.Position.y);    // 2 Short | DoodadPos.y
+            msg.Write((short)doodad.HittableSpots.Length);  // 2 Short | #ofHitSpots
+            for (int i = 0; i < doodad.HittableSpots.Length; i++)
+            {
+                msg.Write((short)doodad.HittableSpots[i].x);    // 2 Short | CollisionSpotChange.x
+                msg.Write((short)doodad.HittableSpots[i].y);    // 2 Short | CollisionSpotChange.y
+                msg.Write((byte)CollisionType.None);            // 1 Byte  | CollisionSpot New CollisionType
+            }
+            if (doodad.Type.DestructibleDamageRadius > 0)
+            {
+                // Players
+                List<Player> doodadHitPlayers = new List<Player>(_players.Length);
+                for (int j = 0; j < _players.Length; j++)
+                {
+                    // TOOD:: damage scaling; especially with that 32-range... this is suuuuper unfair
+                    if (!_hasMatchStarted || _players[j] == null || !_players[j].IsPlayerReal()) continue;
+                    if (Vector2.ValidDistance(doodad.Position, _players[j].Position, doodad.Type.DestructibleDamageRadius, true))
+                    {
+                        Logger.DebugServer($"[DoodadDestroy Destruct Distances] Player: {_players[j].Position}; DoodadPos: {doodad.Position}, rad: {doodad.Type.DestructibleDamageRadius}");
+                        doodadHitPlayers.Add(_players[j]);
+                        // https://animalroyale.fandom.com/wiki/Version_1.4.1 << changes scaling
+                        _players[j].ArmorTapes = 0; // remember, when damage scaling is real this will change
+                        // v0.90.2: 20+ - all
+                        // v1.4.1+ 60+ - all
+                        test_damagePlayer(_players[j], (int)(doodad.Type.DestructibleDamagePeak / 2), 0, -3); // halfing it so it isn't completely unfair (temporary fix)
+                    }
+                }
+                // Hamsterballs
+                foreach (Hamsterball ball in _hamsterballs.Values)
+                {
+                    if (ball == null) continue;
+                    if (Vector2.ValidDistance(doodad.Position, ball.Position, doodad.Type.DestructibleDamageRadius, true))
+                    {
+                        Logger.DebugServer($"[DoodadDestroy2] Found ball... Trying to destroy");
+                        SendConfirmAttack(-1, -1, -1, 0, ball.ID, 0);
+                        DestroyHamsterball(ball.ID);
+                    }
+                }
+                // End | Append any hit players to the end of the message
+                if (doodadHitPlayers.Count > 0)
+                {
+                    msg.Write((byte)doodadHitPlayers.Count);
+                    foreach (Player player in doodadHitPlayers) msg.Write(player.ID);
+                }
+                else msg.Write((byte)0); // can still explode and not hit anything
+            }
+            else msg.Write((byte)0); // # of hit players --> always 0 if the doodad can't explode!
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg74 | "Request Attack Windup" --> Msg75 "Confirm Attack Windup"
+        private void HandleAttackWindUp(NetIncomingMessage pMsg) // v0.90.2 OK | 6/6/23
+        {
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleAttackWindupReq", out Player player))
+            {
+                if (!player.IsPlayerReal()) return; // if player isn't ready, is ghosted, dead, OR is currently attempting to land... don't do anything!!
+                try
+                {
+                    // read packet data...
+                    short weaponID = pMsg.ReadInt16();
+                    byte slot = pMsg.ReadByte();
+
+                    // verify player isn't lying...
+                    if (slot >= 3) // v0.90.2:: [0, 1, 2]
+                    {
+                        Logger.Failure($"[HandleAttackWindupReq - Error] {player} @ {player.Sender} sent invalid slot id \"{slot}\"!");
+                        player.Sender.Disconnect("There was an error reading your packet data. [AttackWindup]");
+                    }
+                    if (player.ActiveSlot != slot)
+                    {
+                        Logger.Failure($"[HandleAttackWindupReq - Error] {player}'s active slot ({player.ActiveSlot}) doesn't match sent slot \"{slot}\"!");
+                        return; // assuming this is VERY a late packet
+                        // todo - inc "infraction-count"
+                    }
+                    if (_hasMatchStarted && player.LootItems[slot].WeaponIndex != weaponID)
+                    {
+                        Logger.Failure($"[HandleAttackWindupReq - Error] {player} @ {player.Sender} sent WeaponID \"{weaponID}\" doesn't match item in slot {slot}!");
+                        return; // assuming this is VERY a late packet
+                        // todo - inc "infraction-count"
+                    }
+
+                    // packet data checks all passed successfully!
+                    SendAttackWindup(player.ID, weaponID, slot);
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleAttackWindupReq - Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [AttackRevUp]");
+                }
+            }
+        }
+
+        // Msg75 | "Send Attack Windup"
+        private void SendAttackWindup(short playerID, short weaponID, byte slotID) // v0.90.2 OK | 6/6/23
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(6);
+            msg.Write((byte)75);    // 1 Byte  | MsgID (76)
+            msg.Write(playerID);    // 2 Short | PlayerID
+            msg.Write(weaponID);    // 2 Short | WeaponID
+            msg.Write(slotID);      // 1 Byte  | SlotID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg77 | "Request Attack Wind Down" --> Msg77 "Confrim Attack Wind Down"
+        private void HandleAttackWindDown(NetIncomingMessage pMsg) // v0.90.2 OK | 6/6/23
+        {
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleAttackWindDownReq", out Player player))
+            {
+                if (!player.IsPlayerReal()) return; // if player isn't ready, is ghosted, dead, OR is currently attempting to land... don't do anything!!
+                try
+                {
+                    // read packet data... | actually a similar concept to the rev-up, so basically copy and pasted lol!
+                    short weaponID = pMsg.ReadInt16();
+                    byte slot = pMsg.ReadByte();
+
+                    // verify player isn't lying...
+                    if (slot >= 3) // v0.90.2:: [0, 1, 2]
+                    {
+                        Logger.Failure($"[HandleAttackWindDownReq - Error] {player} @ {player.Sender} sent invalid slot id \"{slot}\"!");
+                        player.Sender.Disconnect("There was an error reading your packet data. [AttackWindup]");
+                    }
+                    if (player.ActiveSlot != slot)
+                    {
+                        Logger.Failure($"[HandleAttackWindDownReq - Error] {player}'s active slot ({player.ActiveSlot}) doesn't match sent slot \"{slot}\"!");
+                        return; // assuming this is VERY a late packet
+                        // todo - inc "infraction-count"
+                    }
+                    if (_hasMatchStarted && player.LootItems[slot].WeaponIndex != weaponID)
+                    {
+                        Logger.Failure($"[HandleAttackWindDownReq - Error] {player} @ {player.Sender} sent WeaponID \"{weaponID}\" doesn't match item in slot {slot}!");
+                        return; // assuming this is VERY a late packet
+                        // todo - inc "infraction-count"
+                    }
+
+                    // packet data checks all passed successfully!
+                    SendAttackWindDown(player.ID, weaponID);
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleAttackWindDownReq - Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [AttackRevDown]");
+                }
+            }
+        }
+
+        // Msg77 | "Attack Rev Down"
+        private void SendAttackWindDown(short playerID, short weaponID) // v0.90.2 OK | 6/6/23
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(5); // basically rev up without the slotId
+            msg.Write((byte)77);    // 1 Byte  | MsgID (77)
+            msg.Write(playerID);    // 2 Short | PlayerID
+            msg.Write(weaponID);    // 2 Short | WeaponID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
         /// <summary>Handles an incoming "HealRequest" packet (Msg47); Either ignoring or accepting the message and starting the Player heal.</summary>
@@ -3610,14 +4470,14 @@ namespace WCSARS
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleHealingRequest", out Player player))
             {
-                if (!player.IsPlayerReal() || (player.Drinkies == 0)) return;
+                if (!player.IsPlayerReal() || (player.HealthJuice == 0)) return;
                 try
                 {
                     float posX = pmsg.ReadFloat();
                     float posY = pmsg.ReadFloat();
                     Vector2 requestPostion = new Vector2(posX, posY);
                     if (Vector2.ValidDistance(requestPostion, player.Position, 2, true)){
-                        SendForcePosition(player, requestPostion, false);
+                        SendForcePosition(player, requestPostion);
                         CheckMovementConflicts(player);
                         player.Position = requestPostion;
                         player.isDrinking = true;
@@ -3642,7 +4502,7 @@ namespace WCSARS
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleTapeRequest", out Player player))
             {
-                if (!player.IsPlayerReal() || player.Tapies == 0 || player.ArmorTier == 0 || player.ArmorTapes == player.ArmorTier) return;
+                if (!player.IsPlayerReal() || player.SuperTape == 0 || player.ArmorTier == 0 || player.ArmorTapes == player.ArmorTier) return;
                 try
                 {
                     float posX = pmsg.ReadFloat();
@@ -3650,7 +4510,7 @@ namespace WCSARS
                     Vector2 requestPosition = new Vector2(posX, posY);
                     if (Vector2.ValidDistance(requestPosition, player.Position, 2, true))
                     {
-                        SendForcePosition(player, requestPosition, false);
+                        SendForcePosition(player, requestPosition);
                         CheckMovementConflicts(player);
                         player.Position = requestPosition;
                         player.isTaping = true;
@@ -3708,35 +4568,68 @@ namespace WCSARS
             server.SendMessage(msg, player.Sender, NetDeliveryMethod.ReliableUnordered);
         }
 
-        private void HandleTeammatePickupRequest(NetIncomingMessage pmsg) // Msg80 >> Msg81
+        // Msg80 | "Teammate Pickup Request" --- Received when a teammate tries picking up a downed teammate
+        private void HandleTeammatePickupRequest(NetIncomingMessage pMsg) // Msg80 >> Msg81
         {
-            if (VerifyPlayer(pmsg.SenderConnection, "HandleTeammatePickupRequest", out Player player))
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleTeammatePickupRequest", out Player player))
             {
-                if (!player.IsPlayerReal()) return;
+                if (player.isReviving) Logger.DebugServer($"HandleTeammatePickupRequest | {player} is still reviving but tried picking up teammate!"); // can remove
+                if (player.isReviving || !player.IsPlayerReal()) return;
+                CheckMovementConflicts(player);
                 try
                 {
-                    short teammateID = pmsg.ReadInt16();
+                    // NetMsg Data Read
+                    short teammateID = pMsg.ReadInt16();
+                    // Validate
                     if (!TryPlayerFromID(teammateID, out Player teammate))
                     {
                         Logger.Failure($"[HandleTeammatePickupRequest] Couldn't find teammate: {teammateID}");
                         return;
                     }
-                    if (!player.Teammates.Contains(teammate)) return;
-                    teammate.ReviverID = player.ID;
-                    teammate.ReviveTime = DateTime.UtcNow.AddSeconds(6);
-                    teammate.isBeingRevived = true;
-                    NetOutgoingMessage msg = server.CreateMessage();
-                    msg.Write((byte)81);
-                    msg.Write(player.ID);
-                    msg.Write(teammate.ID);
-                    server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
-              
-                } catch (NetException netEx)
+                    if (!player.Teammates.Contains(teammate))
+                    {
+                        Logger.Failure($"[HandleTeammatePickupRequest] {player} isn't teammates with {teammate}.");
+                        return;
+                    }
+                    if (!Vector2.ValidDistance(player.Position, teammate.Position, 7.4f, true))
+                    {
+                        Logger.Failure($"Teammate wasn't close enough to revive!");
+                        return;
+                    }
+                    // Server-Side Sets
+                    teammate.DownSetSaviour(player.ID);
+                    player.SaviourSetRevivee(teammateID);
+                    // Send Request OK'd
+                    SendPickupBegan(player.ID, teammateID);
+                }
+                catch (NetException netEx)
                 {
-                    Logger.Failure($"[HandleTeammatePickupRequest] Player @ {pmsg.SenderConnection} caused a NetException!\n{netEx}");
-                    pmsg.SenderConnection.Disconnect("There was an error while reading your packet data! (TeamPickupStart)");
+                    Logger.Failure($"[HandleTeammatePickupRequest] Player @ {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error while reading your packet data! (TeamPickupStart)");
                 }
             }
+        }
+
+        // Msg81 | "Teammate Pickup Begin" --- Sent whenever a teammate begins reviving their teammate; it displays to all other players this "action" of doing so
+        private void SendPickupBegan(short saviourID, short downedID)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(5); // initCapacity = (byte)[1] + 2x(short)[2] = 5
+            msg.Write((byte)81);    // 1 Byte  | MsgID (81)
+            msg.Write(saviourID);   // 2 Short | Reviving-PlayerID 
+            msg.Write(downedID);    // 2 Short | Downed-PlayerID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg82 | "Teammate Pickup Canceled" --- Sent whenever a reviver does something to cancel the revive; it displays the "action" of the player canceling to all others
+        private void SendPickupCanceled(short revivingPID, short downedPID)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(5); // initCapacity = (byte)[1] + 2x(short)[2] = 5
+            msg.Write((byte)82);    // 1 Byte  | MsgID (82)
+            msg.Write(revivingPID); // 2 Short | RevivingPlayerID
+            msg.Write(downedPID);   // 2 Short | DownedPlayerID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
         /// <summary>
@@ -3744,13 +4637,13 @@ namespace WCSARS
         /// </summary>
         /// <param name="ressingID">ID of the player who is reviving.</param>
         /// <param name="downedID">ID of the player who has been revived.</param>
-        private void SendTeammateRevived(short ressingID, short downedID) // Msg83
+        private void SendPickupFinished(short ressingID, short downedID) // Msg83
         {
             if (!IsServerRunning()) return;
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)83);    // Byte | MsgID (83)
-            msg.Write(ressingID);   // Short | RevierID
-            msg.Write(downedID);    // Short | RevieeID
+            NetOutgoingMessage msg = server.CreateMessage(5);
+            msg.Write((byte)83);    // 1 Byte  | MsgID (83)
+            msg.Write(ressingID);   // 2 Short | RevierID
+            msg.Write(downedID);    // 2 Short | RevieeID
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
@@ -3759,11 +4652,8 @@ namespace WCSARS
         {
             if (!IsServerRunning()) return;
             // Server-Side Vars
-            player.HP = 100;
-            player.isDown = true;
-            player.isBeingRevived = false;
-            player.NextDownDamageTick = DateTime.UtcNow.AddSeconds(1);
-            player.TimesDowned++;
+            CheckMovementConflicts(player);
+            player.DownKnock(_bleedoutRateSeconds);
             // Net Message
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)84);   // Byte  | MsgID (84)
@@ -3773,14 +4663,102 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
-        //r[87] > s[111]
-        /*private void GSH_HandleDeployedTrap(NetIncomingMessage message) // unfinished :/
+        // Handles a reviving-player canceling their revive
+        private void HandlePickupCanceled(Player player)
+        {
+            if (player.isReviving)
+            {
+                SendPickupCanceled(player.ID, player.RevivingID); // must go first, or store the revivingPlayerID
+                if (TryPlayerFromID(player.RevivingID, out Player downedPlayer)) downedPlayer.DownResetState(_bleedoutRateSeconds);
+                player.SaviourFinishedRessing();
+            }
+            else if (player.isDown)
+            {
+                SendPickupCanceled(player.SaviourID, player.ID);
+                if (TryPlayerFromID(player.SaviourID, out Player thisSaviour)) thisSaviour.SaviourFinishedRessing();
+                player.DownResetState(_bleedoutRateSeconds);
+            }
+        }
+
+        // Msg87 | "Trap Deploy Request" --- Received when a player throws a "trap" throwable (banana/skunk nades)
+        private void HandleTrapDeployed(NetIncomingMessage pmsg) // Throwables uses Projectile for whatever reason... really needs its own thing tbh!
+        {
+            if (VerifyPlayer(pmsg.SenderConnection, "HandleTrapDeployed", out Player player))
+            {
+                try
+                {
+                    float reqX = pmsg.ReadFloat();
+                    float reqY = pmsg.ReadFloat();
+                    short throwableID = pmsg.ReadInt16();
+                    if (!player.ThrownNades.ContainsKey(throwableID))
+                    {
+                        Logger.Warn($"[HandleTrapDeployed] Player does not contain key \"{throwableID}\"!");
+                        return;
+                    }
+                    Weapon trap = _weapons[player.ThrownNades[throwableID].WeaponID];
+                    //Logger.Basic($"WeaponID: {player.ThrownNades[throwableID].WeaponID} | Name: {trap.Name} | Rad: {trap.Radius}");
+                    switch (trap.Name)
+                    {
+                        case "GrenadeBanana":
+                            _traps.Add(new Trap(TrapType.Banana, new Vector2(reqX, reqY), player.ID, trap.Radius, float.MaxValue, trap.JSONIndex, throwableID));
+                            break;
+                        case "GrenadeSkunk":
+                            _traps.Add(new Trap(TrapType.SkunkNade, new Vector2(reqX, reqY), player.ID, trap.Radius, 6.4f, trap.JSONIndex, throwableID));
+                            break;
+                        default:
+                            Logger.Failure($"Invalid weapon name \"{trap.Name}\"");
+                            break;
+                    }
+                    SendTrapDeployed(player.ID, trap.JSONIndex);
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleTrapDeployed] Player @ {pmsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pmsg.SenderConnection.Disconnect("There was an error while reading your packet data! (TrapDeploy)");
+                }
+            }
+        }
+
+        // Msg111 | "Send Trap Deployed" --- Sent when the server confirms a trap has been deployed.
+        private void SendTrapDeployed(short playerID, short grenadeID)
         {
             NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)111);
-            msg.Write(getPlayerID(message.SenderConnection));
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }*/
+            msg.Write((byte)111);   // Byte  | MsgID
+            msg.Write(playerID);    // Short | Deploying PlayerID
+            msg.Write(grenadeID);   // Short | GrenadeID -- Index in weapons list
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg88 | "Vehicle Hit Banana" --- Appears to be received whenever a client runs over a banana with a Hamsterball
+        private void HandleVehicleHitBanana(NetIncomingMessage pMsg) // v0.90.2 OK [6/6/23]
+        {
+            if (VerifyPlayer(pMsg.SenderConnection, "HandleVehicleHitBanana", out Player player))
+            {
+                if (!player.IsPlayerReal() || player.VehicleID == -1) return;
+                try
+                {
+                    short ownerID = pMsg.ReadInt16();
+                    short throwableID = pMsg.ReadInt16();
+                    bool fromVehicle = pMsg.ReadBoolean(); // really not clue what this is about it's always true!
+                    //Logger.DebugServer($"-- Msg 88 --\nOwner: {ownerID}\nID: {throwableID}\nHitByVehicle? {fromVehicle}");
+                    foreach (Trap trap in _traps)
+                    {
+                        if (trap.TrapType != TrapType.Banana) continue;
+                        if (trap.OwnerID == ownerID && trap.ThrowableID == throwableID)
+                        {
+                            SendGrenadeFinished(ownerID, throwableID, trap.Position);
+                            _traps.Remove(trap);
+                            break;
+                        }
+                    }
+                }
+                catch (NetException netEx)
+                {
+                    Logger.Failure($"[HandleVehicleHitBanana - Error] {pMsg.SenderConnection} caused a NetException!\n{netEx}");
+                    pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [VehicleHitNanner]");
+                }
+            }
+        }
 
         /// <summary>
         /// Cancels the provided Player's reload. Sets server-side variables AND sends the "EndReload" packet to all NetPeers.
@@ -3806,12 +4784,11 @@ namespace WCSARS
             for (int i = 0; i < player.Teammates.Count; i++)
             {
                 if (player.Teammates[i] == null) continue; // This shouldn't ever happen, but in case it somehow does this should solve it
-                player.Teammates[i].Teammates.Remove(player);
-
                 NetOutgoingMessage msg = server.CreateMessage(3);
                 msg.Write((byte)95);    // Byte  | MsgID (95)
                 msg.Write(player.ID);   // Short | LeavingTeammateID
                 server.SendMessage(msg, player.Teammates[i].Sender, NetDeliveryMethod.ReliableUnordered);
+                player.Teammates[i].Teammates.Remove(player);
             }
         }
 
@@ -3838,11 +4815,42 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
+        // Msg104 | "Send Aviary-Show Started" --- Usually sent when a player enters the "Beakeasy" location while a show isn't in progress.
+        private void SendAviaryShow(byte showID) // 0 = Blue Jay Z (peak); 1 = Kelly Larkson (ew); 2-255 = Lady Caw Caw (not as ew)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(2);
+            msg.Write((byte)104);   // 1 Byte | MsgID (104)
+            msg.Write(showID);      // 1 Byte | AviaryShowID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+
+        // Msg105 | "Ghostmode Enabled" --- Sent to get the ghostmode controls enabled for the player and stuff.
+        private void SendGhostmodeEnabled(NetConnection pDest) // appears OK [v0.90.2] (don't forget to send Msg46 alongside this one!]
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage();
+            msg.Write((byte)105);
+            server.SendMessage(msg, pDest, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg106 | "Send Roll Message" --- Usually sent whenever a player uses the /roll command; can be used for other cool stuff though!
+        private void SendRollMsg(short playerID, string message)
+        {
+            if (!IsServerRunning()) return;
+            NetOutgoingMessage msg = server.CreateMessage(3 + message.Length);
+            msg.Write((byte)106);   // 1 Byte   | MsgID (106)
+            msg.Write(playerID);    // 2 Short  | PlayerID
+            msg.Write(message);     // V String | Message
+            server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+        }
+
         /// <summary>
         /// Sends a NetMessage to all connected clients that a player with the provided PlayerID has had their parachute-mode updated.
         /// </summary>
         private void SendParachuteUpdate(short aID, bool aIsDiving) // [probs]Msg108 >> Msg109
         {
+            if (!IsServerRunning()) return;
             NetOutgoingMessage msg = server.CreateMessage();
             msg.Write((byte)109); // Byte  | MsgID (109)
             msg.Write(aID);       // Short | PlayerID
@@ -3866,149 +4874,14 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
-        #region Msg20 Variation Methods
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers containing data on a new Health Juice LootItem to spawn.
-        /// </summary>
-        /// <param name="drinkCount">Amount of juice this item gives.</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewJuiceItem(short drinkCount, Vector2 position)
+        // Msg125 | "Player Weapons Removed" --- Sent whenever a player has their weapons removed lol; at least dispalys it as such...
+        private void SendRemovedWeapons(short playerID)
         {
-            _totalLootCounter++; // Increment LootCounter...
-            _lootItems.Add(_totalLootCounter, new LootItem(LootType.Juice, $"Health Juice-{drinkCount}", 0, (byte)drinkCount, position));
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Juice);    // Byte   | LootType >> Juice
-            msg.Write(drinkCount);              // Short  | Amount of Juice
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write((byte)0);                 // Byte   | Not sure... All am know is it's needed
+            NetOutgoingMessage msg = server.CreateMessage(3);
+            msg.Write((byte)125);   // 1 Byte  | MsgID (109)
+            msg.Write(playerID);    // 2 Short | PlayerID
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
-
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers containing data on a new armor LootItem to spawn.
-        /// </summary>
-        /// <param name="armorLevel">Maximum ticks this armor has.</param>
-        /// <param name="armorTicks">Amount of ticks left on this armor.</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewArmorItem(byte armorLevel, byte armorTicks, Vector2 position)
-        {
-            _totalLootCounter++; // Increment LootCounter... | Armor LootItem:: Item.Rarity = Tier; Item.GiveAmount = ArmorTicks
-            _lootItems.Add(_totalLootCounter, new LootItem(LootType.Armor, $"Armor-{armorTicks}/{armorLevel}", armorLevel, armorTicks, position));
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Armor);    // Byte   | LootType
-            msg.Write((short)armorTicks);       // Short  | # of Ticks Left
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write(armorLevel);              // Byte   | Armor Tier
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }
-
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers containing data on a new Tape LootItem to spawn.
-        /// </summary>
-        /// <param name="tapeCount">Amount of tape to spawn (cannot exceeed 255).</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewTapeItem(short tapeCount, Vector2 position)
-        {
-            if (tapeCount > byte.MaxValue) tapeCount = byte.MaxValue; // TODO -- If you ever make GiveAmount NOT a byte, and a short or something; change this
-            else if (tapeCount < 0) tapeCount = 0;
-            _totalLootCounter++; // Increment LootCounter...
-            _lootItems.Add(_totalLootCounter, new LootItem(LootType.Tape, $"Tape (x{tapeCount})", 0, (byte)tapeCount, position));
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Tape);     // Byte   | LootType >> Tape
-            msg.Write(tapeCount);               // Short  | Amount of Tape to give
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write((byte)0);                 // Byte   | Unsure... Clipsize? If you remove, it breaks spawning these.
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }
-
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers contianing data on a new throwable LootItem to spawn.
-        /// </summary>
-        /// <param name="weaponIndex">Index in AllWeaponsArray.</param>
-        /// <param name="giveAmount">Amount in this pile.</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewThrowableItem(int weaponIndex, byte giveAmount, Vector2 position)
-        {
-            _totalLootCounter++; // Increment LootCounter...
-            _lootItems.Add(_totalLootCounter, new LootItem(WeaponType.Throwable, _weapons[weaponIndex].Name, 0, giveAmount, weaponIndex, position));
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Weapon);   // Byte   | LootType >> Weapon (which should be 0)
-            msg.Write((short)weaponIndex);      // Short  | WeaponIndex
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write(giveAmount);              // Byte   | Ammo in Clip?
-            msg.Write(0.ToString());
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }
-
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers contianing data on a new gun LootItem to spawn.
-        /// </summary>
-        /// <param name="weaponIndex">Index in AllWeaponsArray for this Weapon.</param>
-        /// <param name="rarity">Rarity of this Weapon.</param>
-        /// <param name="ammoInClip">Amount of ammo in this Weapon's "clip".</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewGunItem(short weaponIndex, byte rarity, byte ammoInClip, Vector2 position)
-        {
-            _totalLootCounter++; // Increment LootCounter...
-            _lootItems.Add(_totalLootCounter, new LootItem(_weapons[weaponIndex].WeaponType, _weapons[weaponIndex].Name, rarity, ammoInClip, weaponIndex, position));
-            // Make MSG
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Weapon);   // Byte   | LootType >> Weapon (which should be 0)
-            msg.Write(weaponIndex);             // Short  | WeaponIndex
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write(ammoInClip);              // Byte   | Ammo in Clip
-            msg.Write(rarity.ToString());       // String | Rarity? What the fart...
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }
-
-        /// <summary>
-        /// Sends a "SpawnItem" packet to all NetPeers containing data on a new ammo LootItem to spawn.
-        /// </summary>
-        /// <param name="ammoType">Ammo Type to spawn.</param>
-        /// <param name="ammoCount">Amount of ammo to spawn.</param>
-        /// <param name="position">Position to spawn this LootItem.</param>
-        private void SendNewAmmoItem(byte ammoType, byte ammoCount, Vector2 position)
-        {
-            _totalLootCounter++; // Increment LootCounter... | Ammo LootItem:: Item.Rarity = Type;
-            _lootItems.Add(_totalLootCounter, new LootItem(LootType.Ammo, $"Ammo-{ammoType}", ammoType, ammoCount, position));
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)20);                // Byte   | Header / MsgID << 20
-            msg.Write(_totalLootCounter);       // Int    | LootID
-            msg.Write((byte)LootType.Ammo);     // Byte   | LootType << (ammo)
-            msg.Write((short)ammoCount);        // Short  | Type of Ammo
-            msg.Write(position.x);              // Float  | PosX 1
-            msg.Write(position.y);              // Float  | PosY 1
-            msg.Write(position.x);              // Float  | PosX 2
-            msg.Write(position.y);              // Float  | PosY 2
-            msg.Write(ammoType);                // Byte   | Amount of Ammo to spawn
-            server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
-        }
-        #endregion Msg20 Variation Methods
 
         /// <summary>
         /// Sends NetMessages to all NetPeers containing the packets that will stop drinking, taping, and emoting.
@@ -4018,16 +4891,27 @@ namespace WCSARS
             SendPlayerEndDrink(player);
             SendPlayerEndTape(player);
             SendPlayerEndedEmoting(player);
+            HandlePickupCanceled(player);
         }
+
+        // todo - send player dc message only if in lobby... otherwise they need to stick around for a while longer
         private void HandleClientDisconnect(NetIncomingMessage pmsg)
         {
             if (TryIndexFromConnection(pmsg.SenderConnection, out int index))
             {
-                NetOutgoingMessage msg = server.CreateMessage(4);
-                msg.Write((byte)46);            // Byte  | MsgID (46)
-                msg.Write(_players[index].ID);  // Short | DC PlayerID
-                msg.Write(false);               // Bool  | isGhostMode (?) -- will always be false... for now -- todo!
-                server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
+                // if you skip out on 46, that's OK. that's how SAR usually works.
+                // if teams exist, and the teammate is informed on a DC, they see it as they should without seeing the player disappear from the match
+                SendPlayerDisconnected(_players[index].ID);
+
+                // If they're spectating someone... remove them from the total... Probably works (didn't test LOL!)
+                if (_players[index].WhoImSpectating != -1)
+                {
+                    if (TryPlayerFromID(_players[index].WhoImSpectating, out Player spectating))
+                    {
+                        if (!spectating.MySpectatorsIDs.Remove(_players[index].ID)) Logger.Warn($"[HandleClientDC] [Warn] {_players[index]} not in {spectating}'s spectatorIDs list, but server thought they were?");
+                        SendUpdatedSpectatorCount(spectating.ID, (byte)spectating.MySpectatorsIDs.Count);
+                    }
+                }
 
                 SendTeammateDisconnected(_players[index]);
                 _availableIDs.Insert(0, _players[index].ID);
@@ -4041,267 +4925,24 @@ namespace WCSARS
         /// <summary>
         /// Attempts to load all level-data related files and such to fill the server's own level-data related variables.
         /// </summary>
-        private void LoadSARLevel() // This will become quite the mess.
+        private void LoadSARLevel(uint lootSeed, uint coconutSeed, uint hamsterballSeed)
         {
-            Logger.Header("[LoadSARLevel] Attempting to load SAR level data...");
-            // Make sure this isn't called twice. Results in everything getting re-initialized. Which isn't awesome possum...
-            if (svd_LevelLoaded) throw new Exception("LoadSARLevel has already been called. You cannot call this method multiple times.");
-
-            // Get JSONNode
-            string mapLoc = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\EarlyAccessMap1.txt";
-            JSONNode LevelJSON = JSONNode.LoadFromFile(mapLoc);
-            //Logger.Success("[LoadSARLevel] Successfully located LevelData file!");
-
-            // use this if you wanna print out all the keys for whatever reason
-            /*foreach (string JSONKey in LevelJSON.Keys)
+            Logger.Basic("[LoadSARLevel] Attempting to load level data...");
+            if (svd_LevelLoaded)
             {
-                Logger.testmsg(JSONKey);
-            }*/
-
-            // Item LootItems Tiles
-            // TODO -- Better item position placement
-            #region Loot
-            // Find LootItems SpawnSpots
-            int lootSpotsNormal = 0;
-            int lootSpotsGood = 0;
-            int lootSpotsBot = 0;
-            if (LevelJSON["lootSpawns"] != null) lootSpotsNormal = LevelJSON["lootSpawns"].Count;
-            if (LevelJSON["lootSpawnsGood"] != null) lootSpotsGood = LevelJSON["lootSpawnsGood"].Count;
-            if (LevelJSON["lootSpawnsNoBot"] != null) lootSpotsBot = LevelJSON["lootSpawnsNoBot"].Count;
-            if (lootSpotsBot > 0) Logger.missingHandle("[LoadSARLevel] lootSpawnsNoBot actually contains entries for once. Is this intentional?");
-            int totalSpawnSpots = lootSpotsNormal + lootSpotsGood + lootSpotsBot;
-
-            // Load Tile Spots -- Could be better. Am tired though
-            Vector2[] tileSpots = new Vector2[totalSpawnSpots];
-            for (int n = 0; n < lootSpotsNormal; n++)
-            {
-                tileSpots[n] = new Vector2(LevelJSON["lootSpawns"][n]["x"].AsFloat, LevelJSON["lootSpawns"][n]["y"].AsFloat);
+                Logger.Failure("[LoadSARLevel] Already called silly!");
+                return;
             }
-            for (int g = 0; g < lootSpotsGood; g++)
-            {
-                int ind = g + lootSpotsNormal;
-                tileSpots[ind] = new Vector2(LevelJSON["lootSpawnsGood"][g]["x"].AsFloat, LevelJSON["lootSpawnsGood"][g]["y"].AsFloat);
-            }
-
-            // Setup variables for genration
-            MersenneTwister mersenneTwister = new MersenneTwister((uint)_lootSeed);
-            _lootItems = new Dictionary<int, LootItem>();
-            _totalLootCounter = 0;
-
-            // Stuff for RNG
-            int currentLootID;  // For whatever reason, LootItems isn't like Coconuts/Hamsterball; where IDs are always in order. IDs can have huge leaps.
-            bool doBetterGen;   // Whether to have a higher chance to get better loot 
-            uint rngNum;        // Number returned on an RNG attempt
-            uint minGenNum;     // Mini value that can be generated...
-            // RNG Stuff Still-- This is used for generating Weapons
-            List<short> WeaponsByFrequency = new List<short>();
-            for (int i = 0; i < _weapons.Length; i++)
-            {
-                for (int j = 0; j < _weapons[i].SpawnFrequency; j++)
-                {
-                    WeaponsByFrequency.Add(_weapons[i].JSONIndex);
-                }
-            }
-
-            // Go through every loot tile and try spawning something in!
-            for (int i = 0; i < totalSpawnSpots; i++)
-            {
-                // Set LootIDs!
-                currentLootID = _totalLootCounter;
-                _totalLootCounter++; // always increments no matter way ig
-                doBetterGen = false;
-                minGenNum = 0U;
-
-                // See if this tile is a better loot tile...
-                if (i >= lootSpotsNormal)
-                {
-                    doBetterGen = true;
-                    minGenNum = 20U;
-                }
-                // Now roll!
-                rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
-
-                // Figure out what to do/spawn
-                if (rngNum <= 33.0) continue; // 33 or less? You get NOTHING! (maybe) (maybe also || (rngNum > 59 && rngNum <= 60))?
-                if (rngNum > 33.0 && rngNum <= 47.0) // Drinks
-                {
-                    byte juiceAmount = 40;
-
-                    if (doBetterGen) minGenNum = 15U;
-                    rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
-                    if (rngNum <= 55) juiceAmount = 10;
-                    else if (rngNum <= 89) juiceAmount = 20;
-
-                    LootItem drinkLoot = new LootItem(LootType.Juice, $"Health Juice-{juiceAmount}", 0, juiceAmount, tileSpots[i]);
-                    _lootItems.Add(currentLootID, drinkLoot);
-                }
-                else if (rngNum <= 59.0) // Armor
-                {
-                    if (doBetterGen) minGenNum = 24U;
-                    rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
-
-                    byte armorTier = 3;
-                    if (rngNum <= 65.0) armorTier = 1;
-                    else if (rngNum <= 92.0) armorTier = 2;
-
-                    // LootItems.Rarity = armor tier; LootItems.GiveAmout = amount of armor ticks.
-                    LootItem armorLoot = new LootItem(LootType.Armor, $"Armor-{armorTier}", armorTier, armorTier, tileSpots[i]);
-                    _lootItems.Add(currentLootID, armorLoot);
-                } else if (rngNum > 60.0 && rngNum <= 66.0) // Tape
-                {
-                    LootItem tapeLoot = new LootItem(LootType.Tape, "Tape (x1)", 0, 1, tileSpots[i]);
-                    _lootItems.Add(currentLootID, tapeLoot);
-                }
-                else if (rngNum > 66.0) // Weapon Generation toiemm!! -- The .GiveAmount property becomes the amount to give/amount of ammo the gun has.
-                {
-                    // Find le weapon
-                    rngNum = mersenneTwister.NextUInt(0U, (uint)WeaponsByFrequency.Count);
-                    int leGenIndex = WeaponsByFrequency[(int)rngNum];
-                    Weapon foundWeapon = _weapons[leGenIndex];
-
-                    // Make Le Weapon
-                    if (foundWeapon.WeaponType == WeaponType.Gun)
-                    {
-                        // Figure out rarity
-                        byte rarity = 0;
-                        if (doBetterGen) minGenNum = 22U;
-                        minGenNum = mersenneTwister.NextUInt(minGenNum, 100U);
-                            // See if should gen higher-rarity item...
-                        if (minGenNum > 58.0 && minGenNum <= 80.0) rarity = 1;
-                        else if (minGenNum > 80.0 && minGenNum <= 91.0) rarity = 2;
-                        else if (minGenNum > 91.0 && minGenNum <= 97.0) rarity = 3;
-                            // Verify rarity isn't too high nor low...
-                        if (rarity > foundWeapon.RarityMaxVal) rarity = foundWeapon.RarityMaxVal;
-                        if (rarity < foundWeapon.RarityMinVal) rarity = foundWeapon.RarityMinVal;
-                        // Make gun...
-                        LootItem gunLoot = new LootItem(WeaponType.Gun, foundWeapon.Name, rarity, (byte)foundWeapon.ClipSize, foundWeapon.JSONIndex, tileSpots[i]);
-                        _lootItems.Add(currentLootID, gunLoot);
-                        // Spawn in ammo as welll
-
-                        float[] tmp = new float[] { -7f, 7f }; // where to move the ammo lol; not sure where the middle is. 7 seems OK
-                        for (int ammoSpawned = 0; ammoSpawned < 2; ammoSpawned++)
-                        {
-                            currentLootID = _totalLootCounter;
-                            _totalLootCounter++;
-
-                            // LootItems.GiveAmount stays the same, BUT! LootItems.Rarity is the ammo type!!
-                            Vector2 ammoSpot = new Vector2(tileSpots[i].x + tmp[ammoSpawned], tileSpots[i].y);
-                            LootItem ammoLoot = new LootItem(LootType.Ammo, $"Ammo-{foundWeapon.AmmoType}", foundWeapon.AmmoType, foundWeapon.AmmoSpawnAmount, ammoSpot);
-                            _lootItems.Add(currentLootID, ammoLoot);
-                        }
-
-                    } else if (foundWeapon.WeaponType == WeaponType.Throwable)
-                    {
-                        LootItem throwLoot = new LootItem(WeaponType.Throwable, foundWeapon.Name, 0, foundWeapon.SpawnSizeOverworld, foundWeapon.JSONIndex, tileSpots[i]);
-                        _lootItems.Add(currentLootID, throwLoot);
-
-                    }
-                }
-            }
-            //Logger.Success("[LoadSARLevel] Loaded all LootItems successfully.");
-            // End of Load LootItems
-            #endregion Loot 
-
-            // Load Coconuts
-            #region Coconuts
-            //Logger.Warn("[LoadSARLevel] Attempting to load/spawn Coconuts...");
-            if (LevelJSON["coconuts"] == null || LevelJSON["coconuts"].Count < 1)
-            {
-                throw new Exception("It would seem that the \"coconuts\" is null in this data set or there are no entries.");
-            }
-            int cocoIndexID = 0;
-            int cocoCount = LevelJSON["coconuts"].Count;
-            _coconutList = new Dictionary<int, Coconut>(cocoCount);
-            MersenneTwister cocoTwist = new MersenneTwister((uint)_coconutSeed);
-            for (int i = 0; i < cocoCount; i++)
-            {
-                uint rng = cocoTwist.NextUInt(0U, 100U);
-                if (rng > 65.0)
-                {
-                    _coconutList.Add(cocoIndexID, new Coconut(LevelJSON["coconuts"][i]["x"].AsFloat, LevelJSON["coconuts"][i]["y"].AsFloat));
-                    cocoIndexID++;
-                }
-            }
-            //Logger.Success("[LoadSARLevel] Successfully loaded in the Coconuts.");
-            #endregion Coconuts
-
-            // Load Vehicles
-            #region Hamsterballs
-            // do listen to this commented-out line. There really is a key called "emus" in later versions of the game.
-            //Logger.Header("[LoadSARLevel] Attempting to load hamsterballs list. (key = \"vehicles\"; not to be confused with \"emus\")");
-            if (LevelJSON["vehicles"] == null || LevelJSON["vehicles"] == 0)
-            {
-                throw new Exception("Missing key \"vehicles\" in LevelJSON file or key \"vehicles\" has no entries.\nEither create this key or add entries. However, if this key doesn't exist you're probably doing something wrong.");
-            }
-            JSONNode vehicleNode = LevelJSON["vehicles"];
-            MersenneTwister hampterTwist = new MersenneTwister((uint)_vehicleSeed);
-            int hampterballs = vehicleNode.Count; // slightly faster to cache. maybe things changed
-            int hTrueID = 0; // need to keep track so hampterballs actually spawn with the correct IDs
-            _hamsterballs = new Dictionary<int, Hamsterball>(hampterballs);
-            for (int i = 0; i < hampterballs; i++)
-            {
-                if (hampterTwist.NextUInt(0U, 100U) > 55.0)
-                {
-                    _hamsterballs.Add(hTrueID, new Hamsterball((short)hTrueID, new Vector2(vehicleNode[i]["x"].AsFloat, vehicleNode[i]["y"].AsFloat)));
-                    hTrueID++;
-                }
-            }
-            //Logger.Success("[LoadSARLevel] Successfully generated the hamsterball list.");
-            #endregion Hamsterballs
-
-            // Load Doodads
-            #region Doodads
-            if (LevelJSON["doodads"] == null || LevelJSON["doodads"] == 0) // does "doodads" key exist, does it actually have entries?
-            {
-                throw new Exception("Missing key \"doodads\" in LevelJSON file or key \"doodads\" has no entries.");
-            }
-            // time to read le list
-            Dictionary<int, DoodadType> doodadTypeList = DoodadType.GetAllDoodadTypes(); // Load in DoodadTypes now that we know we can put them to use
-            JSONNode doodadJSON = LevelJSON["doodads"]; // would technically be better to not have this, but spawning new Doodads gets messy
-            int doodadCount = doodadJSON.Count;
-            _doodadList = new List<Doodad>(doodadCount);
-            for (int i = 0; i < doodadCount; i++)
-            {
-                if (!doodadTypeList.ContainsKey(doodadJSON[i]["i"].AsInt)){
-                    Logger.Failure("FRICK");
-                }
-                if (doodadTypeList[doodadJSON[i]["i"].AsInt].Destructible)
-                {
-                    _doodadList.Add(new Doodad(doodadTypeList[doodadJSON[i]["i"].AsInt], doodadJSON[i]["x"].AsFloat, doodadJSON[i]["y"].AsFloat));
-                }
-            }
-            //Logger.Success("[LoadSARLevel] Loaded all Doodads tagged with \"destructible\" successfully.");
-            #endregion
-
-            // -- Load Campfire Spots --
-            #region campfires
-            if (LevelJSON["campfires"] == null) throw new Exception("No such key \"campfires\" in loaded LevelJSON.");
-            _campfires = new Campfire[LevelJSON["campfires"].Count];
-            for (int i = 0; i < _campfires.Length; i++)
-            {
-                _campfires[i] = new Campfire(LevelJSON["campfires"][i]["x"].AsFloat, LevelJSON["campfires"][i]["y"].AsFloat);
-            }
-            #endregion campfires
-            // -- End of Campfire spots --
-
-
-            // -- Load MoleCrate SpawnSpots
-            #region moleSpots
-            if (LevelJSON["moleSpawns"] == null) throw new Exception("No such key \"moleSpawns\" in loaded LevelJSON.");
-            _moleSpawnSpots = new Vector2[LevelJSON["moleSpawns"].Count];
-            for (int i = 0; i < _moleSpawnSpots.Length; i++)
-            {
-                _moleSpawnSpots[i] = new Vector2(LevelJSON["moleSpawns"][i]["x"].AsFloat, LevelJSON["moleSpawns"][i]["y"].AsFloat);
-            }
-            //Logger.DebugServer($"[LoadSARLevel] [OK] -- Loaded moleSpawns without error. Count: {_moleSpawnSpots.Length}");
-
-            #endregion moleSpots
-            // -- End of MoleCrate SpawnSpots
+            // Load level 
+            _level = new SARLevel(lootSeed, coconutSeed, hamsterballSeed);
+            _campfires = _level.Campfires;
+            _coconutList = _level.Coconuts;
+            _hamsterballs = _level.Hamsterballs;
+            _level.NullUnNeeds();
+            svd_LevelLoaded = true;
 
             // End of Loading in Files
-            GC.Collect();
-            svd_LevelLoaded = true; // Pretty obvious. just a little flag saying we indeed are finished with all this.
-            Logger.Success("[LoadSARLevel] Finished without encountering any errors.");
+            //Logger.Success("[LoadSARLevel] Finished without encountering any errors.");
         }
         #endregion Load LevelData
 
@@ -4526,7 +5167,7 @@ namespace WCSARS
                 Logger.Header($"Actual ID: {_players[_hamsterballs[ballIndex].CurrentOwner.ID].VehicleID}");
             }
             _hamsterballs.Remove(ballIndex);
-            Logger.Basic($"[{DateTime.UtcNow}] Hamsterball[{ballIndex}] has been removed.");
+            Logger.Basic($"Hamsterball[{ballIndex}] has been removed.");
         }
         
         /// <summary> Returns whether this Match's NetServer is still running or not.</summary>
@@ -4535,5 +5176,18 @@ namespace WCSARS
         {
             return server?.Status == NetPeerStatus.Running;
         }
+
+
+
+        // trying to test asyncs more than before
+        // now that I think about it, I think the reason async wasn't working with NetMessages before, was because the NetLoop()
+        // would let their tasks chill in the background, while it continued. Because each end of the loop tosses out the NetMsg passed to the methods...
+        // ...the NetMessage no longer existed, and so would crash. So... how do you fix?
+        /*private async void Test_Awaiting(Player player)
+        {
+            Logger.DebugServer($"{DateTime.UtcNow} Starting task...");
+            await player.DoDamage(5);
+            Logger.DebugServer($"{DateTime.UtcNow} Task should have finished. At least... we're wating on it.");
+        }*/
     }
 }

@@ -55,7 +55,7 @@ namespace SARStuff
             uint retValue; // While `retValue` is used here; The value it gets set to here is only for mixing up the array.
             if (mti >= 624)
             {
-                short index; // WARNING REMOVED THE (uIntPtr) CASTS NEXT TO MAG01 MAY CAUSE ERROR
+                short index;
                 for (index = 0; index < 227; index++)
                 {
                     retValue = (mt[index] & 2147483648U) | (mt[index + 1] & 2147483647U);
@@ -85,9 +85,37 @@ namespace SARStuff
         // Considering how most information as to how all this works was obtained, doing so would be trivial.
         public virtual uint NextUInt(uint minValue, uint maxValue)
         {
-            if (minValue < maxValue) return GenerateUInt() / (uint.MaxValue / (maxValue - minValue)) + minValue; // uint.MaxValue >> 4294967295.0
+            if (minValue < maxValue) return GenerateUInt() / (uint.MaxValue / (maxValue - minValue)) + minValue; // uint.MaxValue == 4294967295 ~= 4294967295.0
             if (minValue == maxValue) return minValue;
-            throw new ArgumentOutOfRangeException("minValue", "NextUInt() called with minValue >= maxValue");
+            throw new ArgumentOutOfRangeException("minValue", "NextUInt() called with minValue > maxValue");
+        }
+
+        /// <summary>
+        /// Generates a pseudo-random integer between minValue and maxValue exclusively (i.e., maxValue is never generated).
+        /// </summary>
+        /// <param name="minValue">The minimum value that can be generated.</param>
+        /// <param name="maxValue">The maximum value that can be generated.</param>
+        /// <returns>A psuedo-randomly generated value between the desired values.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"></exception>
+        public int NextInt(int minValue, int maxValue)
+        {
+            if (minValue < maxValue) return (int)(GenerateUInt() / (uint.MaxValue / (maxValue - minValue)) + minValue);
+            if (minValue == maxValue) return minValue;
+            throw new ArgumentOutOfRangeException("minValue", "Next() called with minValue > maxValue");
+        }
+
+        /// <summary>
+        /// Generates a pseudo-random integer between minValue and maxValue inclusively (i.e., maxValue can potentially be generated).
+        /// </summary>
+        /// <param name="minValue">The minimum value that can be generate.</param>
+        /// <param name="maxValue">The maximum value that can be generated.</param>
+        /// <returns>A psuedo-randomly generated value between the desired points.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"></exception>
+        public int NextInt2(int minValue, int maxValue)
+        {
+            if (minValue < maxValue) return (int)(GenerateUInt() / (uint.MaxValue / ((maxValue + 1) - minValue)) + minValue);
+            if (minValue == maxValue) return minValue;
+            throw new ArgumentOutOfRangeException("minValue", "Next() called with minValue > maxValue");
         }
     }
 }

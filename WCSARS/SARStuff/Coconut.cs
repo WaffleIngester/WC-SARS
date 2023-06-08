@@ -3,11 +3,11 @@
     // maybe in the future change this to "Edible" so Coconuts, Mushrooms, and EventTokens, all have the same base thing?
     public struct Coconut
     {
-        public Vector2 Position;
+        public Vector2 Position { get; private set; }
 
-        public Coconut(float x, float y)
+        public Coconut(Vector2 position)
         {
-            Position = new Vector2(x, y);
+            Position = position;
         }
     }
 }

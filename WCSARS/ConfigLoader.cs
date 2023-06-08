@@ -9,7 +9,7 @@ namespace WCSARS
         // Server
         public string IP = "127.0.0.1";
         public int Port = 42896;
-        public string ServerKey = "flwoi51nawudkowmqqq"; // Key for v0.90.2
+        public string ServerKey = "insertKeyHere";
         public string Gamemode = "solo"; // currently-known strings: "solo", "duo", "squad".
         public bool useConfigSeeds = false;
         public int LootSeed;
@@ -18,7 +18,7 @@ namespace WCSARS
 
         // Players
         public int MaxPlayers = 64;
-        public float MaxLobbyTime = 120f;
+        public float LobbyTime = 120f;
 
         // Objects
         public short MaxMoleCrates = 12;
@@ -27,7 +27,7 @@ namespace WCSARS
         public int MaxDartTicks = 12;
         public float DartTickRate = 0.6f;
         public int DartPoisonDamage = 9;
-        public float SuperSkunkGasTickRate = 0.6f; // UNUSED -- what even is the point?
+        public float SuperSkunkGasTickRate = 1.0f;
 
         // Healing
         public float HealthPerTick = 4.75f;
@@ -36,7 +36,12 @@ namespace WCSARS
         public float CampfireRateSeconds = 1f;
         public float CoconutHealAmount = 5f;
 
+        // Downed-Related
+        public float BleedoutRateSeconds = 1f;
+        public byte ResurrectHP = 25;
+
         // Bools
+        public bool InfiniteMatch = false;
         public bool Safemode = true;
         public bool DebugMode = false; // UNUSED... sort of.. Used in match to use the horrid old Match creator
 
@@ -111,13 +116,13 @@ namespace WCSARS
                             MaxPlayers = int.Parse(splits[1]);
                             break;
                         case "lobby-time":
-                            MaxLobbyTime = float.Parse(splits[1]);
+                            LobbyTime = float.Parse(splits[1]);
                             break;
                         // Other match
                         case "molecrates-max":
                             MaxMoleCrates = short.Parse(splits[1]);
                             break;
-                        case "skunkgas-rate":
+                        case "skunkgas-tickrate-seconds":
                             SuperSkunkGasTickRate = float.Parse(splits[1]);
                             break;
                         //Dartgun
@@ -137,7 +142,7 @@ namespace WCSARS
                         case "drink-rate":
                             DrinkTickRate = float.Parse(splits[1]);
                             break;
-                        case "campfire-heal":
+                        case "campfire-heal-hp":
                             CampfireHealPerTick = float.Parse(splits[1]);
                             break;
                         case "campfire-heal-rate":
@@ -145,6 +150,15 @@ namespace WCSARS
                             break;
                         case "coconut-heal-base":
                             CoconutHealAmount = float.Parse(splits[1]);
+                            break;
+                        case "downed-bleedout-rate":
+                            BleedoutRateSeconds = float.Parse(splits[1]);
+                            break;
+                        case "downed-resurrect-hp":
+                            ResurrectHP = byte.Parse(splits[1]);
+                            break;
+                        case "infinite-match":
+                            InfiniteMatch = bool.Parse(splits[1]);
                             break;
                         case "safemode":
                             Safemode = bool.Parse(splits[1]);
@@ -178,6 +192,8 @@ namespace WCSARS
         {
             using (StreamWriter streamWriter = File.CreateText(location))
             {
+                //streamWriter.WriteLine($"={}");
+
                 streamWriter.WriteLine($"server-ip={IP}");
                 streamWriter.WriteLine($"server-port={Port}");
                 streamWriter.WriteLine($"server-key={ServerKey}");
@@ -188,21 +204,24 @@ namespace WCSARS
                 streamWriter.WriteLine($"seed-hamsterballs={HampterSeed}");
                 streamWriter.WriteLine($"max-players={MaxPlayers}");
 
-                streamWriter.WriteLine($"lobby-time={MaxLobbyTime}");
+                streamWriter.WriteLine($"lobby-time={LobbyTime}");
                 streamWriter.WriteLine($"molecrates-max={MaxMoleCrates}");
 
                 streamWriter.WriteLine($"dart-ticks-max={MaxDartTicks}");
                 streamWriter.WriteLine($"dart-tickrate={DartTickRate}");
                 streamWriter.WriteLine($"dart-poisondmg={DartPoisonDamage}");
-                streamWriter.WriteLine($"skunkgas-rate={SuperSkunkGasTickRate}");
+                streamWriter.WriteLine($"skunkgas-tickrate-seconds={SuperSkunkGasTickRate}");
 
                 streamWriter.WriteLine($"heal-per-tick={HealthPerTick}");
                 streamWriter.WriteLine($"drink-rate={DrinkTickRate}");
-                streamWriter.WriteLine($"campfire-heal={CampfireHealPerTick}");
+                streamWriter.WriteLine($"campfire-heal-hp={CampfireHealPerTick}");
                 streamWriter.WriteLine($"campfire-heal-rate={CampfireRateSeconds}");
                 streamWriter.WriteLine($"coconut-heal-base={CoconutHealAmount}");
+                streamWriter.WriteLine($"downed-bleedout-rate={BleedoutRateSeconds}");
+                streamWriter.WriteLine($"downed-resurrect-hp={ResurrectHP}");
 
-
+                // "debug" / other
+                streamWriter.WriteLine($"infinite-match={InfiniteMatch}");
                 streamWriter.WriteLine($"safemode={Safemode}");
                 streamWriter.WriteLine($"debugmode={DebugMode}");
             }

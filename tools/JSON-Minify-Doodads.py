@@ -1,10 +1,10 @@
 import os
 import json
-print("Doodad Data Stripper")
+print("JSON Minifier - Doodads")
 
 # JSON Arrays
-old_DoodadSet = []
-ReturnDoodadArray = []
+old_Doodads = []
+ret_DoodadData = []
 
 # Lazy Search -- Change 'search' to easily change file to search for.
 search = "_doodads.txt"
@@ -13,7 +13,7 @@ if not os.path.exists(search):
     os.system("pause")
     exit(-1)
 with open(search, 'r') as readData:
-    old_DoodadSet = json.load(readData)
+    old_Doodads = json.load(readData)
 
 # Tries to get an entry
 def GetEntry(SearchKey, Node, Append):
@@ -22,7 +22,7 @@ def GetEntry(SearchKey, Node, Append):
 
 # Adding in new JSON object into array
 entryCount = 0 # Lazy way to track amount of entries
-for entry in old_DoodadSet:
+for entry in old_Doodads:
     entryCount += 1
     NewEntryObject = {}
     GetEntry("doodadID", entry, NewEntryObject)
@@ -35,10 +35,10 @@ for entry in old_DoodadSet:
     GetEntry("destructibleDamagePeak", entry, NewEntryObject)
     GetEntry("destructibleDamageRadius", entry, NewEntryObject)
     GetEntry("destructibleCanDropLoot", entry, NewEntryObject)
-    ReturnDoodadArray.append(NewEntryObject)
+    ret_DoodadData.append(NewEntryObject)
    
 with open("output-doodads.json", "w") as outputjson:
-    outputjson.write(json.dumps(ReturnDoodadArray, indent=2))
-print("Finished copying desired keys. Please see 'output.json'")
+    outputjson.write(json.dumps(ret_DoodadData, indent=2))
+print("Finished copying desired keys. Please see 'output-doodads.json'")
 print(f"Amount of Entries: {entryCount}")
 os.system("pause")
