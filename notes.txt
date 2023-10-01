@@ -1,4 +1,200 @@
 ﻿    -- Changelog -- 
++------------------------------------------------------
+	-- 9/30/23 --
+
+	>> IMPORTANT:: I haven't had the chance to test most of this with actual people.
+		--> It's mostly been me using custom / """commands""" to experiment with stuff--- so expect some buggy bugs
+		--> This lack of testing is partly the reason it's taken so long...
+		--> Also was originally supposed to just be update to Client class but did a little more.
+
+	>> Gernerally, it's just trying to make the coding style more consistent.
+	>> Clients actually do something now--- represents the person on the other end of a Player
+	>> Some improvements to Doodads that should make handling of them easier to deal with in the future
+
+Match:
+
+	++ General Updates:
+
+		- Replaced generic uses of "OK-enough" in comments to "OK... enough". (important I swear)
+			-----------
+		- Added method `GetNumberOfAliveTeams`.
+		- Added method `GetPlayerNodeFromPlayFab`.
+		- Added method `FindTeamToAddPlayerTo`.
+		- Added method `EnableGhostModeForPlayer`.
+		- Added method `CancelAllNonEmoteActions`.
+		- Added method `HandleTeammateLeavingMatch`.
+		- Added method `RemoveMySpectate`.
+		- Added method `HandleDoodadDestructionFromPoint`.
+		- Added method `GoWarnModsAndAdmins`.
+		- Added method `HandleConnectionApproval`.
+			-----------
+		- Removed method `TryIndexFromID`.
+		- Removed method `TryIDFronName`.
+		- Removed method `ValidWeaponIndex`.
+			-----------
+		- Renamed field `_coconutHeal` to `_coconutHealAmountHP`.
+		- Renamed field `_incomingConnections` to `_incomingClients`.
+		- Renamed field `svd_LevelLoaded` to `_hasLevelBeenLoaded`.
+		- Renamed method `svu_checkForWinnerWinnerChickenDinner` to `CheckForWinnerWinnerChickenDinner`.
+		- Renamed method `GetValidPlayerCount` to `GetNumberOfValidPlayerEntries`.
+		- Renamed method `SendPlayerEndedEmoting` to `HandleEmoteCancel`.
+		- Renamed method `HandleClientDisconnect` to `HandleNetClientDisconnect` (NetClient instead of Client haha)
+		- Renamed method `SendTeammateDisconnected` to `SendTeammateLeftMatch`.
+		- Renamed method `SendConfirmAttack` to `SendAttackConfirmed`.
+		- Renamed method `test_damagePlayer` to `DamagePlayer`.
+			-----------
+		- Updated method `TryPlayerFromString`.
+			--> Attempts to find Player's with usernames matching the search string first, rather than checking if the search string is an id first
+			--> This makes it so you're able to move players with usernames that are numbers without accidentally moving other players at filled indexes around.
+			--> This function is always kind of bad because there is no real guarantee to differentiate between players with ids-for-names and searching for ids themselves.
+		
+		- Updated method `HandleNetClientDisconnect`.
+			--> Players should now only stick around during in-progress matches, while in lobby they leave.
+		
+		- Updated method `HandleEmoteCancel`.
+			--> Accomplishes by using Player.EmoteEnded() & Msg67 send-method rather doing everything here all over again.
+			--> Overall, removing a redundant copy of the EmotePerform send and also removing a point of failure should anything regarding emotes change with Players.
+		
+		- Updated method `HandleClientDisconnect`.
+			--> Will now only remove a player from `_players` if the Match is in a lobby. Should also remove players from team list now.
+		
+		- Updated method `SendAttackConfirmed`.
+			--> Parameters use new naming scheme; sets inital NetMessage buffer size; hamsterballID/ hamsterballNewHP are now optional parameters.
+		
+		- Updated method `DamagePlayer`.
+			--> Removed some logging/ simplified some logic so it should be easier to decipher what the method is doing.
+			--> Additonally: documentation using ///summary/// blocks has been added as well.
+
+		- Updated method `HandleSpectatorRequest`.
+			--> Utilizes new "RemoveMySpectate" method; also just tried to restructure a little better
+
+	++ Message Handles
+		- Msg1 (AuthenticationRequest) handle method "HandleAuthenticationRequest" updated.
+			--> Uses new "WCSARS.Client" class to handle options like Party/ Fills better.
+		- Msg2 (AuthenticationResponse) send method "SendAuthResponse" added.
+			----
+		- Msg5 (ClientReadied) handle method "HandlePlayerReadied" updated.
+			--> Now only checks if the client is already stored in the player list or not/ readies them and stuff.
+			--> Previously did some of this + the building/ sending the response itself. The building/ sending has been moved to a separate method.
+		- Msg10 (PlayerCharacters) send method "SendAllPlayerCharacters" added.
+			--> Separates out the handle/ send; although the handle does very little in all honesty.
+			----
+		- Msg9 (MatchEnded) send method "SendRoundEnded" added.
+			----
+		- Msg14 (PlayerPositionUpdate) handle method `HandlePositionUpdate` updated.
+			--> Now utilizes new "MovementMode" system. Hopefully makes things a bit clearer.
+			--> Will now try setting the position of the hamsterball that the player is currently riding. (does not check for out of bounds so good luck)
+			----
+		- Msg21 (LootRequest-Match) handle method "HandleLootRequestMatch" updated.
+			--> Now utilizes "VerifyPlayer" to get player from the connection.
+			--> Also now utilizes new send method for Msg22.
+		- Msg21 (LootRequest-Lobby) handle method "ServerHandleLobbyLootRequest" updated.
+			--> Tries to make sure that the player actually exists in the player list/ NetMessage data doesn't crash the program.
+			--> Also now utilizes new send method for Msg22.
+		- Msg22 (LootedItem) send method "SendPlayerLootedItem" added.
+			--> Makes it so Msg21 handles are building/ sending this method themselves
+			--> Also makes it so there aren't a ton of repeated versions of this packet scattered about.
+			----
+		- Msg42 (MatchItemDrops) send method "SendEndScreenItemDrops" added.
+			----
+		- Msg51 (CoconutEatRequest) handle method "HandleCoconutEatRequest" updated.
+		- Msg52 (CoconutEaten) send method "SendCoconutEaten" added.
+			----
+		- Msg66 (EmoteRequest) handle method "HandleEmoteRequest" updated.
+			--> Does some more verification/ utilizes some updated functions.
+		- Msg67 (EmotePerformed) send method "SendEmotePerformed" updated.
+			--> Now only sends the NetMessage. Updating the actual server-side player data is done separately.
+			----
+		- Msg72 (DoodadDestroyRequest) handle method "HandleDoodadDestroyed" updated.
+			--> Now only does the handling of the packet data; also simply passes the read data onto a separate handle method for Doodad destruction.
+		- Msg73 (DoodadDestroyConfirm) send method "" updated.
+			--> Now only does the sending of packet data. Previously this method would figure out damage values and whatnot.
+			----
+		- Msg85 (MapMarkedRequest) handle method "HandleMapMarked" updated.
+		- Msg86 (MapMarked) send method "SendMapMarked" updated.
+			----
+		- Msg95 (TeammateDisconnected) send method "SendTeammateLeftMatch" updated.
+			--> Now only sends the NetMessage. Handling of leaving teammates is done elsewhere (HandleTeammateLeavingMatch).
+
+Player:
+	-----------
+	Note: moved to SARStuff.Players
+	-----------
+	- Added field `Client`.
+		--> Replaces field `Sender`.
+	- Added field `Placement`.
+	-----------
+	- Added method `EmoteStarted`.
+	- Added method `EmoteEnded`.
+	- Added method `AddTeammate`.
+		--> Makes life easier when trying to add teammates.
+	-----------
+	- Updated constructor.
+		--> Now takes a Client.
+	-----------
+	- Removed field `Sender`.
+	- | Removed field `PlayFabID`.
+	- | Removed field `isDev`.
+	- | Removed field `isMod`.
+	- | Removed field `isFounder`.
+	  |--> To access these, one now must use a Player's associated Client.
+	  |--> Perhaps a todo is to have op-levels so stuff isn't just locked behind these sorts of things.
+	-----------
+	- Renamed field `isReady` to `hasReadied`.
+	- Renamed field `VehicleID` to `HamsterballID`.
+
+Client:
+	-----------
+	Note: moved to SARStuff.Players
+	-----------
+	--- Finally does something
+	--- Used to represent the client player connected to the match.
+	--- Things like their NetConnection; Party; Fills; PlayFabID; etc. all go here. These get attached to players.
+
+
+SARConstants:
+	- Added to project.
+		--> This should make keeping track of things that should be constant a bit easier than previous.
+		--> Still several things should be added, such as json-keys/ NetMessage names; but it is a start.
+
+SARLevel:
+	- Now loads playerSpawns
+	- Utilzies SARConstants for tarp size.
+
+Vector2
+	- Added method `IsNear`.
+		--> Replaces Vector2.ValidDistance(a,b,t, TRUE)
+		--> Old method of checking for square distance within a range was redundant
+			---
+	- Added method `IsNearSqrt`.
+		--> Replaces Vector2.ValidDistance(a,b,t, FALSE)
+		--> This isn't ever used, but in case there is ever a time we really want more accuracy it is already here.
+			-----------
+	- | Renamed field `magnitudeSquared` to `sqrMagnitude`.
+	- | Renamed method `MoveToVector` to `MoveTowards`.
+	  |--> This is to be more in line with what Unity actually calls these methods.
+
+MovementMode:
+	- Added to project.
+
+
+Simply cleaning up/ re-styling:
+	- | Decal
+	- | DoodadType
+	- | Tile.
+	  |--> Overall nothing of significance has changed other than simply trying to make things more consistent/ easier to read
+
+
+Oopsies:
+	- Lobby section of ServerUpdateLoop was not using "UpdatePlayerEmotes" like the match section was.
+		--> This had allowed for infinite emoting for certain emotes; which this should no longer be the case.
+
+	- HandlePositionUpdate was not updating the postion of Hamsterballs a Player was riding.
+		--> This caused players within range of an explosive barrel to get hurt whilst their hamsterball stayed intact.
+
+	- Godded-players riding hamsterballs would have the attack confirm sound play when they were hit
+
++------------------------------------------------------
 
 +------------------------------------------------------
 	-- 6/8/23 --

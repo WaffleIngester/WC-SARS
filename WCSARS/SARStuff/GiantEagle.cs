@@ -17,7 +17,7 @@ namespace SARStuff
 		public Vector2 End { get; private set; }
 
         /// <summary> Whether this Giant Eagle has reached the end of its flight-path or not.</summary>
-        public bool HasReachedEnd { get => Vector2.ValidDistance(Position, End, 0.5f, true); }
+        public bool HasReachedEnd { get => Position.IsNear(End, 0.5f); }
 
         // Speed at which the eagle will move at.
         private const float _giantEagleMoveSpeed = 95f; // 0.90.2 OK
@@ -45,7 +45,7 @@ namespace SARStuff
         // Used in Math.UpdateGiantEagle
         public void UpdatePosition(float deltaTime)
         {
-            Position = Vector2.MoveToVector(Position, End, deltaTime * _giantEagleMoveSpeed);
+            Position = Vector2.MoveTowards(Position, End, deltaTime * _giantEagleMoveSpeed);
         }
 
         private void GenerateFlightPath() // can update this at some point; this is just for basics

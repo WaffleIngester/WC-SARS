@@ -25,11 +25,14 @@ namespace SARStuff
         private DoodadType(JSONNode data)
         {
             // doodadID
-            if (data["doodadID"]) DoodadID = data["doodadID"].AsInt;
-            else Logger.Failure("[DoodadType] No such key \"doodadID\".");
+            if (data["doodadID"])
+                DoodadID = data["doodadID"].AsInt;
+            else
+                Logger.Failure("[DoodadType] No such key \"doodadID\".");
 
             // collisionHeight
-            if (data["collisionHeight"]) CollisionHeight = (byte)data["collisionHeight"].AsInt;
+            if (data["collisionHeight"])
+                CollisionHeight = (byte)data["collisionHeight"].AsInt;
 
             // moveCollisionPts
             if (data["moveCollisionPts"])
@@ -113,56 +116,63 @@ namespace SARStuff
                 }
             }
 
-            // Destructible
-            if (data["destructible"]) Destructible = data["destructible"].AsBool;
+            // destructible (whether it is possible to destroy these types of doodads)
+            if (data["destructible"])
+                Destructible = data["destructible"].AsBool;
 
             // Destruct Damage Peak | Probs only Explosive Barrels
-            if (data["destructibleDamagePeak"]) DestructibleDamagePeak = data["destructibleDamagePeak"].AsFloat;
+            if (data["destructibleDamagePeak"])
+                DestructibleDamagePeak = data["destructibleDamagePeak"].AsFloat;
 
             // Destruct Damage Radius
-            if (data["destructibleDamageRadius"]) DestructibleDamageRadius = data["destructibleDamageRadius"].AsFloat;
+            if (data["destructibleDamageRadius"])
+                DestructibleDamageRadius = data["destructibleDamageRadius"].AsFloat;
 
             // Destruct Drops Loot
-            if (data["destructibleCanDropLoot"]) CanDropLoot = data["destructibleCanDropLoot"].AsBool;
+            if (data["destructibleCanDropLoot"])
+                CanDropLoot = data["destructibleCanDropLoot"].AsBool;
         }
 
         /// <summary>
-        /// Attempts to load every DoodadType as an array.
+        ///  Attempts to load every single DoodadType from _doodads.json.
         /// </summary>
-        /// <returns>Array contianing all the loaded-in Doodads.</returns>
+        /// <returns>An array of DoodadTypes representing every loaded DooadType.</returns>
         public static DoodadType[] GetAllDoodadTypes()
         {
-            if (AllDoodads != null) return AllDoodads;
-            string search = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\doodads.json";
+            if (AllDoodads != null)
+                return AllDoodads;
+
+            string search = AppDomain.CurrentDomain.BaseDirectory + @"datafiles\doodads.json";
             if (!File.Exists(search))
             {
                 Logger.Failure($"Failed to locate \"doodads.json\"!\nSearched: {search}");
                 Environment.Exit(22); // 20 = tiles; 21 = decals; 22 = doodads; 23 = weapons (goes in order of how they should be loaded)
             }
+
             string data = File.ReadAllText(search);
             JSONArray doodadData = JSON.Parse(data).AsArray;
+
             AllDoodads = new DoodadType[doodadData.Count];
             for (int i = 0; i < AllDoodads.Length; i++)
-            {
                 AllDoodads[i] = new DoodadType(doodadData[i]);
-            }
+
             return AllDoodads;
         }
 
         /// <summary>
-        /// Attempts to locate a DoodadType with the provided ID. (a DoodadType with an ID corresponding to the searched-id)
+        ///  Attempts to locate a DoodadType with an ID matching the provided searchID.
         /// </summary>
-        /// <param name="searchID">DoodadID to search for.</param>
-        /// <returns>The found DoodadType; NULL if otherwise.</returns>
+        /// <param name="searchID"> DoodadID to search for.</param>
+        /// <returns>The found DoodadType; otherwise, NULL.</returns>
         public static DoodadType GetDoodadFromID(int searchID)
         {
-            if (AllDoodads == null) GetAllDoodadTypes();
+            if (AllDoodads == null)
+                GetAllDoodadTypes();
+
             for (int i = 0; i < AllDoodads.Length; i++)
             {
                 if (AllDoodads[i]?.DoodadID == searchID)
-                {
                     return AllDoodads[i];
-                }
             }
             return null;
         }
@@ -172,9 +182,7 @@ namespace SARStuff
         /// </summary>
         public static void NullAllDoodadsList()
         {
-            //Logger.Warn("[DoodadType] Nulling AllDoodads...");
             AllDoodads = null;
-            //Logger.Success("[DoodadType] AllDoodads nulled! :]");
         }
     }
 }

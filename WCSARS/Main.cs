@@ -13,19 +13,24 @@ namespace WCSARS
 
             // Create necessary files for Match initialization.
             InitializeData();
-            ConfigLoader mCfg = new ConfigLoader();
-            Match mMatch;
 
-            if (args.Length > 0) // try loading using command line args. really basic, likely will just break
+            try
             {
-                mMatch = new Match(int.Parse(args[1]), args[0]); // executable.exe IP PORT -- notice how there's no "-"
-            }
-            else
-            {
-                mMatch = new Match(mCfg);
-            }
+                Match mMatch;
+                if (args.Length > 0) // executable.exe IP PORT -- notice how there's no "-"
+                    mMatch = new Match(int.Parse(args[1]), args[0]);
+                else
+                {
+                    ConfigLoader mCfg = new ConfigLoader();
+                    mMatch = new Match(mCfg);
+                }
 
-            // Do whatever stuff you want here 
+                // Do whatever stuff you want here
+            }
+            catch (Exception ex)
+            {
+                Logger.Failure($"Some sort of general, unhandled exception has occurred.\n{ex}");
+            }
         }
 
         /// <summary>
@@ -33,19 +38,20 @@ namespace WCSARS
         /// </summary>
         static void InitializeData()
         {
-            string location = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            Logger.DebugServer("Current Running Location:\n" + location);
+            string location = AppDomain.CurrentDomain.BaseDirectory;
             CreateFile(location + @"\player-data.json");
             CreateFile(location + @"\banned-players.json");
             CreateFile(location + @"\banned-ips.json");
         }
 
         /// <summary>
-        /// Creates file at the speciifed location, writes "[]" to it, then closes.
+        ///  Creates file at the speciifed location, writes "[]" to it, then closes.
         /// </summary>
         static void CreateFile(string filename)
         {
-            if (File.Exists(filename)) return; // Feel like no need to log anymore. At least right now :]
+            if (File.Exists(filename))
+                return;
+
             using (FileStream fileStream = File.Create(filename))
             {
                 fileStream.Write(new byte[] { 0x5B, 0X5D });

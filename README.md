@@ -34,7 +34,7 @@ Upon launching the program with all necessary data files acquired, the program w
 
 __To fix this,__ simply locate `server-config.txt` then change `server-ip` to either `127.0.0.1` (localhost), or your computer's local IP address. To find your local address (Windows) simply open command prompt, type `ipconfig`, and then look for `IPv4 Address... xxx.xxx.x.xxx)` (typically in the format `192.168.1.xxx`).
 
-To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMsg](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1428) to the server program correctly.
+To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMsg](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1412) to the server program correctly.
 
 Currently, there is no external program to hook onto the game and execute the join-server function with an arbitrarily-provided ip-address... but if someone wants to make one... hook me up :]
 
@@ -45,9 +45,11 @@ To separate these two extreemes, files that are necessary only for WC-SARS serve
 
 What are "datafiles" exactly?
 -
-In SAR, there are many data types that are built/ loaded using Unity's ["TextAsset"](https://docs.unity3d.com/Manual/class-TextAsset.html) asset type. This program relies on several of these data types in order to function properly (e.g. weapon/doodad data), and as such, this program too relies on "TextAssets".
+To put it simply, "datafiles" is the term I use to refer to all required data files from Super Animal Royale that utilize Unity's ["TextAsset"](https://docs.unity3d.com/Manual/class-TextAsset.html) asset type.
 
-These "assets" are no more than simple text-based files, usually in a .`json` format. A notable exception to this rule is the map data file, which is in a custom compressed-json format. So, it's fairly simple to just use [the same json-library](https://github.com/Bunny83/SimpleJSON) SAR uses to load these files (with some modifications after reading le code of course).
+These TextAssets can range from storing data related to weapons & cosmetic items, all the way to stuff like the types of decals seen around the game world & even the map data itself. These assets are super versatile! As somewhat mentioned before, SAR relies on these files to build/ represent certain types correctly (example: weapons). So, if we want to be accurate as to how the game would build its weapons, doodads, map, level collision grid, etc. we have to use these files as well.
+
+Well, actually, not EVERYTHING from these files is needed. Only the data that is actually used is required. Everything else aside from that is just taking up space. So, we don't necessarily need the files as-they-are, extracted from the game. We could instead use stripped-down/ customly written versions of them if we really wanted to. Which we do to some extent!
 
 Where do required files go?
 -
@@ -56,6 +58,18 @@ Most required files go in a subfolder known as `datafiles`. This folder should b
 Some files (`server-config.txt`, `banned-players.json`, etc.) are simply found within the running location of `WC-SARS.exe`.
 
 If none of this makes any sense, try downloading a release and looking at the folder structure for yourself. It is a bit hard to explain succinctly, and viewing it for yourself may prove more useful!
+
+Or perhaps something like this? (don't mind the incorrect formatting too much)
+```
+-- File Explorer
+	-- /WC-SARS/
+		-- datafiles/
+			-- mapdata.json
+			-- datafiles/doodaddata.json
+		-- wc-sars.exe
+		-- bannedlist.txt
+		-- admins.txt
+```
 
 More Information
 -
@@ -298,4 +312,4 @@ Libraries used (big thanks!):
 * Michael Lidgren -- [LidgrenNetwork](https://github.com/lidgren/lidgren-network-gen3)
 	- Networking library used by SAR; and so our lives are easier if we do too
 
-And thank the SAR devs for still not asking me to take this down ❤
+And thank the SAR devs for still not asking me to take this down ❤ (yet D:)

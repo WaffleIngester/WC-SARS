@@ -1,22 +1,27 @@
-﻿using Lidgren.Network;
-using SARStuff;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Threading;
 
-namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Client" field to hold Client-Data like No-Fill and stuff
+/*
+ * -- Idea --
+ * > What if: instead of many fields like "isAlive", "isDown", "isResurrecting", etc.; there would be only a couple state fields that are checked?
+ * ...this would not only reduce clutter, but also simplify things so one doesn't have to keep in mind to check against all other conflicting "isDoingXThing" fields.
+ *
+*/
+
+namespace SARStuff
 {
+    /// <summary>
+    ///  Represents a player character found in the overworld + their belongings and such!
+    /// </summary>
     public class Player
     {
         // Player Character Data!
-        public string PlayFabID;
-        public NetConnection Sender;
+        public Client Client;
         public short ID;
         public string Name = "愛子";
         public short AnimalID;          // ID of the Super Animal this Player is using
-        public short UmbrellaID;        // UmbrellaID -- Short
-        public short GravestoneID;      // Gravestone -- Short
+        public short UmbrellaID;        // UmbrellaID
+        public short GravestoneID;      // Gravestone
         public short DeathExplosionID;  // Death Explosion
         public short[] EmoteIDs;        // EmoteIDs -- an array which lists all the emotes this Player has equipped
         public short HatID;             // Hat
@@ -24,15 +29,16 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         public short BeardID;           // Beard
         public short ClothesID;         // Clothes
         public short MeleeID;           // Melee
-        public byte GunSkinCount;       // Gunskin1 --> Amount of GunSkins | Could just store in a different format but whatever
-        public short[] GunSkinKeys;     // Gunskin2 IDK //key  --> Gun... ID? | Could just store in a different format but whatever
-        public byte[] GunSkinValues;    // Gunskin3 IDK //value --> SkinKey for GunID ? | Could just store in a different format but whatever
+        public byte GunSkinCount;       // Gunskin1 ??? | # of skins?      | Could just store in a different format but whatever
+        public short[] GunSkinKeys;     // Gunskin2 ??? | gunskin key?     | Could just store in a different format but whatever
+        public byte[] GunSkinValues;    // Gunskin3 ??? | gunskin key val? | Could just store in a different format but whatever
+        //public Dictionary<short, byte> GunSkins;
 
-        // Position stuff / things that get updated quite a lot
-        public float MouseAngle = 0f;   // current look-angle for this Player
+        // Position stuff/ stuff that gets updated frequently
+        public float MouseAngle = 0f;       // current look-angle for this Player
         public Vector2 Position = new Vector2(508.7f, 496.7f);  // the current position of this player.
-        public byte WalkMode = 0;       // current "playerWalkMode" for this player (like running, jumping, crawling, downed, stunned) [v0.90.2 OK; may not exist in future versions]
-        public float LastPingTime = 0f; // lastReceivedPingTime
+        public MovementMode WalkMode = 0;   // current "playerWalkMode"; run, jump, crawl, etc. | v0.90.2 OK -- unknown whether kept or dropped in future update
+        public float LastPingTime = 0f;     // lastReceivedPingTime
 
         // Emote Stuff
         public bool isEmoting = false;  // whether this Player is currently emoting
@@ -40,7 +46,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         public Vector2 EmotePosition;   // position where this Player started emoting
         public DateTime EmoteEndTime;   // time at which this emote will end
 
-        // Others... ?
+        // Weapons/ Loot
         public byte ActiveSlot = 0;
         public LootItem[] LootItems = new LootItem[3];
         public byte[] Ammo = new byte[5];
@@ -49,7 +55,6 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         public short ThrowableCounter = -1; // AttackCount but throwables. You can't acquire throwables in lobby so no real need to reset.
         public Dictionary<short, Projectile> Projectiles = new Dictionary<short, Projectile>(); // Must be reset upon MatchStart (after Lobbby)
         public Dictionary<short, Projectile> ThrownNades = new Dictionary<short, Projectile>();
-        public List<Player> Teammates = new List<Player>(3);  // TBH, teams should be server-side...
 
         // Health Related
         public bool isAlive = true;     // whether this Player is currently alive or not.
@@ -75,8 +80,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         // Reviving
         public bool isReviving;     // whether this Player is currently reviving another.
         public short RevivingID;    // ID# of who this Player is reviving.
-
-        //  Downed-State
+        //  Downed
         public bool isDown;             // whether this Player is currently downed.
         public bool isBeingRevived;     // whether this Player is being revived.
         public short SaviourID;         // ID# of the Player reviving this Player.
@@ -85,19 +89,15 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         public byte TimesDowned;        // number of times that this Player has been downed
 
         // Weapon Stuff
-        public bool isReloading = false; // If this Player's ActiveSlot is updated while this is True, this gets set to False and Player auto cancels
-        // ^ Worked as intended server-side. However, as it turns out- cancel reload is ignored by the reloading Player.
+        // if Player.ActiveSlot is updated when this is true, then this should get set to false and their reload canceled.
+        // This works 100% as intendedd server-side, but sar works in mysterious ways and the client represented by this Player ignores it. LOL!
+        public bool isReloading = false; // program must pray that the actual client represented by this Player is truthful because game stinky
         public int LastThrowable = -1;
         //public DateTime ReloadFinishTime;
 
         // Vehicle
-        public short VehicleID = -1;
+        public short HamsterballID = -1;
         public Vector2 HamsterballVelocity;
-
-        // Color Bools
-        public bool isDev = false;
-        public bool isMod = false;
-        public bool isFounder = false;
 
         // Spectator
         public bool isGhosted = false;
@@ -105,22 +105,29 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         public short WhoImSpectating = -1;
 
         // Booleans
-        public bool isReady = false;
+        public bool hasReadied = false;
         public bool isGodmode = false;
-        public DateTime StunEndTime;
         public bool isStunned = false;
+        public DateTime StunEndTime;
 
         // Flight
-        /// <summary> Whether this Player has ejected from the eagle or they're still flying.</summary>
+        /// <summary> Whether this Player has ejected from the Giant Eagle or not.</summary>
         public bool hasEjected = false;
-        /// <summary> Whether this Player has ejected and is currently diving.</summary>
+
+        /// <summary> Whether this Player is currently "diving" whilst falling.</summary>
         public bool isDiving = false;
-        /// <summary> Whether this Player has touched the ground after ejecting. </summary>
+
+        /// <summary> Whether this Player has landed on the ground after ejecting from the Giant Eagle.</summary>
         public bool hasLanded = true; // True when in Lobby; reset to False on round-start
 
+        // other
+        public List<Player> Teammates = new List<Player>(3); // perhaps teams should be stored/ handled by Matches not Players.
+        public byte Placement = 0;
+
         // Create
-        public Player(short id, short characterID, short umbrellaID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, NetConnection senderAddress)
+        public Player(short id, short characterID, short umbrellaID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, Client client)
         {
+            Client = client;
             Name = thisName;
             ID = id;
             AnimalID = characterID;
@@ -136,7 +143,6 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
             GunSkinCount = skinCount;
             GunSkinKeys = skinKeys;
             GunSkinValues = skinValues;
-            Sender = senderAddress;
             LootItems = new LootItem[] {
                 new LootItem(-1, LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0)),
                 new LootItem(-1, LootType.Collectable, "NOTHING", 0, 0, new Vector2(0,0)),
@@ -150,7 +156,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// <returns>True if the Player is alive AND has landed; False if otherwise</returns>
         public bool IsPlayerReal()
         {
-            return isReady && isAlive && hasLanded && !isGhosted;
+            return hasReadied && isAlive && hasLanded && !isGhosted;
         }
 
         /// <summary>
@@ -181,27 +187,41 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         }
 
         /// <summary>
-        /// Resets this Player's Hamsterball-related fields to their defaults.
+        ///  Marks this Player as no longer riding a hamsterball; resetting their hamsterball-related fields to their default values.
         /// </summary>
         public void ResetHamsterball()
         {
             HamsterballVelocity = new Vector2(0f, 0f);
-            VehicleID = -1;
+            HamsterballID = -1;
         }
 
+        /// <summary>
+        ///  Marks this Player as riding a hamsterball; also setting which hamsterballID is now to be associated with them.
+        /// </summary>
+        /// <param name="pHamsterballID"> ID of the hamsterball that this Player is riding.</param>
+        public void SetHamsterball(short pHamsterballID)
+        {
+            HamsterballID = pHamsterballID;
+            HamsterballVelocity = new Vector2(0f, 0f);
+        }
+
+        /// <summary>
+        ///  Marks this Player as stunned.
+        /// </summary>
         public void Stun()
         {
             isStunned = true;
             StunEndTime = DateTime.UtcNow.AddSeconds(2.0f); // actual: 2s; may have to do earlier?
         }
 
+        #region Down/ Resurrectors
         /// <summary>
         /// Sets this Player into the "downed" state. Also sets all necessary downed-state related fields.
         /// </summary>
         /// <param name="nextBleedTImeSeconds">Time (in seconds) until this Player will begin taking bleed-out damage.</param>
-        public void DownKnock(float nextBleedTImeSeconds)
+        public void KnockDown(float nextBleedTImeSeconds)
         {
-            WalkMode = 5;
+            WalkMode = MovementMode.Downed;
             HP = 100; // knocked-hp gets reset to 100
             isDown = true;
             isBeingRevived = false;
@@ -213,7 +233,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// Sets this Player as being revived + who is reviving them.
         /// </summary>
         /// <param name="saviourPID"></param>
-        public void DownSetSaviour(short saviourPID)
+        public void SetMyResurrector(short saviourPID)
         {
             isBeingRevived = true;
             SaviourID = saviourPID;
@@ -224,7 +244,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// Resets this Player's downed-state fields related to taking bleed-out damage (Player is no longer being revived).
         /// </summary>
         /// <param name="nextBleedTImeSeconds">Time (in seconds) until this Player will begin taking bleed-out damage again.</param>
-        public void DownResetState(float nextBleedTImeSeconds)
+        public void ResurrectGotCanceledByRessorector(float nextBleedTImeSeconds)
         {
             isBeingRevived = false;
             SaviourID = -1;
@@ -234,12 +254,12 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// <summary>
         /// Resets this Player's downed-state-related fields and puts them in an alive-state with the provided HP. (does not effect Player.isAlive)
         /// </summary>
-        public void DownResurrect(byte resHP)
+        public void ReviveFromDownedState(byte resHP)
         {
             isDown = false;
             isBeingRevived = false;
             SaviourID = -1;
-            WalkMode = 1;
+            WalkMode = MovementMode.Walking;
             HP = resHP; // default is 25
         }
 
@@ -247,7 +267,7 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// Marks this Player as reviving another + the ID of who they are reviving.
         /// </summary>
         /// <param name="downedPID">The PlayerID of the downed-player being revived.</param>
-        public void SaviourSetRevivee(short downedPID)
+        public void SetWhoImRessing(short downedPID)
         {
             isReviving = true;
             RevivingID = downedPID;
@@ -256,54 +276,87 @@ namespace WCSARS // TODO:: Player goes to SARStuff; Player eventually gets a "Cl
         /// <summary>
         /// Resets this Player's reviving-related fields (must be the Player who is reviving another).
         /// </summary>
-        public void SaviourFinishedRessing()
+        public void FinishedRessingPlayer()
         {
             isReviving = false;
             RevivingID = -1;
         }
+        #endregion Down/ Resurrectors
 
+        /// <summary>
+        ///  Determines the number of alive & non-downed Players this Player is teammates with.
+        /// </summary>
+        /// <returns> The number of non-downed, alive teammates of this Player.</returns>
         public int AliveNonDownTeammteCount()
         {
-            if (Teammates == null || Teammates.Count == 0) return 0;
-            int aliveTeammatesCount = 0;
-            //int tmp_Count = Teammates.Count
-            for (int i = 0; i < Teammates.Count; i++) if ((Teammates[i]?.isAlive == true) && (Teammates[i]?.isDown == false)) aliveTeammatesCount++;
-            return aliveTeammatesCount;
+            int ret = 0;
+            foreach (Player mate in Teammates)
+            {
+                if (mate.isAlive && !mate.isDown)
+                    ret++;
+            }
+            return ret;
         }
 
         /// <summary>
-        /// Returns whether or not this Player has a teammate with the provided PlayerID.
+        ///  Determines whether the provided PlayerID is a teammate of this current Player. 
         /// </summary>
         /// <param name="pID">PlayerID to search for.</param>
-        /// <returns>True if pID is the ID of one of this Player's teammates; False if otherwise.</returns>
+        /// <returns> True if pID matches any ID of this current Player's teammates; False if otherwise.</returns>
         public bool IsPIDMyTeammate(short pID)
         {
-            // cache count/ figure out whether or not there's any point
             int teamCount = Teammates != null ? Teammates.Count : -1;
-            if (teamCount <= 0) return false;
+            if (teamCount <= 0)
+                return false;
 
             for (int i = 0; i < teamCount; i++)
             {
-                if (Teammates[i]?.ID == pID) return true;
+                if (Teammates[i]?.ID == pID)
+                    return true;
             }
             return false;
         }
 
-        public override string ToString() => $"<{Name} ({ID})>";
-
-        // just for messing around/testing
-        /*public async Task<bool> DoDamage(byte pDamage)
+        /// <summary>
+        /// Sets this Player as emoting with the provided parameters.
+        /// </summary>
+        /// <param name="pEmoteID">ID of the Emote this Player is performing.</param>
+        /// <param name="pEmotePosition">Position that this Player is performing the emote.</param>
+        /// <param name="pEmoteDuration">How long the emote will last for (-1 = infinite).</param>
+        public void EmoteStarted(short pEmoteID, Vector2 pEmotePosition, float pEmoteDuration)
         {
-            Logger.DebugServer($"{DateTime.UtcNow} Delaying for 2s....");
-            await Task.Delay(2000);
-            Logger.DebugServer($"{DateTime.UtcNow} Finished delay");
-            if ((HP - pDamage) < 0)
-            {
-                //HP = 0;
-                return true;
-            }
-            //HP -= pDamage;
-            return false;
-        }*/
+            isEmoting = true;
+            EmoteID = pEmoteID;
+            EmotePosition = pEmotePosition;
+            if (pEmoteDuration == -1)
+                EmoteEndTime = DateTime.MaxValue;
+            else
+                EmoteEndTime = DateTime.UtcNow.AddSeconds(pEmoteDuration); // emote duration is always in seconds
+        }
+
+        /// <summary>
+        /// Sets this Player as not emoting by setting <see cref="EmoteID"/> to -1 and <see cref="isEmoting"/> to False.
+        /// </summary>
+        public void EmoteEnded()
+        {
+            isEmoting = false;
+            EmoteID = -1;
+        }
+
+        /// <summary>
+        ///  Attempts to add the provided Player to this current player's teammate list.
+        /// </summary>
+        /// <param name="pTeammate"> Player to attempt to add.</param>
+        /// <returns> True if the Player was added successfully; otherwise, False.</returns>
+        public bool AddTeammate(Player pTeammate)
+        {
+            if (pTeammate == this || Teammates.Contains(pTeammate))
+                return false;
+
+            Teammates.Add(pTeammate);
+            return true;
+        }
+
+        public override string ToString() => $"<{Name} ({ID})>";
     }
 }

@@ -8,18 +8,35 @@ namespace SARStuff
 {
     internal class Decal
 	{
+		/// <summary>
+		///  Array of every currently-loaded Decal in memory.
+		/// </summary>
 		public static Decal[] AllDecals { get; private set; }
+
+		/// <summary>
+		///  ID of this DecalType.
+		/// </summary>
 		public readonly int DecalID;
+
+		/// <summary>
+		///  List of walkable collision points for this decal.
+		/// </summary>
 		public readonly List<Rectangle> WalkableSpots;
+
+		/// <summary>
+		///  List of non-walkable collision points for this decal.
+		/// </summary>
 		public readonly List<Rectangle> NonWalkableSpots;
 
 		private Decal(JSONNode node)
 		{
-			// ID
-			if (node["decalID"]) DecalID = node["decalID"];
-			else Logger.Failure("No key \"nonWalkableRects\" found for this node.");
+			// decalID
+			if (node["decalID"])
+				DecalID = node["decalID"];
+			else
+				Logger.Failure("[Decal] No such key \"decalID\" for json node!!!");
 
-			// Walkable Spots
+			// walkableRects (walkable collision spots)
 			if (node["walkableRects"])
 			{
 				string walkableRectsText = node["walkableRects"];
@@ -32,12 +49,15 @@ namespace SARStuff
 						string[] sep1 = splitups[i].Split('~');
 						string[] sep2 = sep1[0].Split(',');
 						string[] sep3 = sep1[1].Split('x');
-						WalkableSpots.Add(new Rectangle(Convert.ToSingle(sep2[0]), Convert.ToSingle(sep2[1]), Convert.ToSingle(sep3[0]), Convert.ToSingle(sep3[1])));
+						WalkableSpots.Add(new Rectangle(Convert.ToSingle(sep2[0]),
+														Convert.ToSingle(sep2[1]),
+														Convert.ToSingle(sep3[0]),
+														Convert.ToSingle(sep3[1])));
 					}
 				}
 			}
 
-			// Non-walkable Spots
+			// nonWalkableRects (non-walkable collision spots)
 			if (node["nonWalkableRects"])
 			{
 				string nonWalkableRects = node["nonwalkableRects"];
@@ -62,13 +82,16 @@ namespace SARStuff
 		/// <returns>An array of all DecalTypes.</returns>
 		public static Decal[] GetAllDecals()
 		{
-			if (AllDecals != null) return AllDecals;
-			string search = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\decals.json";
+			if (AllDecals != null)
+				return AllDecals;
+			
+			string search = AppDomain.CurrentDomain.BaseDirectory + @"datafiles\decals.json";
 			if (!File.Exists(search))
 			{
 				Logger.Failure($"Failed to locate \"decals.json\"!\nSearched: {search}");
 				Environment.Exit(21); // 20 = tiles; 21 = decals; 22 = doodads; 23 = weapons (goes in order of how they should be loaded)
 			}
+
 			string data = File.ReadAllText(search);
 			JSONArray tileData = JSON.Parse(data).AsArray;
 			AllDecals = new Decal[tileData.Count];
@@ -86,11 +109,14 @@ namespace SARStuff
 		/// <returns>The found Decal; NULL if otherwise.</returns>
 		public static Decal GetDecalFromID(int searchID)
         {
-			if (AllDecals == null) GetAllDecals();
+			if (AllDecals == null)
+				GetAllDecals();
+
 			for (int i = 0; i < AllDecals.Length; i++)
             {
-				if (AllDecals[i]?.DecalID == searchID) return AllDecals[i];
-            }
+				if (AllDecals[i]?.DecalID == searchID)
+					return AllDecals[i];
+			}
 			return null;
         }
 
@@ -99,9 +125,7 @@ namespace SARStuff
 		/// </summary>
 		public static void NullAllDecals()
 		{
-			//Logger.Warn("[Decal] Nulling AllDecals...");
 			AllDecals = null;
-			//Logger.Success("[Decal] AllDecals nulled! :]");
 		}
 	}
 }

@@ -25,6 +25,12 @@ namespace SARStuff
         public CollisionType[][] CollisionGrid { get; private set; }
 
         // Loadable from map data
+
+        /// <summary>
+        ///  List of spots that joining players can spawn at.
+        /// </summary>
+        public List<Vector2> PlayerSpawns; // todo - optionally use these when players spawn in!
+
         /// <summary>
         /// A list containing all Doodads within this SARLevel.
         /// </summary>
@@ -65,25 +71,31 @@ namespace SARStuff
         public Dictionary<int, Hamsterball> Hamsterballs { get; private set; }
 
         /// <summary>
-        /// The seed used by this SARLevel to generate the inital LootItem list.
+        ///  Seed used to generate this SARLevel's initial LootItem list.
         /// </summary>
         public readonly uint LootSeed;
 
         /// <summary>
-        /// The seed used by this SARLevel to generate the Coconut list.
+        ///  Seed used to generate this SARLevel's Coconut list.
         /// </summary>
         public readonly uint CoconutSeed;
 
         /// <summary>
-        /// The seed used by this SARLevel to generate the Hamsterball list.
+        ///  Seed used to generate this SARLevel's Hamsterball list.
         /// </summary>
         public readonly uint HamsterballSeed;
 
 
-        private Doodad _rebelHideoutDoor;   // Sliding door that gets moved around and stuff!
-        private Int32Point _barnTarpSpawn;  // Inital position of the barn tarp
-        private const int tarpSizeX = 97;   // barn tarp width
-        private const int tarpSizeY = 67;   // barn tarp height
+        /// <summary>
+        ///  Doodad representing the door to the hideout found in Super Animal Farm.
+        /// </summary>
+        private Doodad _rebelHideoutDoor;
+
+        /// <summary>
+        ///  Location where the tarp covering the Rebel Hideout in Super Animal Farm spawns.
+        /// </summary>
+        private Int32Point _barnTarpSpawn = new Int32Point(-1, -1);
+
         // TODO: barn tarp opening properly. the room is easy, just take the origin / size = all spots to remove
         // harder part is the door (which will need to account for collisionHeight) and also the other doodads that should be stopping you lol
         // because if you remove the whole barn tarp you can actually walk into the walls and stuff. which is pretty funny, but unintentional.
@@ -102,15 +114,16 @@ namespace SARStuff
         /// </summary>
         private void LoadLol() // Good-enough v0.90.2
         {
-            #region LoadJSON
-            string search = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\earlyaccessmap1.txt";
+            // honestly, I feel like we could potentially represent this better ourselves somehow
+            // load level data...
+            string search = AppDomain.CurrentDomain.BaseDirectory + @"datafiles\earlyaccessmap1.txt";
             if (!File.Exists(search))
             {
                 Logger.Failure($"Failed to locate \"earlyaccessmap1.txt\"!\nSearched: {search}");
                 Environment.Exit(19); // 19 = map data; 20 = tiles; 21 = decals; 22 = doodads; 23 = weapons (sorta based on the order loaded here)
             }
             JSONNode levelJSON = JSONNode.LoadFromFile(search);
-            #endregion LoadJSON
+            // end of loading level data into JSONNode
 
             LevelWidth = levelJSON["levelWidth"].AsInt;
             LevelHeight = levelJSON["levelHeight"].AsInt;
@@ -130,7 +143,6 @@ namespace SARStuff
             for (int i = 0; i < numOTiles; i++)
             {
                 JSONObject tileNode = levelJSON["tilesList"][i].AsObject;
-                // Bsae values
                 int id = tileNode["i"].AsInt;
                 Tile tile = Tile.GetTileFromID(id);
                 if (tile == null)
@@ -138,11 +150,12 @@ namespace SARStuff
                     Logger.Warn($"[SARLevel - Tiles] TileID \"{id}\" gave a null return.");
                     continue;
                 }
-                // Initial Position & Size (unsure why it is multiplied by 9, but it certainly has to!)
+
+                // stored position & size is divided by 9. not entirely sure why
                 Int32Point position = new Int32Point(tileNode["x"].AsInt * 9, tileNode["y"].AsInt * 9);
                 Int32Point size = new Int32Point(tileNode["w"].AsInt * 9, tileNode["h"].AsInt * 9);
 
-                // Place CollisionPoints
+                // place collision points for this Tile on ColliionGrid
                 if (tile.Walkable)
                 {
                     int tile_maxX = position.x + size.x; // MaxPos X
@@ -156,7 +169,8 @@ namespace SARStuff
                     }
                 }
             }
-            Tile.NullAllTiles(); // Clear AllTiles from memory.
+            Tile.NullAllTiles(); // Free Tile.AllTiles/ any that are not currently in use from memory
+
             //Logger.Basic("[SARLevel - Tiles] Done!");
             #endregion Tiles
 
@@ -176,6 +190,8 @@ namespace SARStuff
                     Logger.Failure($"[SARLevel - Decals] Couldn't locate DecalID \"{decalID}\"!");
                     continue;
                 }
+
+                // place this Decal's collision spots on the collision grid
                 if (decal.WalkableSpots != null)
                 {
                     foreach (Rectangle rect in decal.WalkableSpots)
@@ -188,7 +204,8 @@ namespace SARStuff
                         {
                             for (int y = n2; y < n4; y++)
                             {
-                                if ((x < LevelWidth) && (y < LevelHeight)) CollisionGrid[x][y] = CollisionType.None;
+                                if ((x < LevelWidth) && (y < LevelHeight))
+                                    CollisionGrid[x][y] = CollisionType.None;
                             }
                         }
                     }
@@ -231,21 +248,24 @@ namespace SARStuff
                 {
                     Logger.Failure($"[SARLevel - Decals] Couldn't locate DecalID \"{doodadID}\"!");
                     continue;
-                } else if (doodad.Destructible) Doodads.Add(new Doodad(doodad, new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat)));
-                else if (doodad.DoodadID == 5282)
-                {
-                    _rebelHideoutDoor = new Doodad(doodad, new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat));
                 }
+                else if (doodad.Destructible)
+                    Doodads.Add(new Doodad(doodad, new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat)));
+                else if (doodad.DoodadID == 5282)
+                    _rebelHideoutDoor = new Doodad(doodad, new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat));
+
                 if (doodad.MovementCollisionPts != null) // Array version as opposed to the List<T> one
                 {
                     for (int j = 0; j < doodad.MovementCollisionPts.Length; j++)
                     {
                         int x = doodadPosition.x + doodad.MovementCollisionPts[j].x;
                         int y = doodadPosition.y + doodad.MovementCollisionPts[j].y;
+
                         if ((x < LevelWidth) && (y < LevelHeight))
                         {
                             // HeightGrid stuff here too, but not handled
-                            if (CollisionGrid[x][y] != CollisionType.MovementAndSight) CollisionGrid[x][y] = CollisionType.Movement;
+                            if (CollisionGrid[x][y] != CollisionType.MovementAndSight)
+                                CollisionGrid[x][y] = CollisionType.Movement;
                         }
                     }
                 }
@@ -271,31 +291,32 @@ namespace SARStuff
             // OK? - v0.90.2
             #region Campfires
             Logger.Header("[SARLevel - Campfires] Beginning to load campfires...");
-
-            Campfires = new Campfire[levelJSON["campfires"].Count];
-            for (int i = 0; i < Campfires.Length; i++)
+            if (levelJSON["campfires"] != null)
             {
-                JSONNode subNode = levelJSON["campfires"][i];
-                Vector2 position = new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat);
-                Campfires[i] = new Campfire(position);
-
-                int x1 = (int)position.x - 6;
-                int y1 = (int)position.y - 4;
-                int x2 = (int)position.x + 6;
-                int y2 = (int)position.y + 6;
-                for (int x = x1; x <= x2; x++) // unsure what is being achieved right now and really don't feel like messing things up.
+                Campfires = new Campfire[levelJSON["campfires"].Count];
+                for (int i = 0; i < Campfires.Length; i++)
                 {
-                    for (int y = y1; y <= y2; y++)
+                    Vector2 position = new Vector2(levelJSON["campfires"][i]["x"].AsFloat, levelJSON["campfires"][i]["y"].AsFloat);
+                    Campfires[i] = new Campfire(position);
+
+                    int campfireHitboxWidthMIN = (int)position.x - 6;
+                    int campfireHitboxHeightMIN = (int)position.y - 4;
+                    int campfireHitboxWidthMAX = (int)position.x + 6;
+                    int campfireHitboxHeightMAX = (int)position.y + 6;
+                    for (int x = campfireHitboxWidthMIN; x <= campfireHitboxWidthMAX; x++)
                     {
-                        if (x != x1 || y != y1)
+                        for (int y = campfireHitboxHeightMIN; y <= campfireHitboxHeightMAX; y++)
                         {
-                            if (x != x2 || y != y1)
+                            if (x != campfireHitboxWidthMIN || y != campfireHitboxHeightMIN)
                             {
-                                if (x != x1 || y != y2)
+                                if (x != campfireHitboxWidthMAX || y != campfireHitboxHeightMIN)
                                 {
-                                    if (x != x2 || y != y2)
+                                    if (x != campfireHitboxWidthMIN || y != campfireHitboxHeightMAX)
                                     {
-                                        if ((x < LevelWidth) && (y < LevelHeight)) CollisionGrid[x][y] = CollisionType.Movement;
+                                        if (x != campfireHitboxWidthMAX || y != campfireHitboxHeightMAX)
+                                        {
+                                            if ((x < LevelWidth) && (y < LevelHeight)) CollisionGrid[x][y] = CollisionType.Movement;
+                                        }
                                     }
                                 }
                             }
@@ -303,27 +324,34 @@ namespace SARStuff
                     }
                 }
             }
+            else
+                Logger.Failure($"[SARLevel - Campfires] No key \"campfires\"!");
             //Logger.Basic("[SARLevel - Campfires] Done!");
             #endregion Campfires
 
             // OK - v0.90.2
+            // todo - level height collision-height grid if that is ever added...
             #region BarnTarp
             Logger.Header("[SARLevel - BarnTarp] Beginning to load barn tarp...");
             if (levelJSON["barnTarp"] != null)
             {
-                Int32Point tarpSpawn = new Int32Point(levelJSON["barnTarp"]["x"].AsInt, levelJSON["barnTarp"]["y"].AsInt);
-                _barnTarpSpawn = tarpSpawn;
-                int tarpSpawnOffsetX = tarpSpawn.x + tarpSizeX; // 97
-                int tarpSpawnOffsetY = tarpSpawn.y + tarpSizeY; // 67
-                for (int x = tarpSpawn.x; x < tarpSpawnOffsetX; x++)
+                Int32Point _barnTarpSpawn = new Int32Point(levelJSON["barnTarp"]["x"].AsInt, levelJSON["barnTarp"]["y"].AsInt);
+                int tarpSpawnOffsetX = _barnTarpSpawn.x + SARConstants.BarnHideoutTarpSizeX;
+                int tarpSpawnOffsetY = _barnTarpSpawn.y + SARConstants.BarnHideoutTarpSizeY;
+                for (int x = _barnTarpSpawn.x; x < tarpSpawnOffsetX; x++)
                 {
-                    for (int y = (tarpSpawn.y - 11); y < tarpSpawnOffsetY; y++)
+                    for (int y = _barnTarpSpawn.y - 11; y < tarpSpawnOffsetY; y++)
                     {
-                        if ((x < LevelWidth) && (y < LevelHeight) && (CollisionGrid[x][y] != CollisionType.MovementAndSight)) CollisionGrid[x][y] = CollisionType.Movement;
+                        if ((LevelWidth > x) && (LevelHeight > y))
+                        {
+                            if (CollisionGrid[x][y] != CollisionType.MovementAndSight)
+                                CollisionGrid[x][y] = CollisionType.Movement;
+                        }
                     }
                 }
             }
-            else Logger.Failure("[SARLevel - BarnTarp] Key \"barnTarp\" does not exist.");
+            else
+                Logger.Failure("[SARLevel - BarnTarp] Key \"barnTarp\" does not exist.");
             //Logger.Basic("[SARLevel - BarnTarp] Done!");
             #endregion BarnTarp
 
@@ -347,7 +375,8 @@ namespace SARStuff
                     }
                 }
             }
-            else Logger.Failure($"[SARLevel - Coconuts] No key \"coconuts\"!");
+            else
+                Logger.Failure($"[SARLevel - Coconuts] No key \"coconuts\"!");
             //Logger.Basic("[SARLevel - Coconuts] Done!");
             #endregion Coconuts
 
@@ -371,7 +400,8 @@ namespace SARStuff
                     }
                 }
             }
-            else Logger.Failure($"[SARLevel - Hamsterballs] No key \"vehicles\"!");
+            else
+                Logger.Failure($"[SARLevel - Hamsterballs] No key \"vehicles\"!");
             //Logger.Basic("[SARLevel - Hamsterballs] Done!");
             #endregion Hamsterballs
 
@@ -409,60 +439,84 @@ namespace SARStuff
             bool doBetterGen;   // Whether to have a higher chance to get better loot 
             uint rngNum;        // Number returned on an RNG attempt
             uint minGenNum;     // Mini value that can be generated...
-            // RNG Stuff Still-- This is used for generating Weapons
-            List<short> WeaponsByFrequency = new List<short>();
+
+            // build the weighted list of spawnable weapons; "spawnFrequency" from _weapons.txt is used for this purpose
+            List<short> weightedSpawnableWeapons = new List<short>();
             Weapon[] allWeapons = Weapon.GetAllWeaponTypes();
             for (int i = 0; i < allWeapons.Length; i++)
             {
                 for (int j = 0; j < allWeapons[i].SpawnFrequency; j++)
                 {
-                    WeaponsByFrequency.Add(allWeapons[i].JSONIndex);
+                    weightedSpawnableWeapons.Add(allWeapons[i].JSONIndex);
                 }
             }
 
-            // Go through every loot tile and try spawning something in!
             for (int i = 0; i < totalSpawnSpots; i++)
             {
-                // Set LootIDs!
+                // increment loot counters/ reset RNG values
                 currentLootID = LootCounter;
-                LootCounter++; // always increments no matter way ig
+                LootCounter++;
+
+                // increased chances of better loot
                 doBetterGen = false;
                 minGenNum = 0U;
 
-                // See if this tile is a better loot tile...
                 if (i >= lootSpotsNormal)
                 {
                     doBetterGen = true;
                     minGenNum = 20U;
                 }
+
+
                 // Now roll!
                 rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
 
-                // Figure out what to do/spawn
-                if (rngNum <= 33.0) continue; // 33 or less? You get NOTHING! (maybe) (maybe also || (rngNum > 59 && rngNum <= 60))?
+                // this is messy -- someone can probably find a better way of doing this junk than I can at this time
+                //
+                // one should note purposeful gaps. For example: values [50.1 - 60.0] are intended to not spawn anything 
+
+                if (rngNum <= 33.0)
+                    continue; // <=33 == no item spawns
+
                 if (rngNum > 33.0 && rngNum <= 47.0) // Drinks
                 {
-                    byte juiceAmount = 40;
-
-                    if (doBetterGen) minGenNum = 15U;
+                    if (doBetterGen)
+                        minGenNum = 15U;
                     rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
-                    if (rngNum <= 55) juiceAmount = 10;
-                    else if (rngNum <= 89) juiceAmount = 20;
 
-                    LootItem drinkLoot = new LootItem(currentLootID, LootType.Juice, $"Health Juice-{juiceAmount}", 0, juiceAmount, lootSpots[i]);
+                    byte juiceAmount = 40;
+                    if (rngNum <= 55)
+                        juiceAmount = 10;
+                    else if (rngNum <= 89)
+                        juiceAmount = 20;
+
+                    LootItem drinkLoot = new LootItem(currentLootID,
+                                            LootType.Juice,
+                                            $"Health Juice-{juiceAmount}",
+                                            0,
+                                            juiceAmount,
+                                            lootSpots[i]);
                     LootItems.Add(currentLootID, drinkLoot);
                 }
                 else if (rngNum <= 59.0) // Armor
                 {
-                    if (doBetterGen) minGenNum = 24U;
+                    if (doBetterGen)
+                        minGenNum = 24U;
                     rngNum = mersenneTwister.NextUInt(minGenNum, 100U);
 
                     byte armorTier = 3;
-                    if (rngNum <= 65.0) armorTier = 1;
-                    else if (rngNum <= 92.0) armorTier = 2;
+                    if (rngNum <= 65.0)
+                        armorTier = 1;
+                    else if (rngNum <= 92.0)
+                        armorTier = 2;
 
                     // LootItems.Rarity = armor tier; LootItems.GiveAmout = amount of armor ticks.
-                    LootItem armorLoot = new LootItem(currentLootID, LootType.Armor, $"Armor-{armorTier}", armorTier, armorTier, lootSpots[i]);
+                    LootItem armorLoot = new LootItem(currentLootID,
+                                            LootType.Armor,
+                                            $"Armor-{armorTier}",
+                                            armorTier,
+                                            armorTier,
+                                            lootSpots[i]);
                     LootItems.Add(currentLootID, armorLoot);
                 }
                 else if (rngNum > 60.0 && rngNum <= 66.0) // Tape
@@ -470,31 +524,51 @@ namespace SARStuff
                     LootItem tapeLoot = new LootItem(currentLootID, LootType.Tape, "Tape (x1)", 0, 1, lootSpots[i]);
                     LootItems.Add(currentLootID, tapeLoot);
                 }
-                else if (rngNum > 66.0) // Weapon Generation toiemm!! -- The .GiveAmount property becomes the amount to give/amount of ammo the gun has.
+                else if (rngNum > 66.0) // Weapons [Guns & Throwables]
                 {
-                    // Find le weapon
-                    rngNum = mersenneTwister.NextUInt(0U, (uint)WeaponsByFrequency.Count);
-                    int leGenIndex = WeaponsByFrequency[(int)rngNum];
-                    Weapon foundWeapon = allWeapons[leGenIndex];
+                    // note -- LootItem.GiveAmount = numOfAmmoInWeapon
 
-                    // Make Le Weapon
+                    // find which weapon to generate
+                    rngNum = mersenneTwister.NextUInt(0U, (uint)weightedSpawnableWeapons.Count);
+                    int genWeaponIndex = weightedSpawnableWeapons[(int)rngNum];
+                    Weapon foundWeapon = allWeapons[genWeaponIndex];
+
+                    // substats
                     if (foundWeapon.WeaponType == WeaponType.Gun)
                     {
-                        // Figure out rarity
-                        byte rarity = 0;
-                        if (doBetterGen) minGenNum = 22U;
+                        // "better loot" in this case is higher-rarity weapons-- just to make that clear.
+                        if (doBetterGen)
+                            minGenNum = 22U;
                         minGenNum = mersenneTwister.NextUInt(minGenNum, 100U);
-                        // See if should gen higher-rarity item...
-                        if (minGenNum > 58.0 && minGenNum <= 80.0) rarity = 1;
-                        else if (minGenNum > 80.0 && minGenNum <= 91.0) rarity = 2;
-                        else if (minGenNum > 91.0 && minGenNum <= 97.0) rarity = 3;
-                        // Verify rarity isn't too high nor low...
-                        if (rarity > foundWeapon.RarityMaxVal) rarity = foundWeapon.RarityMaxVal;
-                        if (rarity < foundWeapon.RarityMinVal) rarity = foundWeapon.RarityMinVal;
-                        // Make gun...
-                        LootItem gunLoot = new LootItem(currentLootID, WeaponType.Gun, foundWeapon.Name, rarity, (byte)foundWeapon.ClipSize, foundWeapon.JSONIndex, lootSpots[i]);
+
+
+                        // actual rarity rolls using the higher/ lower base odds determiend from above
+                        byte rarity = 0;
+                        if (minGenNum > 58.0 && minGenNum <= 80.0)
+                            rarity = 1;
+                        else if (minGenNum > 80.0 && minGenNum <= 91.0)
+                            rarity = 2;
+                        else if (minGenNum > 91.0 && minGenNum <= 97.0)
+                            rarity = 3;
+
+                        // out of bounds rarity checking...
+                        if (rarity > foundWeapon.RarityMaxVal)
+                            rarity = foundWeapon.RarityMaxVal;
+
+                        if (rarity < foundWeapon.RarityMinVal)
+                            rarity = foundWeapon.RarityMinVal;
+
+                        // actually adding the weapon into list of available loot
+                        LootItem gunLoot = new LootItem(currentLootID,
+                                            WeaponType.Gun,
+                                            foundWeapon.Name,
+                                            rarity,
+                                            (byte)foundWeapon.ClipSize,
+                                            foundWeapon.JSONIndex,
+                                            lootSpots[i]);
                         LootItems.Add(currentLootID, gunLoot);
-                        // Spawn in ammo as welll
+
+                        // ammo -- this was the real messy part as well!
                         float[] ammoSpotsX = new float[] { -7f, 7f };
                         float[] ammoSpotsY = new float[2];
                         for (int lol = 0; lol < 2; lol++)
@@ -509,20 +583,34 @@ namespace SARStuff
                                 ammoSpotsY[1] = 4f;
                                 break;
                             }
-                        }
+                        } // ^^ this gets positions where we can spawn the ammo loot items in the world...
+
+                        // ...but now we can actually spawn ammo items in
                         for (int asp = 0; asp < 2; asp++)
                         {
-                            // LootItems.GiveAmount stays the same, BUT! LootItems.Rarity is the ammo type!!
+                            // LootItem.GiveAmount used normally again; HOWEVER: LootItem.Rarity is "ammoType".
                             currentLootID = LootCounter;
                             LootCounter++;
+
                             Vector2 spot = lootSpots[i] + new Vector2(ammoSpotsX[asp], ammoSpotsY[asp]);
-                            LootItem ammoLoot = new LootItem(currentLootID, LootType.Ammo, $"Ammo-{foundWeapon.AmmoType}", foundWeapon.AmmoType, foundWeapon.AmmoSpawnAmount, spot);
+                            LootItem ammoLoot = new LootItem(currentLootID,
+                                                LootType.Ammo,
+                                                $"Ammo-{foundWeapon.AmmoType}",
+                                                foundWeapon.AmmoType,
+                                                foundWeapon.AmmoSpawnAmount,
+                                                spot);
                             LootItems.Add(currentLootID, ammoLoot);
                         }
                     }
                     else if (foundWeapon.WeaponType == WeaponType.Throwable)
                     {
-                        LootItem throwLoot = new LootItem(currentLootID, WeaponType.Throwable, foundWeapon.Name, 0, foundWeapon.SpawnSizeOverworld, foundWeapon.JSONIndex, lootSpots[i]);
+                        LootItem throwLoot = new LootItem(currentLootID,
+                                                WeaponType.Throwable,
+                                                foundWeapon.Name,
+                                                0,
+                                                foundWeapon.SpawnSizeOverworld,
+                                                foundWeapon.JSONIndex,
+                                                lootSpots[i]);
                         LootItems.Add(currentLootID, throwLoot);
 
                     }
@@ -530,6 +618,24 @@ namespace SARStuff
             }
             //Logger.Basic("[SARLevel - LootItems] Done!");
             #endregion Loot Items
+
+            // OK - v0.90.2
+            #region PlayerSpawns
+            Logger.Header("[SARLevel - PlayerSpawns] Beginning to load player spawn spots...");
+            if (levelJSON["playerSpawns"] != null)
+            {
+                int playerSpawnCount = levelJSON["playerSpawns"].Count;
+                PlayerSpawns = new List<Vector2>(playerSpawnCount);
+                for (int i = 0; i < playerSpawnCount; i++)
+                {
+                    float x = levelJSON["playerSpawns"][i]["x"].AsFloat;
+                    float y = levelJSON["playerSpawns"][i]["y"].AsFloat;
+                    PlayerSpawns.Add(new Vector2(x, y));
+                }
+            }
+            else
+                Logger.Warn("[SARLevel - PlayerSpawns] key 'playerSpawns' does not exist.");
+            #endregion PlayerSpawns
 
             // OK - v0.90.2
             #region Molecrate Spots
@@ -543,7 +649,8 @@ namespace SARStuff
                     MolecrateSpots[i] = new Vector2(subNode["x"].AsFloat, subNode["y"].AsFloat);
                 }
             }
-            else Logger.Failure("[SARLevel - MoleSpawns] No such key in LevelJSON \"moleSpawns\"!");
+            else
+                Logger.Failure("[SARLevel - MoleSpawns] No such key in LevelJSON \"moleSpawns\"!");
             //Logger.Basic("[SARLevel - MoleSpawns] Done!");
             #endregion Molecrate Spots
 
@@ -552,32 +659,38 @@ namespace SARStuff
             Logger.Header("[SARLevel - Grass] Beginning to load grass...");
             if (levelJSON["grass"] != null)
             {
-                int grassCache = levelJSON["grass"].Count;
-                this.Grass = new List<GameGrass>(grassCache);
-                for (int i = 0; i < grassCache; i++)
+                int grassSpawnCount = levelJSON["grass"].Count;
+                Grass = new List<GameGrass>(grassSpawnCount);
+                for (int i = 0; i < grassSpawnCount; i++)
                 {
                     JSONNode subNode = levelJSON["grass"][i];
                     byte id = (byte)subNode["i"].AsInt;
                     short x = (short)subNode["x"].AsFloat;
                     short y = (short)subNode["y"].AsFloat;
                     byte variation = (byte)subNode["v"].AsInt;
+
                     GrassType type = GrassType.GetGrassTypeFromID(id);
                     if (type == null)
                     {
                         Logger.Warn($"[SARLevel - Grass] No such GrassID \"{id}\"!");
                         continue;
                     }
+
                     if (variation > (type.Variations - 1))
                     {
                         Logger.Warn($"[SARLevel - Grass] Variation \"{variation}\" too high! {id}'s # of variants: {type.Variations}!");
                         continue;
                     }
-                    if (type.Choppable) Grass.Add(new GameGrass(type, x, y));
-                    //else Logger.DebugServer($"non choppable grass @ {(x, y)}");
+
+                    if (type.Choppable)
+                        Grass.Add(new GameGrass(type, x, y));
+                    //else
+                        //Logger.DebugServer($"non choppable grass @ {(x, y)}");
                 }
                 GrassType.NullAllGrassTypes();
             }
-            else Logger.Failure("[SARLevel - Grass] No such key in LevelJSON \"grass\"!");
+            else
+                Logger.Failure("[SARLevel - Grass] No such key in LevelJSON \"grass\"!");
             //Logger.Basic("[SARLevel - Grass] Done!");
             #endregion Grass
 
@@ -593,13 +706,20 @@ namespace SARStuff
         /// </summary>
         /// <param name="position">Position to check against.</param>
         /// <returns>True if the spot is walkable; False if  otherwise.</returns>
-        private bool IsGridSpotWalkable(Vector2 position) // Again, supposed to have in-air stuff here, but we don't.
+        private bool IsGridSpotWalkable(Vector2 position)
         {
+            // todo -- mid-air collision checks?
             int x = (int)position.x;
             int y = (int)position.y;
-            if (x < 0 || x >= LevelWidth) return false;
-            if (y < 0 || y >= LevelHeight) return false;
-            if (CollisionGrid[x][y] != CollisionType.None) return false;
+            if (x < 0 || x >= LevelWidth)
+                return false;
+            if (y < 0 || y >= LevelHeight)
+                return false;
+            
+            // [non-walkable] OR [non-walkable & visible]
+            if (CollisionGrid[x][y] != CollisionType.None)
+                return false;
+            
             return true;
         }
 
@@ -611,34 +731,24 @@ namespace SARStuff
         public bool IsThisPlayerSpotValid(Vector2 position)
         {
             // There is potential for checking in-air spots; however that is not implemented here.
-            float x1 = position.x - 3f;
-            float y1 = position.y - 1.5f;
-            float xStore1 = x1;
-            float yStore1 = y1;
-            float max_x = position.x + 3.4f;
-            float max_y = position.y + 1.9f;
-            while (xStore1 < max_x)
+            //float xMin = position.x - 3f;
+            float yMin = position.y - 1.5f;
+            float xMax = position.x + 3.4f;
+            float yMax = position.y + 1.9f;
+            float check_x = position.x - 3f;
+            float check_y = yMin;
+            while (check_x < xMax)
             {
-                while (yStore1 < max_y)
+                while (check_y < yMax)
                 {
-                    if (!IsGridSpotWalkable(new Vector2(xStore1, yStore1))) return false;
-                    else yStore1 += 1f;
+                    if (!IsGridSpotWalkable(new Vector2(check_x, check_y)))
+                        return false;
+                    check_y += 1f;
                 }
-                xStore1 += 1f;
-                yStore1 = y1;
+                check_x += 1f;
+                check_y = yMin;
             }
             return true;
-        }
-
-        private void FreeCollisionSpot(Vector2[] spots)
-        {
-            for (int i = 0; i < spots.Length; i++)
-            {
-                int x = (int)spots[i].x;
-                int y = (int)spots[i].y;
-                if ((x < 0 || x >= LevelWidth) || (y < 0 || y >= LevelHeight)) continue;
-                else CollisionGrid[x][y] = CollisionType.None;
-            }
         }
 
         private void FreeCollisionSpot(Int32Point[] spots)
@@ -647,8 +757,11 @@ namespace SARStuff
             {
                 int x = spots[i].x;
                 int y = spots[i].y;
-                if ((x < 0 || x >= LevelWidth) || (y < 0 || y >= LevelHeight)) continue;
-                else CollisionGrid[x][y] = CollisionType.None;
+
+                if ((x < 0 || x >= LevelWidth) || (y < 0 || y >= LevelHeight))
+                    continue;
+                else
+                    CollisionGrid[x][y] = CollisionType.None;
             }
         }
 
@@ -704,13 +817,15 @@ namespace SARStuff
         }
         #endregion player spots on the grid
 
+        // spot for massive improvements...
         #region ItemPosition
         // can obviously improve
         public bool IsThereAnItemhere(Vector2 position)
         {
             foreach (LootItem item in LootItems.Values)
             {
-                if ((Math.Abs(item.Position.x - position.x) <= 4) && (Math.Abs(item.Position.y - position.y) <= 4)) return true;
+                if ((Math.Abs(item.Position.x - position.x) <= 4) && (Math.Abs(item.Position.y - position.y) <= 4))
+                    return true;
             }
             return false;
         }
@@ -753,7 +868,8 @@ namespace SARStuff
             for (; xMin < xMax; xMin += 4)
             {
                 foundSpot.x = xMin;
-                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xMin][yLevel] == CollisionType.None)) return true;
+                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xMin][yLevel] == CollisionType.None))
+                    return true;
             }
             return false;
         }
@@ -763,7 +879,8 @@ namespace SARStuff
             for (; yMin < yMax; yMin += 4)
             {
                 foundSpot.y = yMin;
-                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xSpot][yMin] == CollisionType.None)) return true;
+                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xSpot][yMin] == CollisionType.None))
+                    return true;
             }
             return false;
         }
@@ -771,6 +888,9 @@ namespace SARStuff
 
         #endregion collision grid methods
 
+        // todo - cleaning doodads up
+        // it seems there's some sort of chain-explosions with barrels, but it difficult to follow/ understand whether...
+        // ...it's really "going deep" or is just like a 1-level deep check and any other potential explosions are skipped.
         #region Doodad Junk
         /// <summary>
         /// Attempts to locate a Doodad at the provided position.
@@ -781,6 +901,10 @@ namespace SARStuff
         /// <returns>True, along with any found Doodads; Otherwise, False and NULL.</returns>
         public bool TryDestroyingDoodad(Vector2 checkPosition, out Doodad[] foundDoodads, bool remove)
         {
+            // noticed potential optimization? if a HitSpot can only ever hit one Doodad (they never overlap)...
+            // ... it should then be possible to skip checking all other Doodads; because we found the only one...
+            // ... that will ever be on at particular HitSpot.
+
             // Explosive Barrels damaging Players & Hamsterballs is calculated by the Match itself if this method returns any Doodads
             foundDoodads = null;
             if (Doodads == null)
@@ -795,10 +919,10 @@ namespace SARStuff
             List<Doodad> listODoodads = new List<Doodad>(8); // 8 is arbitrary; just wanted an inital length that wasn't other than "1".
             for (int i = 0; i < numOfDoodads; i++)
             {
-                // first, check if Hit Spot is just the Doodad's origin. if it is, then that is all there is to this check.
-                if (Vector2.ValidDistance(Doodads[i].Position, checkPosition, 1.5f, true))
+                // simpliest check: is HitSpot just Doodad[i]'s origin?
+                if (Doodads[i].Position.IsNear(checkPosition, 1.5f))
                 {
-                    listODoodads.Add(Doodads[i]); // add to list of Doodads we've hit
+                    listODoodads.Add(Doodads[i]);
 
                     // does this Doodad explode? if so, what will we hit? (similar concept to this method)
                     if (Doodads[i].Type.DestructibleDamageRadius > 0)
@@ -811,20 +935,18 @@ namespace SARStuff
                             }
                         }
                     }
-                    continue; // move onto the next Doodad in the list
+                    continue;
                 }
 
-                // first check failed. Hit Spot is NOT the origin (for this Doodad at least)
-                // instead, it may actually be a spot within the hitbox. So... let's go through every hittable spot then!
+                // second check: is HitSpot just a spot somewhere on Doodad[i]? (suuuper slow bc. we check ALL of them)
                 for (int j = 0; j < Doodads[i].HittableSpots.Length; j++)
                 {
-                    if (Vector2.ValidDistance(checkPosition, Doodads[i].HittableSpots[j], 1.5f, true))
+                    if (checkPosition.IsNear(Doodads[i].HittableSpots[j], 1.5f))
                     {
-                        // the code below to add it to the list/ blow up more if we need to, is the same as the one above.
-                        listODoodads.Add(Doodads[i]); // add to list of Doodads we've hit
+                        listODoodads.Add(Doodads[i]);
 
-                        // does this Doodad explode? if so, what will we hit? (similar concept to this method)
-                        if (Doodads[i].Type.DestructibleDamageRadius > 0) // If this Doodad explodes then let's blow it up and see what else gets hit!
+                        // (copied explosion check code from simple origin-point check)
+                        if (Doodads[i].Type.DestructibleDamageRadius > 0)
                         {
                             if (TryExplodingDoodad(Doodads[i], out Doodad[] founds))
                             {
@@ -847,13 +969,11 @@ namespace SARStuff
                 {
                     FreeDoodadCollisionSpots(foundDoodads);
                     for (int i = 0; i < foundDoodads.Length; i++)
-                    {
                         Doodads.Remove(foundDoodads[i]);
-                    }
                 }
                 return true;
             }
-            return false;
+            return false; // only if nothing is found of course
         }
 
         /// <summary>
@@ -865,32 +985,32 @@ namespace SARStuff
         private bool TryExplodingDoodad(Doodad thisDoodad, out Doodad[] blowups)
         {
             // TOOD: chain explosions ?
+            // the inital thing noticed is that ONLY thisDoodad is ignored
+            // any other Doodads seen up until this point that have been marked/ ignored are checked again!
+
             blowups = null;
             int numOfDoodads = Doodads.Count;
-            List<Doodad> listODoodads = new List<Doodad>(8); // 8 is arbitrary; just need "some" length.
-            //List<Doodad> copy = new List<Doodad>(listODoodads);
+            List<Doodad> listODoodads = new List<Doodad>(8); // 8 is arbitrary
             for (int i = 0; i < numOfDoodads; i++)
             {
-                if (Doodads[i] == thisDoodad) continue;
-                if (Vector2.ValidDistance(thisDoodad.Position, Doodads[i].Position, thisDoodad.Type.DestructibleDamageRadius, true))
+                if (Doodads[i] == thisDoodad)
+                    continue;
+
+                if (thisDoodad.Position.IsNear(Doodads[i].Position, thisDoodad.Type.DestructibleDamageRadius))
                 {
                     listODoodads.Add(Doodads[i]);
                     // if (canExplode) chain();
                     continue;
                 }
             }
+
             if (listODoodads.Count > 0)
             {
                 blowups = listODoodads.ToArray();
                 return true;
             }
-            else return false;
-        }
-
-        // Unfinished -- 4/26/23
-        private void ChainExplosion()
-        {
-            Logger.Failure("[ChainExplosion] Unimplemented.");
+            else
+                return false;
         }
 
         /// <summary>
@@ -899,16 +1019,16 @@ namespace SARStuff
         /// <param name="doodads">Array of Doodads that must have their collision spots removed from this SARLevel's CollisionGrid.</param>
         private void FreeDoodadCollisionSpots(Doodad[] doodads)
         {
-            // assumes doodads is never null
             for (int i = 0; i < doodads.Length; i++)
             {
                 for (int j = 0; j < doodads[i].HittableSpots.Length; j++)
                 {
                     int x = (int)doodads[i].HittableSpots[j].x;
                     int y = (int)doodads[i].HittableSpots[j].y;
-                    if (x >= LevelWidth || y >= LevelHeight) continue;
+                    if ((x >= LevelWidth) || (y >= LevelHeight))
+                        continue;
+
                     CollisionGrid[x][y] = CollisionType.None;
-                    //Logger.DebugServer($"[SARLevel - FDCS] Freed spot ({x} {y}).");
                 }
             }
         }
@@ -923,7 +1043,6 @@ namespace SARStuff
                 return pInitialSpot;
             }*/
             return FindNewItemPosition(pInitialSpot);
-            // old lol:: return pInitialSpot;
         }
 
         // Checks whether the provided LootItem (pItem)'s LootID exists in the this.LootItems dictionary. If so, then pItem is removed from this.LootItems.
@@ -1006,7 +1125,8 @@ namespace SARStuff
         /// <param name="item">GameGrass object to attempt to remove.</param>
         public void RemoveGrassFromList(GameGrass item)
         {
-            if (!Grass.Remove(item)) Logger.Failure("[SARLevel] encountered an error while removing grass from list!");
+            if (!Grass.Remove(item))
+                Logger.Failure("[SARLevel - Error] Was unable to remove the provided grass item from the list...");
         }
 
         /// <summary>
@@ -1031,9 +1151,9 @@ namespace SARStuff
                 }
                 _rebelHideoutDoor = null;
             }
-            for (int x = 0; x < tarpSizeX; x++)
+            for (int x = 0; x < SARConstants.BarnHideoutTarpSizeX; x++)
             {
-                for (int y = 0; y < tarpSizeY; y++)
+                for (int y = 0; y < SARConstants.BarnHideoutTarpSizeY; y++)
                 {
                     collisionSpots.Add(new Int32Point(_barnTarpSpawn.x + x, _barnTarpSpawn.y + y));
                 }
@@ -1086,12 +1206,17 @@ namespace SARStuff
         /// </summary>
         public void NullUnNeeds()
         {
-            //if (Doodads != null) Doodads = null;
-            if (Campfires != null) Campfires = null;
-            //if (LootItems != null) LootItems = null;
-            if (MolecrateSpots != null) MolecrateSpots = null;
-            if (Coconuts != null) Coconuts = null;
-            if (Hamsterballs != null) Hamsterballs = null;
+            if (Campfires != null)
+                Campfires = null;
+
+            if (MolecrateSpots != null)
+                MolecrateSpots = null;
+
+            if (Coconuts != null)
+                Coconuts = null;
+
+            if (Hamsterballs != null)
+                Hamsterballs = null;
             GC.Collect();
         }
 
@@ -1100,13 +1225,26 @@ namespace SARStuff
         /// </summary>
         public void Dispose()
         {
-            if (CollisionGrid != null) CollisionGrid = null;
-            if (Doodads != null) Doodads = null;
-            if (Campfires != null) Campfires = null;
-            if (LootItems != null) LootItems = null;
-            if (MolecrateSpots != null) MolecrateSpots = null;
-            if (Coconuts != null) Coconuts = null;
-            if (Hamsterballs != null) Hamsterballs = null;
+            if (CollisionGrid != null)
+                CollisionGrid = null;
+
+            if (Doodads != null)
+                Doodads = null;
+
+            if (Campfires != null)
+                Campfires = null;
+
+            if (LootItems != null)
+                LootItems = null;
+
+            if (MolecrateSpots != null)
+                MolecrateSpots = null;
+
+            if (Coconuts != null)
+                Coconuts = null;
+
+            if (Hamsterballs != null)
+                Hamsterballs = null;
         }
         ~SARLevel()
         {

@@ -1,4 +1,5 @@
 ﻿using SimpleJSON;
+using System;
 using System.IO;
 using WCSARS; // logging purposes
 
@@ -13,10 +14,10 @@ namespace SARStuff
         public readonly int TileID;
 
         // Name of this Tile
-        //public readonly string Name;
+        //public readonly string Name; // not really needed...
 
         // This Tile's position in the Overworld.
-        //public readonly Vector2 Position; // actual_position = pos_in_map_data * 9 << v0.90.2 at least
+        //public readonly Vector2 Position; // actPosition = madDataPosition * 9 << v0.90.2
 
         // Whether this is a walkable Tile
         public readonly bool Walkable;
@@ -27,19 +28,27 @@ namespace SARStuff
             Walkable = walkable;
         }
 
-        public static Tile[] GetAllTiles()
+        /// <summary>
+        ///  Loads all parsable tiles from "_tiles.json" into memory as "Tile" objects.
+        /// </summary>
+        /// <param name="pForceGeneration"> Whether to force the reloading of Tile.AllTiles if is not Null.</param>
+        /// <returns> All Tile(s) generated from "_tiles.json" OR Tile.AllTiles if it is not Null.</returns>
+        public static Tile[] GetAllTiles(bool pForceGeneration = false)
         {
-			if (AllTiles != null) return AllTiles;
-            string search = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + @"\datafiles\tiles.json";
+			if ((AllTiles != null) && !pForceGeneration)
+                return AllTiles;
+
+            string search = AppDomain.CurrentDomain.BaseDirectory + @"datafiles\tiles.json";
             if (!File.Exists(search))
             {
                 Logger.Failure("Failed to locate \"tiles.json\"! Defaulting to hard-coded tile list...");
                 return BackupTilesLol();
             }
-            Tile[] tiles;
-            string data = File.ReadAllText(search);
-            JSONArray tileData = JSON.Parse(data).AsArray;
-			tiles = new Tile[tileData.Count];
+
+            string fileText = File.ReadAllText(search);
+            JSONArray tileData = JSON.Parse(fileText).AsArray;
+
+            Tile[] tiles = new Tile[tileData.Count];
 			for (int i = 0; i < tiles.Length; i++)
 			{
 				JSONNode node = tileData[i];
@@ -50,42 +59,43 @@ namespace SARStuff
         }
 
         /// <summary>
-        /// Attempts to locate a Tile with the provided ID.
+        ///  Attempts to locate a Tile with the provided TileID.
         /// </summary>
-        /// <param name="id">TileID to search for.</param>
+        /// <param name="pID">TileID to search for.</param>
         /// <returns>The located TileType if found; NULL if otherwise.</returns>
-        public static Tile GetTileFromID(int id)
+        public static Tile GetTileFromID(int pID)
         {
-            if (AllTiles == null) AllTiles = GetAllTiles();
+            if (AllTiles == null)
+                AllTiles = GetAllTiles();
+
             for (int i = 0; i < AllTiles.Length; i++)
             {
-                if (AllTiles[i].TileID == id)
-                {
+                if (AllTiles[i].TileID == pID)
                     return AllTiles[i];
-                }
             }
             return null;
         }
 
         /// <summary>
-        /// v0.90.2 OK | Forces the creation of the known-tile-set for SAR v0.90.2 if the program fails to find the actual data set file (tiles.json).
+        /// v0.90.2 | Returns a hard-coded version of "_tiles.txt"
         /// </summary>
-        private static Tile[] BackupTilesLol() // Can only exist because there are so few tiles in v0.90.2
+        private static Tile[] BackupTilesLol() // this is pretty bad to be honest lol
         {
-            Logger.Warn("[Tile - BackupTilesLol] [WARN] This tile data is only guaranteed for v0.90.2!");
-            Tile[] ret = new Tile[11];
-			ret[0] = new Tile(0, true);
-			ret[1] = new Tile(1, true);
-			ret[2] = new Tile(2, true);
-			ret[3] = new Tile(3, true);
-			ret[4] = new Tile(6, true);
-			ret[5] = new Tile(7, false);
-			ret[6] = new Tile(8, true);
-			ret[7] = new Tile(9, true);
-			ret[8] = new Tile(12, true);
-			ret[9] = new Tile(13, true);
-			ret[10] = new Tile(20, true);
-            return ret;
+            Logger.Warn("[Tile - BackupTilesLol] [WARN] Utilizing hard-coded tile data. This could be incorrect for your game version!");
+            
+            Tile[] tiles = new Tile[11];
+			tiles[0] = new Tile(0, true);
+			tiles[1] = new Tile(1, true);
+			tiles[2] = new Tile(2, true);
+			tiles[3] = new Tile(3, true);
+			tiles[4] = new Tile(6, true);
+			tiles[5] = new Tile(7, false);
+			tiles[6] = new Tile(8, true);
+			tiles[7] = new Tile(9, true);
+			tiles[8] = new Tile(12, true);
+			tiles[9] = new Tile(13, true);
+			tiles[10] = new Tile(20, true);
+            return tiles;
 		}
 
         /// <summary>
@@ -93,9 +103,7 @@ namespace SARStuff
         /// </summary>
         public static void NullAllTiles()
         {
-            //Logger.Warn("[Tile] Nulling AllTiles...");
             AllTiles = null;
-            //Logger.Success("[Tile] AllTiles nulled! :]");
         }
     }
 }
