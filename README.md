@@ -34,7 +34,7 @@ Upon launching the program with all necessary data files acquired, the program w
 
 __To fix this,__ simply locate `server-config.txt` then change `server-ip` to either `127.0.0.1` (localhost), or your computer's local IP address. To find your local address (Windows) simply open command prompt, type `ipconfig`, and then look for `IPv4 Address... xxx.xxx.x.xxx)` (typically in the format `192.168.1.xxx`).
 
-To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMsg](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1412) to the server program correctly.
+To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMessage](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1409) to the server program correctly.
 
 Currently, there is no external program to hook onto the game and execute the join-server function with an arbitrarily-provided ip-address... but if someone wants to make one... hook me up :]
 

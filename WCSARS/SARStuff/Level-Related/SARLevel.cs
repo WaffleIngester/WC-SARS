@@ -1,7 +1,11 @@
 ﻿using SimpleJSON;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Metadata.Ecma335;
+using System.Xml;
 using WCSARS; // logging purposes
 
 namespace SARStuff
@@ -701,60 +705,12 @@ namespace SARStuff
         }
 
         #region collision grid methods
-        /// <summary>
-        /// Determines whether the provided position is a walkable spot on the collision grid or not.
-        /// </summary>
-        /// <param name="position">Position to check against.</param>
-        /// <returns>True if the spot is walkable; False if  otherwise.</returns>
-        private bool IsGridSpotWalkable(Vector2 position)
-        {
-            // todo -- mid-air collision checks?
-            int x = (int)position.x;
-            int y = (int)position.y;
-            if (x < 0 || x >= LevelWidth)
-                return false;
-            if (y < 0 || y >= LevelHeight)
-                return false;
-            
-            // [non-walkable] OR [non-walkable & visible]
-            if (CollisionGrid[x][y] != CollisionType.None)
-                return false;
-            
-            return true;
-        }
-
-        /// <summary>
-        /// Determines whether this player position is valid or not.
-        /// </summary>
-        /// <param name="position">Player position to check.</param>
-        /// <returns>True if the spot is valid; False if otherwise.</returns>
-        public bool IsThisPlayerSpotValid(Vector2 position)
-        {
-            // There is potential for checking in-air spots; however that is not implemented here.
-            //float xMin = position.x - 3f;
-            float yMin = position.y - 1.5f;
-            float xMax = position.x + 3.4f;
-            float yMax = position.y + 1.9f;
-            float check_x = position.x - 3f;
-            float check_y = yMin;
-            while (check_x < xMax)
-            {
-                while (check_y < yMax)
-                {
-                    if (!IsGridSpotWalkable(new Vector2(check_x, check_y)))
-                        return false;
-                    check_y += 1f;
-                }
-                check_x += 1f;
-                check_y = yMin;
-            }
-            return true;
-        }
-
-        private void FreeCollisionSpot(Int32Point[] spots)
+        private void FreeCollisionSpot(Int32Point[] spots) // todo - replace with new version
         {
             for (int i = 0; i < spots.Length; i++)
             {
+                // todo - code better
+                // >>> you don't have to check if you simply make sure it's not out of bounds
                 int x = spots[i].x;
                 int y = spots[i].y;
 
@@ -765,126 +721,145 @@ namespace SARStuff
             }
         }
 
+        /// <summary>
+        ///  Takes a list of points on this SARLevel's collision grid and sets them as "moveable".
+        /// </summary>
+        /// <param name="points"> List of points to clear.</param>
+        private void FreeCollisionPoints(ref Int32Point[] points) // OK
+        {
+            int x, y; // assumes x-y pair is valid grid indicies
+            for (int i = 0; i < points.Length; i++)
+            {
+                x = points[i].x;
+                y = points[i].y;
+                CollisionGrid[x][y] = CollisionType.None;
+            }
+        }
+
         #region player spots on the grid
         /// <summary>
-        /// Attempts to locate a valid player position given an inital invalid starting position.
+        ///  Attempts to locate a collision grid position that players are able to walk on.
         /// </summary>
-        /// <param name="init">The initial starting position to begin searching around.</param>
-        /// <param name="xDir">[Unused] Search direction to lean towards on the X-axis.</param>
-        /// <param name="yDir">[Unused] Search direction to lean towards on the Y-axis.</param>
-        /// <returns></returns>
-        public Vector2 FindValidPlayerPosition(Vector2 init, float xDir, float yDir)
+        /// <param name="startX"> Inital invalid x position.</param>
+        /// <param name="startY"> Inital invalid y position.</param>
+        /// <param name="dirX"> [NOT IMPLEMENTED] Horizontal direction the player was traveling whilst landing.</param>
+        /// <param name="dirY"> [NOT IMPLEMENTED] Vertical direction the player was traveling whilst landing.</param>
+        /// <returns>Vector2 representing a valid, walkable grid location.</returns>
+        public Vector2 FindWalkableGridLocation(int startX, int startY) //, int dirX, int dirY <-- did not implement this yet
         {
-            Int32Point initPos = new Int32Point((int)init.x, (int)init.y);
-            Vector2 foundPosition = new Vector2(0f, 0f);
-            bool found = false;
-            int searchMagnitude = 1;
-            int maxX, maxY, minX, minY;
-            while (!found)
+            // max regions
+            int xMin = startX, xMax = startX, yMin = startY, yMax = startY;
+
+            // start loop
+            int depth = 0, x, y;
+            do
             {
-                searchMagnitude++;
-                minX = initPos.x - searchMagnitude;
-                maxX = initPos.x + searchMagnitude;
-                minY = initPos.y - (searchMagnitude - 1);
-                maxY = initPos.y + (searchMagnitude - 1);
-                if (SearchX(minX, maxX, maxY, out foundPosition)) break;
-                if (SearchX(minX, maxX, minY, out foundPosition)) break;
-                if (SearchY(minY, maxY, maxX, out foundPosition)) break;
-                if (SearchY(minY, maxY, minX, out foundPosition)) break;
-            }
-            return foundPosition;
+                if (xMin > 0)
+                    xMin -= 1;
+                if (xMax < LevelWidth)
+                    xMax += 1;
+                if (yMax < LevelHeight)
+                    yMax += 1;
+                if (yMin > 0)
+                    yMin -= 1;
+
+                // goes from left to right, top to bottom. QuickIsValidPlayerLoc likely visits the same points multiple times...
+                for (x = xMin; x < xMax; x++)
+                {
+                    // check [x][yMax]
+                    if (QuickIsValidPlayerLoc(x, yMax))
+                        return new Vector2(x, yMax);
+                }
+                for (y = yMax; y > yMin; y--) // (y = yMin; y < yMax; y++) <-- goes l-r-up
+                {
+                    // check [xMin][y]
+                    if (QuickIsValidPlayerLoc(xMin, y))
+                        return new Vector2((float)xMin, (float)y);
+
+                    // check [xMax][y]
+                    if (QuickIsValidPlayerLoc(xMax, y))
+                        return new Vector2(xMax, y);
+                }
+                for (x = xMin; x < xMax; x++)
+                {
+                    // check [x][yMin]
+                    if (QuickIsValidPlayerLoc(x, yMin))
+                        return new Vector2(x, yMin);
+                }
+                depth += 1;
+            } while (depth < 2124); // half level size, because searches 2x
+
+            // all else fails
+            Console.WriteLine($"Failed to locate a safe position for init {(startX, startY)} within {depth} iterations.");
+            return new Vector2(508.7f, 496.7f);
         }
 
-        private bool SearchX(int xMin, int xMax, int yLevel, out Vector2 foundSpot) // searches from x_min to x_max for a valid spot.
+        /// <summary>
+        ///  Determines whether the provided player position is walkable or not.
+        /// </summary>
+        /// <param name="playerPos"> Inital position to check.</param>
+        /// <returns> True if all points surrounding are valid. False if otherwise.</returns>
+        public bool IsValidPlayerLoc(ref Vector2 playerPos) // OK --> used for "QuickIsValidPlayerLoc" |
         {
-            foundSpot = new Vector2(xMin, yLevel);
-            for (; xMin < xMax; xMin++)
+            /* -- Note --
+             * This function should check for mid-air positions.
+             * However, the collision-height grid is not implemented currently.
+             * Will do that at a later date!
+             */
+
+            // get min/ max values -- floats casted to ints should rounds towards 0, so we should be OK
+            int xMin = (int)(playerPos.x - 3f);
+            int yMin = (int)(playerPos.y - 1.5f);
+            int xMax = (int)(playerPos.x + 3.4f);
+            int yMax = (int)(playerPos.y + 1.9f);
+
+            // took from the "quick" check
+            if ((xMin < 0) || (xMax > LevelWidth) || (yMin < 0) || (yMax > LevelHeight))
+                return false;
+
+            while (xMin < xMax) // note - xMin is "x" parameter for collision grid!
             {
-                foundSpot.x = xMin;
-                if (IsThisPlayerSpotValid(foundSpot)) return true;
+                for (int y = yMin; y < yMax; y++)
+                {
+                    if (CollisionGrid[xMin][y] != CollisionType.None)
+                        return false;
+                }
+                xMin += 1;
             }
-            return false;
+            return true;
         }
-        private bool SearchY(int yMin, int yMax, int xSpot, out Vector2 foundSpot) // searches from y_min to y_max for a valid spot
+
+        /// <summary>
+        ///  "Quickly" determines whether the provided  x,y position is a valid player spot
+        /// </summary>
+        /// <param name="startX"> X paramter of position.</param>
+        /// <param name="startY"> Y paramter of position.</param>
+        /// <returns> True if the x,y position is player walkable. Otherwise, false.</returns>
+        public bool QuickIsValidPlayerLoc(int startX, int startY) // it's "quick" bc skipping as many type conversions as possible
         {
-            foundSpot = new Vector2(xSpot, yMin);
-            for (; yMin < yMax; yMin++)
+            // values corrected to account for floats moving numbers towards 0
+            int xMin = startX - 3; // 3f is just 3 so like
+            int yMin = startY - 2; // 3 - 1.9 --> 1.1 --> 1 | effectively 3 - *2*
+            int xMax = startX + 4; // 5 - 3.4 --> 1.6 --> 1 | effectively 5 - *4*
+            int yMax = startY + 2; // 4 - 1.9 --> 2.1 --> 2 | effectively 4 - *2*
+
+            // if any of the values are OOB; then it's not a valid spot.
+            // the map is surrounded by ocean, so no clue how this works for a custom map covering the entire level
+            if ((xMin < 0) || (xMax > LevelWidth) || (yMin < 0) || (yMax > LevelHeight))
+                return false;
+
+            while (xMin < xMax) // note - xMin is "x" parameter for collision grid!
             {
-                foundSpot.y = yMin;
-                if (IsThisPlayerSpotValid(foundSpot)) return true;
+                for (int y = yMin; y < yMax; y++)
+                {
+                    if (CollisionGrid[xMin][y] != CollisionType.None)
+                        return false;
+                }
+                xMin += 1;
             }
-            return false;
+            return true;
         }
         #endregion player spots on the grid
-
-        // spot for massive improvements...
-        #region ItemPosition
-        // can obviously improve
-        public bool IsThereAnItemhere(Vector2 position)
-        {
-            foreach (LootItem item in LootItems.Values)
-            {
-                if ((Math.Abs(item.Position.x - position.x) <= 4) && (Math.Abs(item.Position.y - position.y) <= 4))
-                    return true;
-            }
-            return false;
-        }
-
-        // can obviously improve
-        public Vector2 FindNewItemPosition(Vector2 initalSpot) // basically a copy and paste of the player version tbh!
-        {
-            // I am too stupid to make a better "algorithm" right now. this works fine-enough, but it's very obvious something is wrong...
-            Int32Point initPos = new Int32Point((int)initalSpot.x, (int)initalSpot.y);
-            if (initPos.x % 4 > 0) initPos.x = 4 * (initPos.x / 4);
-            if (initPos.y % 4 > 0) initPos.y = 4 * (initPos.y / 4);
-            Vector2 foundPosition = new Vector2(0f, 0f);
-            bool found = false;
-            int searchMagnitude = 0;
-            int maxX, maxY, minX, minY;
-            while (!found)
-            {
-                searchMagnitude++;
-                minX = initPos.x - (4 * searchMagnitude);
-                if (minX < 0) minX = 0;
-                maxX = initPos.x + (4 * searchMagnitude);
-                if (maxX > CollisionGrid.Length) maxX = CollisionGrid.Length;
-                minY = initPos.y - (4 * (searchMagnitude - 1));
-                if (minY < 0) minY = 0;
-                maxY = initPos.y + (4 * (searchMagnitude - 1));
-                //Logger.DebugServer($"{searchMagnitude} minY: {minY}; maxY: {maxY}");
-                if (maxY > LevelHeight) maxY = LevelHeight;
-                if (ItemSearchY(minY, maxY, minX, out foundPosition)) break;
-                if (ItemSearchX(minX, maxX, maxY, out foundPosition)) break;
-                if (ItemSearchX(minX, maxX, minY, out foundPosition)) break;
-                if (ItemSearchY(minY, maxY, maxX, out foundPosition)) break;
-            }
-            //Logger.Success($"Found: {foundPosition}");
-            //Logger.DebugServer($"Start: {initalSpot}\nSearchStart: {initPos}\nFound: {foundPosition}");
-            return foundPosition;
-        }
-        private bool ItemSearchX(int xMin, int xMax, int yLevel, out Vector2 foundSpot) // much mess yes
-        {
-            foundSpot = new Vector2(xMin, yLevel);
-            for (; xMin < xMax; xMin += 4)
-            {
-                foundSpot.x = xMin;
-                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xMin][yLevel] == CollisionType.None))
-                    return true;
-            }
-            return false;
-        }
-        private bool ItemSearchY(int yMin, int yMax, int xSpot, out Vector2 foundSpot) // much mess yes
-        {
-            foundSpot = new Vector2(xSpot, yMin);
-            for (; yMin < yMax; yMin += 4)
-            {
-                foundSpot.y = yMin;
-                if (IsThisPlayerSpotValid(foundSpot) && !IsThereAnItemhere(foundSpot) && (CollisionGrid[xSpot][yMin] == CollisionType.None))
-                    return true;
-            }
-            return false;
-        }
-        #endregion ItemPosition
 
         #endregion collision grid methods
 
@@ -1035,27 +1010,127 @@ namespace SARStuff
         #endregion Doodad Junk
 
         #region LootItems
-        // Locates a valid LootItem spot from the inital spot. 
-        private Vector2 GetLootPosition(Vector2 pInitialSpot)
+        /// <summary>
+        ///  Attempts to locate a position that is a valid loot grid position.
+        /// </summary>
+        /// <param name="pPoint"> The inital point to try and spawn an item.</param>
+        /// <returns>Vector2 representing a found grid location. Note: it will be about the inital point if no other valid point can be found!</returns>
+        private Vector2 FindOKLootSpotFromPoint(ref Vector2 pPoint)
         {
-            /*if (!IsThereAnItemhere(pInitialSpot))
+            // align pPoint with loot grid (every 5n)
+            int x = (int)pPoint.x;
+            int y = (int)pPoint.y;
+            int rX = x % 5;
+            int rY = y % 5;
+            if (rX > 0)
+                x -= rX;
+            if (rY > 0)
+                y -= rY;
+
+            if (QuickIsValidPlayerLoc(x, y) && NoItemAtThisSpot(x, y))
+                return new Vector2(x, y);
+
+            int xMin = x, xMax = x;
+            int yMin = y, yMax = y;
+            int depth = 0;
+            int i, j;
+            do
             {
-                return pInitialSpot;
-            }*/
-            return FindNewItemPosition(pInitialSpot);
+                if (xMin >= 5)
+                    xMin -= 5;
+                if (xMax < LevelWidth - 1)
+                    xMax += 5;
+                if (yMin >= 5)
+                    yMin -= 5;
+                if (yMax < LevelHeight - 1)
+                    yMax += 5;
+
+                // check orig, maxY
+                if (QuickIsValidPlayerLoc(x, yMax) && NoItemAtThisSpot(x, yMax))
+                    return new Vector2(x, yMax);
+
+                // alternate between the right/ left "splits"
+                i = j = x; // weird reuse of I and J; I = xCoord; J = yCoord
+                while ((i > xMin) && (j < xMax))
+                {
+                    // right split
+                    j += 5;
+                    if (QuickIsValidPlayerLoc(j, yMax) && NoItemAtThisSpot(j, yMax))
+                        return new Vector2(j, yMax);
+
+                    // left split
+                    i -= 5;
+                    if (QuickIsValidPlayerLoc(i, yMax) && NoItemAtThisSpot(i, yMax))
+                        return new Vector2(i, yMax);
+                } // this is really stupid, but this was the easiest/ first thought that came to mind
+
+                // go from (xMax, yMax) --> (xMax, yMin)
+                for (j = yMax; j > yMin; j -= 5)
+                {
+                    if (QuickIsValidPlayerLoc(xMax, j) && NoItemAtThisSpot(xMax, j))
+                        return new Vector2(xMax, j);
+                }
+
+                // go from (xMax, yMin) --> (xMin, yMin)
+                for (i = xMax; i > xMin; i -= 5)
+                {
+                    if (QuickIsValidPlayerLoc(i, yMin) && NoItemAtThisSpot(i, yMin))
+                        return new Vector2(i, yMin);
+                }
+
+                // go from (xMin, yMin) --> (xMin, yMax)
+                for (j = yMin; j < yMax; j += 5)
+                {
+                    if (j == yMax)
+                        continue;
+
+                    if (QuickIsValidPlayerLoc(xMin, j) && NoItemAtThisSpot(xMin, j))
+                        return new Vector2(xMin, j);
+                }
+                depth += 1;
+            } while (depth < 4); // testing in modern versions shows it'll try making a 9x9 area (so 4 each side)
+            //Console.WriteLine($"Failed to locate a safe position for init {(x, y)} within {depth} iterations.");
+            return new Vector2(x, y);
+        }
+
+        /// <summary>
+        ///  Determines whether there is an item at the specified location already.
+        /// </summary>
+        /// <param name="pX"> x parameter.</param>
+        /// <param name="pY"> y parameter.</param>
+        /// <returns> True if no LootItem objects are found at the specified location. Otherwise, False.</returns>
+        private bool NoItemAtThisSpot(int pX, int pY)
+        {
+            int x, y, rX, rY;
+            foreach (LootItem item in LootItems.Values)
+            {
+                x = (int)item.Position.x;
+                y = (int)item.Position.y;
+                rX = x % 5;
+                rY = y % 5;
+                if (rX > 0)
+                    x -= rX;
+                if (rY > 0)
+                    y -= rY;
+                if ((pX == x) && (pY == y))
+                    return false;
+            }
+            return true;
         }
 
         // Checks whether the provided LootItem (pItem)'s LootID exists in the this.LootItems dictionary. If so, then pItem is removed from this.LootItems.
         public void RemoveLootItem(LootItem item)
         {
-            if (LootItems.ContainsKey(item.LootID)) LootItems.Remove(item.LootID);
-            else Logger.DebugServer($"Level.RemoveLootItem: Item.LootID \"{item.LootID}\" does not exist in Level.LootItems!");
+            if (LootItems.ContainsKey(item.LootID))
+                LootItems.Remove(item.LootID);
+            else
+                Logger.DebugServer($"Level.RemoveLootItem: Item.LootID \"{item.LootID}\" does not exist in Level.LootItems!");
         }
 
         // Creates a new "Juice" LootItem and adds it to this.LootItems.
         public LootItem NewLootJuice(byte pCount, Vector2 pTryPos) // appears OK
         {
-            pTryPos = GetLootPosition(pTryPos);
+            pTryPos = FindOKLootSpotFromPoint(ref pTryPos);
             LootCounter += 1;
             LootItem retLoot = new LootItem(LootCounter, LootType.Juice, $"Health Juice-{pCount}", 0, pCount, pTryPos);
             LootItems.Add(LootCounter, retLoot);
@@ -1065,7 +1140,7 @@ namespace SARStuff
         // Creates a new "Tape" LootItem and adds it to this.LootItems.
         public LootItem NewLootTape(byte pCount, Vector2 pTryPos) // appears OK
         {
-            pTryPos = GetLootPosition(pTryPos);
+            pTryPos = FindOKLootSpotFromPoint(ref pTryPos);
             LootCounter += 1;
             LootItem retLoot = new LootItem(LootCounter, LootType.Tape, $"Tape-{pCount}", 0, pCount, pTryPos);
             LootItems.Add(LootCounter, retLoot);
@@ -1075,7 +1150,7 @@ namespace SARStuff
         // Creates a new "Armor" LootItem and adds it to this.LootItems.
         public LootItem NewLootArmor(byte pArmorLevel, byte pArmorTicks, Vector2 pTryPos) // appears OK
         {
-            pTryPos = GetLootPosition(pTryPos);
+            pTryPos = FindOKLootSpotFromPoint(ref pTryPos);
             LootCounter += 1;
             LootItem retLoot = new LootItem(LootCounter, LootType.Armor, $"Armor-{pArmorLevel}/{pArmorTicks}", pArmorLevel, pArmorTicks, pTryPos);
             LootItems.Add(LootCounter, retLoot);
@@ -1086,7 +1161,7 @@ namespace SARStuff
         public LootItem NewLootWeapon(int pWepIndex, byte pRarity, byte pAmmo, Vector2 pTryPos) // appears OK | haven't tested fully with throwables
         {
             Weapon weapon = Weapon.GetWeaponFromID(pWepIndex);
-            pTryPos = GetLootPosition(pTryPos);
+            pTryPos = FindOKLootSpotFromPoint(ref pTryPos);
             LootCounter += 1;
             LootItem retLoot = new LootItem(LootCounter, weapon.WeaponType, weapon.Name, pRarity, pAmmo, pWepIndex, pTryPos);
             LootItems.Add(LootCounter, retLoot);
@@ -1096,7 +1171,7 @@ namespace SARStuff
         // Creates a new "Ammo" LootItem and adds it to this.LootItems.
         public LootItem NewLootAmmo(byte pAmmoType, byte pCount, Vector2 pTryPos) // appears OK
         {
-            pTryPos = GetLootPosition(pTryPos);
+            pTryPos = FindOKLootSpotFromPoint(ref pTryPos);
             LootCounter += 1;
             LootItem retLoot = new LootItem(LootCounter, LootType.Ammo, $"Ammo-{pAmmoType}", pAmmoType, pCount, pTryPos); // Rarity = AmmoType; GiveAmount = numOfAmmo
             LootItems.Add(LootCounter, retLoot);
@@ -1115,9 +1190,8 @@ namespace SARStuff
         {
             int grassCache = Grass.Count;
             for (int i = 0; i < grassCache; i++)
-            {
-                if (Grass[i].X == searchX && Grass[i].Y == searchY) return Grass[i];
-            }
+                if (Grass[i].X == searchX && Grass[i].Y == searchY)
+                    return Grass[i];
             return null;
         }
 
@@ -1145,7 +1219,7 @@ namespace SARStuff
                     // If you factor in collisionHeight while setting up Doodad.Hittable spots ( origin - height // origin + max + height)
                     // Then this actually works fully as invisioned. However, according to current understandings, this doesn't appear to be the correct...
                     // ...way to be using collisionHeight. Instead, there is another separate collisionGrid for CollisionHeights which appears to be used...
-                    // ...while calculating whether projectiles hit things as well... which overall makes this a big ol' pain.
+                    // ...while calculating whether projectiles hit things as well... which overall makes this a big ol' NoItemAtThisSpot.
                     // So, may just add collisionHeight into the actual offsets and call it a day. who knows!
                     Logger.Basic($"Added spot: {newSpot.x}, {newSpot.y}");
                 }
@@ -1183,7 +1257,7 @@ namespace SARStuff
             MolecrateSpots = newSpawns.ToArray();
         }*/
 
-        // todo - generate molecrate spots; it's a lot more complicated than anticipated...
+        // generating molecrate spawn spots is a lot more difficult than anticipated...
         /*public Vector2[] GenerateMolecratePath(Vector2 pOrigin)
         {
             List<Vector2> movePoints = new List<Vector2>(8);

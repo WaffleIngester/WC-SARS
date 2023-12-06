@@ -1,4 +1,89 @@
-﻿    -- Changelog -- 
+﻿ -- Changelog -- 
++------------------------------------------------------
+	-- 12/05/23 --
+
+	>> IMPORTANT:: collision/ item "grid" update
+		> This whole project is a mess. I have used like 20 different styles/ conventions and still have not settled on a single one...
+	... Currently, I am trying to work on making updates more specific, rather than doing many different things as once so can make "versioned updates".
+	... I saw someone do that before, and thought it looked cool. But I now realize how dumb that is.
+		> ^ TL;DR: expect more short commits like: "update: locating land/ item locations" than "v1.4.2 - I farted and I rewrote everything lol"
+		-----------
+		> Removed some past update information. This file was getting a bit too long
+		> Have NOT tested this with multiple players/ if everything works. So don't be surprised if stuff is NOT sycned
+	
+	>> What's New?
+		> Loot should now spawn on a grid similarly to modern SAR versions!
+			> Loot items dropped when a player replaces it with another spawns in unexpected positions...
+		... this is partly to do with how item spots on the grid are found in SARLevel/ items are spawned in Match. This can be mitigated...
+		... in a future update that directly addresses this issue. It is not addressed in this update because I wanted this one to be more...
+		... focused on a particular issue which is finding landing locations/ trying to place loot items on an actual grid.
+		> Updated the algorithm that locates valid landing positions
+			> It still does not take into account desired directions, but... it should be more readable now?
+			> How to accomplish this is beyond me at this moment in time.
+
+--- Changes to Each Class ---
+	> This is also a new thing to better separate what's changed.
+	> If I ever update the Match class and any NetMessage related stuff I'll point it out, but yeah hopefully this looks nicer?
+-- Match--
+	-- Fields --
+		--> No changes
+		-------------------
+
+	-- General Methods --
+		--> `HandleDoodadDestructionFromPoint` updated
+			> Explosive Doodads could harm players in lobby x-x
+		--> HandlePlayerDied, HandleGrassCutRequest, and HandleLootRequestMatch
+			> Each method was just lazily editied to pass over the necessary information to the Msg20 send.
+			> Nothing more was done, so they should work just fine/ mostly as they had before
+		-------------------
+
+	-- NetMessage Methods --
+		--> Msg16 handle-method "HandleAttackRequest" updated
+			> Now uses weird "rPacketVar" format and uses a separate Msg17 send
+		--> Msg17 send-method "SendPlayerAttack" added
+		  -----
+		--> Msg20 send-method "SendSpawnedLoot" modified
+			> New argument: `ref Vector2 startPos`
+			> Newly-spawned loot should do its little bounce/ transition animation like in modern versions...
+			> As far as I know, all we have to do is send clients the necessary information and they'll play it...
+		... The server does not do anything more than just send the start/ end positions every time. Clients figure it out themselves it seems
+		  -----
+		--> Msg32 handle-method "HandlePlayerLanded" updated.
+			> Just uses the new methods and stuff for searching for landing spots!
+			
+
+-- SARLevel --
+	-- Fields --
+		--> No changes
+		-------------------
+
+	-- Methods --
+		----- Added
+		-> Added `FindWalkableGridLocation`
+		-> Added `QuickIsValidPlayerLoc`
+		-> Added `IsValidPlayerLoc`
+		-> Added `FindOKLootSpotFromPoint`
+		-> Added `NoItemAtThisSpot
+
+		----- Removed | Landing Search
+		-> Removed FindValidPlayerPosition
+		-> Removed SearchX
+		-> Removed SearchY
+
+		----- Removed | Loot Search
+		-> Removed `GetLootPosition` <--- honestly, why did this exist? It just called FindNewItemPosition lol
+		-> Removed `FindNewItemPosition`
+		-> Removed `IsThereAnItemhere`
+		-> Removed ItemSearchX
+		-> Removed ItemSearchY
+		-------------------
+
+	-- Commentary --
+		--> While the new "algorithms" are not much to write home about, at this moment I feel they look better than the previous ones. ...
+	... also think they may be faster/ more accurate but don't quote me on that.
+		--> At the very least, LootItems are more grid-aligned as opposed to whatever was going on before.
+			> They also should spawn/ fill in space similarly to real sar!!
+
 +------------------------------------------------------
 	-- 9/30/23 --
 
