@@ -4,6 +4,9 @@ using System.Text;
 
 namespace SARStuff
 {
+    /// <summary>
+    ///  Class containing a list of values that should be consistent between clients and the server.
+    /// </summary>
     internal static class SARConstants
     {
         /// <summary>
@@ -15,7 +18,6 @@ namespace SARStuff
         /// </summary>
         public const int BarnHideoutTarpSizeY = 67;
 
-        public const float MoleMoveSpeed = 25.0f;
 
         // obviously we could just write "solo", "duo", "squad", etc. any time; but in the event this ever changes, ya know... you can easily change it here!
         #region Gamemode Strings
@@ -34,6 +36,30 @@ namespace SARStuff
         /// </summary>
         public const string GamemodeSquad = "squad";
         #endregion Gamemode Strings
+
+        #region NPC Stuff
+        /// <summary>
+        ///  The speed at which the "Delivery Mole" NPC moves.
+        /// </summary>
+        public const float DeliveryMoleMoveSpeed = 25.0f;
+
+        /// <summary>
+        ///  The speed at which the "Giant Eagle" NPC moves.
+        /// </summary>
+        public const float EagleMoveSpeed = 95.0f;
+        #endregion NPC Stuff
+
+        #region Players
+        /// <summary>
+        ///  The amount of time it takes for a player to repair their armor.
+        /// </summary>
+        public const float TapeRepairDurationSeconds = 3.0f;
+
+        /// <summary>
+        ///  The amount of time it takes for a player to revive a downed teammate.
+        /// </summary>
+        public const float TeammateReviveDurationSeconds = 6.0f;
+        #endregion Players
 
         // it's possible to do this... but is it really all that necessary at this point in time?
         /*

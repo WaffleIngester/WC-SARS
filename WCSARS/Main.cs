@@ -1,6 +1,6 @@
 ﻿using System;
 using System.IO;
-using SimpleJSON;
+using WCSARS.Configuration;
 
 namespace WCSARS
 {
@@ -17,13 +17,9 @@ namespace WCSARS
             try
             {
                 Match mMatch;
-                if (args.Length > 0) // executable.exe IP PORT -- notice how there's no "-"
-                    mMatch = new Match(int.Parse(args[1]), args[0]);
-                else
-                {
-                    ConfigLoader mCfg = new ConfigLoader();
-                    mMatch = new Match(mCfg);
-                }
+                mMatch = new Match(new Config());
+                //if (args.Length > 0) // executable.exe IP PORT -- notice how there's no "-"
+                //mMatch = new Match(int.Parse(args[1]), args[0]);
 
                 // Do whatever stuff you want here
             }

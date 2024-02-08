@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using WCSARS.Configuration;
 
 namespace WCSARS
 {
@@ -86,6 +87,7 @@ namespace WCSARS
         private bool _hasMatchStarted = false;
         private bool _isMatchFull = false;
         private double _lobbyRemainingSeconds;
+        private int _lobbyPlayersNeededToReduceWait;
 
         //mmmmmmmmmmmmmmmmmmmmmmmmmmmmm (unsure section right now
         private bool _canCheckWins = false;
@@ -94,57 +96,16 @@ namespace WCSARS
         private const int MS_PER_TICK = 41; // (1000ms / 24t/s == 41)
         private readonly string _baseloc = AppDomain.CurrentDomain.BaseDirectory;
 
-        public Match(int port, string ip) // Original default constructor
+        public Match(Config cfg) // Match but it uses ConfigLoader (EW!)
         {
-            LoadSARLevel(351301, 5328522, 9037281);
+            #if DEBUG
+            cfg.LazyPrint();
+            #endif
 
-            // Initialize PlayerList stuff / ID stuff
-            _players = new Player[64]; // Default
-            _availableIDs = new List<short>(_players.Length); // So whenever playerList is changed don't have to constantly change here...
-            for (short i = 0; i < _players.Length; i++)
-                _availableIDs.Add(i);
-
-            _incomingClients = new Dictionary<NetConnection, Client>(_players.Length);
-            _poisonDamageQueue = new List<Player>(32);
-
-            isSorting = false;
-            isSorted = true;
-
-            // MoleCrate Crate fields...
-            _maxMoleCrates = 12;
-            _moleCrates = new MoleCrate[_maxMoleCrates];
-
-            _lobbyRemainingSeconds = 90.00;
-
-            // Load JSON Arrays
-            Logger.Warn("[Match - Status] Loading player-data.json...");
-            _playerData = LoadJSONArray(_baseloc + "player-data.json");
-            Logger.Warn("[Match - Status] Loading banned-players.json...");
-            _bannedPlayers = LoadJSONArray(_baseloc + "banned-players.json");
-            Logger.Warn("[Match - Status] Loading banned-ips.json...");
-            _bannedIPs = LoadJSONArray(_baseloc + "banned-ips.json");
-            Logger.Success("[Match - OK] Loaded player data and banlists!");
-
-            // NetServer Initialization and starting
-            Thread updateThread = new Thread(ServerUpdateLoop);
-            Thread netThread = new Thread(ServerNetLoop);
-            NetPeerConfiguration config = new NetPeerConfiguration("BR2D");
-            config.EnableMessageType(NetIncomingMessageType.ConnectionLatencyUpdated);  // Reminder to not remove this
-            config.EnableMessageType(NetIncomingMessageType.ConnectionApproval);        // Reminder to not remove this
-            config.PingInterval = 22f;
-            config.LocalAddress = System.Net.IPAddress.Parse(ip);
-            config.Port = port;
-            server = new NetServer(config);
-            server.Start();
-            updateThread.Start();
-            netThread.Start();
-        }
-
-        public Match(ConfigLoader cfg) // Match but it uses ConfigLoader (EW!)
-        {
             // Initialize PlayerStuff
             _serverKey = cfg.ServerKey;
-            _players = new Player[cfg.MaxPlayers];
+            _gamemode = cfg.ServerGamemode;
+            _players = new Player[cfg.ServerMaxPlayers];
             _availableIDs = new List<short>(_players.Length);
             _incomingClients = new Dictionary<NetConnection, Client>(_players.Length);
             _poisonDamageQueue = new List<Player>(32);
@@ -160,55 +121,59 @@ namespace WCSARS
             _bannedIPs = LoadJSONArray(_baseloc + "banned-ips.json");
 
             // Set healing values
-            _healPerTick = cfg.HealthPerTick;
-            _healRateSeconds = cfg.DrinkTickRate;
-            _coconutHealAmountHP = cfg.CoconutHealAmount;
-            _campfireHealPer = cfg.CampfireHealPerTick;
-            _campfireHealRateSeconds = cfg.CampfireRateSeconds;
-            _bleedoutRateSeconds = cfg.BleedoutRateSeconds;
-            _resurrectSetHP = cfg.ResurrectHP;
+            _healPerTick = cfg.JuiceHpPerTick; // WARN [BAD] | BYTE -> FLOAT
+            _healRateSeconds = cfg.JuiceDrinkRateSeconds;
+            _coconutHealAmountHP = cfg.CoconutHealHP; // WARN [BAD] | BYTE -> FLOAT
+            _campfireHealPer = cfg.CampfireHpPerTick; // WARN [BAD] | BYTE -> FLOAT
+            _campfireHealRateSeconds = cfg.CampfireTickRateSeconds;
+            _bleedoutRateSeconds = cfg.DownedBleedoutRateSeconds;
+            _resurrectSetHP = cfg.DownedRessurectHP;
 
             // Set Dartgun stuff -- TBH could just use the stats found in the Dartgun...
-            _ddgMaxTicks = cfg.MaxDartTicks;
-            _ddgTickRateSeconds = cfg.DartTickRate;
-            _ddgDamagePerTick = cfg.DartPoisonDamage;
-            _ssgTickRateSeconds = cfg.SuperSkunkGasTickRate;
+            _ddgMaxTicks = cfg.DartgunTickMaxDamageStacks;
+            _ddgTickRateSeconds = cfg.DartgunTickRateSeconds;
+            _ddgDamagePerTick = cfg.DartgunTickDamage;
+            _ssgTickRateSeconds = cfg.SkunkGasTickRateSeconds;
 
             // Others
-            _canCheckWins = !cfg.InfiniteMatch;
-            _safeMode = cfg.Safemode;
+            _canCheckWins = !cfg.FunDisableWinChecks;
+            _safeMode = !cfg.FunDisableSafetyChecks;
             isSorting = false;
             isSorted = true;
-            _maxMoleCrates = cfg.MaxMoleCrates;
-            _moleCrates = new MoleCrate[_maxMoleCrates];
-            _lobbyRemainingSeconds = cfg.LobbyTime;
-            _gamemode = cfg.Gamemode;
+
+            // even dumber
+            _lobbyRemainingSeconds = cfg.LobbyDurationSeconds;
+            _lobbyPlayersNeededToReduceWait = cfg.LobbyPlayersUntilReduceWait;
             _traps = new List<Trap>(64);
 
+            // MOLECRATE - PHASE OUT
+            _maxMoleCrates = 12; //cfg.MaxMoleCrates; // TODO - phase out
+            _moleCrates = new MoleCrate[_maxMoleCrates];
+
             // Load the SAR Level and stuff!
-            int srngLoot = cfg.LootSeed;
-            int srngCoconut = cfg.CocoSeed;
-            int srngHamster = cfg.HampterSeed;
-            if (!cfg.useConfigSeeds)
+            uint lootSeed = cfg.SeedLoot;
+            uint coconutSeed = cfg.SeedCoconuts;
+            uint hamsterballSeed = cfg.SeedHamsterballs;
+            if (!cfg.FunForceConfigSeeds)
             {
                 MersenneTwister twistItUp = new MersenneTwister((uint)DateTime.UtcNow.Ticks);
-                srngLoot = (int)twistItUp.NextUInt(0u, uint.MaxValue);
-                srngCoconut = (int)twistItUp.NextUInt(0u, uint.MaxValue);
-                srngHamster = (int)twistItUp.NextUInt(0u, uint.MaxValue); 
+                lootSeed = twistItUp.NextUInt(0u, uint.MaxValue);
+                coconutSeed = twistItUp.NextUInt(0u, uint.MaxValue);
+                hamsterballSeed = twistItUp.NextUInt(0u, uint.MaxValue); 
             }
-            Logger.Warn($"[Match - Note] Using Seeds: LootSeed: {srngLoot}; CoconutSeed: {srngCoconut}; HampterSeed: {srngHamster}");
-            LoadSARLevel((uint)srngLoot, (uint)srngCoconut, (uint)srngHamster);
+            Logger.Warn($"[Match - Warning] Using Seeds: LootSeed: {lootSeed}; CoconutSeed: {coconutSeed}; HampterSeed: {hamsterballSeed}");
+            LoadSARLevel(lootSeed, coconutSeed, hamsterballSeed);
 
             // Initialize NetServer
-            Logger.Basic($"[Match - Status] Attempting to start server on \"{cfg.IP}:{cfg.Port}\".");
+            Logger.Basic($"[Match - Status] Attempting to start server on \"{cfg.ServerIP}:{cfg.ServerPort}\".");
             Thread updateThread = new Thread(ServerUpdateLoop);
             Thread netThread = new Thread(ServerNetLoop);
             NetPeerConfiguration config = new NetPeerConfiguration("BR2D");
             config.EnableMessageType(NetIncomingMessageType.ConnectionLatencyUpdated);  // Reminder to not remove this
             config.EnableMessageType(NetIncomingMessageType.ConnectionApproval);        // Reminder to not remove this
             config.PingInterval = 22f;
-            config.LocalAddress = System.Net.IPAddress.Parse(cfg.IP);
-            config.Port = cfg.Port;
+            config.LocalAddress = cfg.ServerIP;
+            config.Port = cfg.ServerPort;
             server = new NetServer(config);
             server.Start();
             netThread.Start();
@@ -341,8 +306,7 @@ namespace WCSARS
                     // General Lobby stuff...
                     SendDummyMessage(); // Ping!
                     SendCurrentPlayerPings(); // Pong!
-                    if (numOfPlayers > 0)
-                        UpdateLobbyCountdown();
+                    UpdateLobbyCountdown();
                     SendLobbyPlayerPositions();
                     UpdatePlayerEmotes(); // would you believe me if I told you this used to only be used in in-progress Matches until 6/13/23?
                     CheckCampfiresLobby();
@@ -377,7 +341,7 @@ namespace WCSARS
                     SendCurrentPlayerPings();
 
                     // Check Wins
-                    if (_hasPlayerDied && _canCheckWins)
+                    if (_hasPlayerDied && _canCheckWins) // todo - just do this in HandlePlayerDeath?
                         CheckForWinnerWinnerChickenDinner();
 
                     // Match Player Updates
@@ -418,6 +382,17 @@ namespace WCSARS
         {
             if (!IsServerRunning())
                 return;
+
+            var readiedPlayers = GetAllReadiedAlivePlayers();
+            if (readiedPlayers.Count == 0)
+                return;
+
+            if ((readiedPlayers.Count >= _lobbyPlayersNeededToReduceWait) && (_lobbyRemainingSeconds > 60.0))
+            {
+                _lobbyRemainingSeconds = 60.0;
+                SendCurrentLobbyCountdown(_lobbyRemainingSeconds);
+                return;
+            }
 
             _lobbyRemainingSeconds -= DeltaTime.TotalSeconds;
             SendCurrentLobbyCountdown(_lobbyRemainingSeconds);
@@ -536,7 +511,7 @@ namespace WCSARS
                     RevivePlayer(_players[i]);
                 else if (!_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].NextBleedTime))
                 {
-                    _players[i].NextBleedTime = DateTime.UtcNow.AddSeconds(1);
+                    _players[i].NextBleedTime = DateTime.UtcNow.AddSeconds(_bleedoutRateSeconds);
                     DamagePlayer(_players[i], 2 + (2 * _players[i].TimesDowned), _players[i].LastAttackerID, _players[i].LastWeaponID);
                     // Please see: https://animalroyale.fandom.com/wiki/Downed_state
                 }
@@ -768,7 +743,7 @@ namespace WCSARS
                 }
                 else
                 {
-                    float deltaMove = (float)DeltaTime.TotalSeconds * SARConstants.MoleMoveSpeed;
+                    float deltaMove = (float)DeltaTime.TotalSeconds * SARConstants.DeliveryMoleMoveSpeed;
                     mole.Position = Vector2.MoveTowards(mole.Position, thisEndPoint, deltaMove);
                 }
             }
@@ -1047,7 +1022,8 @@ namespace WCSARS
                     HandleEjectRequest(msg);
                     break;
 
-                    // Msg14 -- Client Position Update >>> No further messages; although these use the data: Msg11 / Msg12:: LobbyPositionUpdate / MatchPositionUpdate
+                    // Msg14 -- Client Position Update >>> No further messages.
+                    // data from this packet is saved/ used in Msg11 / Msg12 (lobby/ match position update respectively)
                 case 14: // Appears OK
                     HandlePositionUpdate(msg);
                     break;
@@ -1070,7 +1046,8 @@ namespace WCSARS
                         ServerHandleLobbyLootRequest(msg);
                     break;
 
-                    // Msg25 -- Client Sent Chat Message --> I no write anymore
+                    // Msg25 -- Client Sent Chat Message --> Multiple potential further packets- see method
+                    // quick list of potential responses: Msg26 [pub/ team chat], Msg94 [warnMsg], Msg106 [/roll msg]
                 case 25:
                     HandleChatMessage(msg);
                     break;
@@ -2167,7 +2144,7 @@ namespace WCSARS
                                             responseMsg = "\n> Forces the provided player to eject from the Giant Eagle.\nIf no player is specified, then the user is ejected.";
                                             break;
                                         case "":
-                                            responseMsg = "\nI mean honestly, you're not supposed to see this lol; try inputting a command listed in /help lol";
+                                            responseMsg = "\nYou're not supposed to see this... Try inputting a command listed in '/help'? :]";
                                             break;
                                         /*case "2":
                                             responseMsg = "Command Page 2 -- List of usabble Commands\n/help {page/command}\n/heal {ID} {AMOUNT}";
@@ -2199,6 +2176,253 @@ namespace WCSARS
                                         "\n> Type '/help [command]' for more information";
                                 }
                                 break;
+
+                            #region removable commands
+                            // adds new player but if solos or team is full gets put on other team
+                            case "/p": // you shouldn't use this unless you know what you're doing
+                                for (int i = 0; i < _players.Length; i++)
+                                {
+                                    if (_players[i] != null)
+                                        continue;
+                                    Player addPlayer = new Player((short)i, 0, 0, 0, 0, new short[] { -1, -1, -1, -1, -1, -1 }, 0, 0, 0, 0, 0, 0, new short[] { }, new byte[] { }, "tmp", new Client());
+                                    addPlayer.hasReadied = true;
+
+                                    _players[i] = addPlayer;
+                                    if (_gamemode != SARConstants.GamemodeSolos)
+                                        FindTeamToAddPlayerTo(addPlayer);
+
+                                    SendAllPlayerCharacters(GetAllReadiedAlivePlayers());
+                                    responseMsg = "added a new player...";
+                                    break;
+                                }
+                                break;
+
+                            case "/gb":
+                                responseMsg = "Valid HamsterballIDs: ";
+                                foreach (int key in _hamsterballs.Keys)
+                                    responseMsg += $"{key}, ";
+                                break;
+                            case "/b":
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (int.TryParse(command[1], out int ballKey))
+                                    {
+                                        if (_hamsterballs.ContainsKey(ballKey))
+                                        {
+                                            SendForcePosition(player, _hamsterballs[ballKey].Position);
+                                            responseMsg = $"Teleported {player} to Hamsterball[{ballKey}].";
+                                        }
+                                        else responseMsg = $"No such hamsterball \"{ballKey}\"!";
+                                    }
+                                    else responseMsg = $"Command error: not INT.";
+                                }
+                                else
+                                    responseMsg = "Insufficient # of arguments provided.\n\"/tpball\" takes at least 1!\nUsage: /tpball [ballID] OR /tpball [ballID] <X> <Y>.";
+                                break;
+
+                            case "/forceb":
+                                {
+
+                                    if (TryPlayerFromString(command[1], out Player ballee))
+                                    {
+                                        short hamsterballID = short.Parse(command[2]);
+                                        if (_hamsterballs.ContainsKey(hamsterballID))
+                                        {
+                                            CheckMovementConflicts(ballee);
+                                            ballee.SetHamsterball(hamsterballID);
+                                            _hamsterballs[hamsterballID].CurrentOwner = ballee;
+                                            SendHamsterballEntered(ballee.ID, (short)hamsterballID, _hamsterballs[hamsterballID].Position);
+                                        }
+                                    }
+                                }
+                                break;
+
+                            case "/leaveball":
+                                {
+                                    if (TryPlayerFromString(command[1], out Player ballee))
+                                    {
+
+                                        Hamsterball hamsterball = _hamsterballs[ballee.HamsterballID];
+                                        hamsterball.Position = ballee.Position;
+                                        hamsterball.CurrentOwner = null;
+                                        ballee.ResetHamsterball();
+                                        SendHamsterballExit(ballee.ID, hamsterball.ID, ballee.Position);
+                                    }
+                                }
+                                break;
+
+                            case "/setlanded": // gotta remove this broski
+                                for (int i = 0; i < _players.Length; i++)
+                                {
+                                    if (_players[i] != null)
+                                        _players[i].hasLanded = true;
+                                }
+                                responseMsg = "set EVERYONE to as having landed";
+                                break;
+
+                            case "/tpbarrel":
+                                {
+                                    foreach (Doodad doodad in _level.Doodads)
+                                    {
+                                        if (doodad.Type.DestructibleDamageRadius > 0)
+                                        {
+                                            SendForcePosition(player, doodad.Position);
+                                            responseMsg = $"Sent you to Doodad @ {doodad.Position}";
+                                            break;
+                                        }
+                                    }
+                                }
+                                break;
+
+                            case "/boomb":
+                                {
+                                    try
+                                    {
+                                        float x = int.Parse(command[1]);
+                                        float y = int.Parse(command[2]);
+
+                                        HandleDoodadDestructionFromPoint(new Vector2(x, y));
+                                        responseMsg = $"Tried destroying Doodad @ {(x, y)}";
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        responseMsg = $"{ex}";
+                                    }
+                                }
+                                break;
+
+                            case "/tpb":
+                                try
+                                {
+                                    short ballID = short.Parse(command[1]);
+                                    if (!_hamsterballs.ContainsKey(ballID))
+                                    {
+                                        responseMsg = $"There is no ball with id: \"{ballID}\"";
+                                        break;
+                                    }
+                                    SendHamsterballExit(player.ID, ballID, player.Position);
+                                }
+                                catch (Exception ex)
+                                {
+                                    responseMsg = $"Goofed somewhere";
+                                    Logger.Failure($"There was indeed an error at some point for doing something I don't really care what\n{ex}");
+                                }
+                                break;
+
+                            case "/mates":
+                                Logger.Success("/mates has been used!");
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player mates))
+                                    {
+                                        string print = $"{mates} has {mates.Teammates.Count} teammates for a total of {mates.Teammates.Count + 1} players. isFillsDisabled: {mates.Client.isFillsDisabled}\n0) {mates}\n";
+                                        for (int i = 0; i < mates.Teammates.Count; i++)
+                                        {
+                                            print += $"{i + 1}) {mates.Teammates[i]}\n";
+                                        }
+                                        print += "-----------";
+                                        Logger.Basic(print);
+                                    }
+                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else
+                                {
+                                    string print = $"{player} has {player.Teammates.Count} teammates for a total of {player.Teammates.Count + 1} players. isFillsDisabled: {player.Client.isFillsDisabled}\n0) {player}\n";
+                                    for (int i = 0; i < player.Teammates.Count; i++)
+                                    {
+                                        print += $"{i + 1}) {player.Teammates[i]}\n";
+                                    }
+                                    print += "-----------";
+                                    Logger.Basic(print);
+                                }
+                                break;
+
+                            // testing if teammates can "dc" but stick around and be used for junk
+                            case "/d": // you also shouldn't use this unless you know what you are doing.
+                                if (command.Length >= 2 && command[1] != "")
+                                {
+                                    if (TryPlayerFromString(command[1], out Player dcP))
+                                        HandleTeammateLeavingMatch(dcP, false);
+                                    else
+                                        responseMsg = $"Could not locate player \"{command[1]}\"";
+                                }
+                                else
+                                    responseMsg = "Missing some stuff...";
+                                break;
+                            case "/check": //12/1/23 --> can remove
+                                try
+                                {
+                                    bool wasSafe;
+                                    wasSafe = _level.IsValidPlayerLoc(ref player.Position);
+                                    responseMsg = $"{player.Position} valid: {wasSafe}";
+                                }
+                                catch (Exception excp)
+                                {
+                                    GoWarnModsAndAdmins("command broke");
+                                    Logger.Failure($"/check - erorr\n{excp}");
+                                }
+                                break;
+                            case "/quick":
+                                try
+                                {
+                                    int x = (int)player.Position.x;
+                                    int y = (int)player.Position.y;
+                                    bool wasSafe = _level.QuickIsValidPlayerLoc(x, y);
+                                    responseMsg = $"{player.Position} (used: {(x, y)}) valid: {wasSafe}";
+                                }
+                                catch (Exception excp)
+                                {
+                                    GoWarnModsAndAdmins("command broke");
+                                    Logger.Failure($"/quick - erorr\n{excp}");
+                                }
+                                break;
+                            case "/move":
+                                if (command.Length >= 3 && command[1] != "")
+                                {
+                                    try
+                                    {
+                                        float x = float.Parse(command[1]);
+                                        float y = float.Parse(command[2]);
+                                        SendForcePosition(player, new Vector2(x, y), false);
+                                        responseMsg = $"teleported you to {(x, y)}";
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        responseMsg = "ouch! error handling the command!";
+                                        Logger.Failure($"unhandled general exception:\n{ex}");
+                                    }
+                                }
+                                else
+                                    responseMsg = "Insufficient amount of arguments provided. usage: /move {positionX} {positionY}";
+                                break;
+                            case "/improve":
+                                if (_level.QuickIsValidPlayerLoc((int)player.Position.x, (int)player.Position.y))
+                                    responseMsg = "Your position is already valid.";
+                                else
+                                {
+                                    int x = (int)player.Position.x, y = (int)player.Position.y;
+                                    Vector2 newpos = _level.FindWalkableGridLocation(x, y);
+                                    SendForcePosition(player, newpos, false);
+                                    responseMsg = $"You have been teleported to {newpos}";
+                                }
+                                break;
+                            case "/levelsize":
+                                responseMsg = $"LevelWidth={_level.LevelWidth}\nLevel Height={_level.LevelHeight}";
+                                break;
+                            case "/type":
+                                try
+                                {
+                                    int x = (int)player.Position.x;
+                                    int y = (int)player.Position.y;
+                                    responseMsg = $"{(x, y)} type: {_level.CollisionGrid[x][y]}";
+                                }
+                                catch (Exception excp)
+                                {
+                                    GoWarnModsAndAdmins("command broke");
+                                    Logger.Failure($"/type - erorr\n{excp}");
+                                }
+                                break;
+                            #endregion removable commands
 
                             case "/kick":
                                 if (player.Client.isMod || player.Client.isDev)
@@ -4634,7 +4858,7 @@ namespace WCSARS
                         CheckMovementConflicts(player);
                         player.Position = requestPosition;
                         player.isTaping = true;
-                        player.NextTapeTime = DateTime.UtcNow.AddSeconds(3.0d);
+                        player.NextTapeTime = DateTime.UtcNow.AddSeconds(SARConstants.TapeRepairDurationSeconds);
                         NetOutgoingMessage tapetiem = server.CreateMessage();
                         tapetiem.Write((byte)99);
                         tapetiem.Write(player.ID);
@@ -4954,7 +5178,7 @@ namespace WCSARS
             server.SendMessage(msg, pDest, NetDeliveryMethod.ReliableUnordered);
         }
 
-        // Msg106 | "Send Roll Message" --- Usually sent whenever a player uses the /roll command; can be used for other cool stuff though!
+        // Msg106 | "Send /roll ChatMsg" --- Typically sent when a player uses `/roll`; however, in actuality, any command/ even normal chats can use this
         private void SendRollMsg(short playerID, string message)
         {
             if (!IsServerRunning()) return;
@@ -5159,7 +5383,6 @@ namespace WCSARS
         {
             int ret = 0;
             List<Player> tmp_ignore = new List<Player>(_players.Length);
-
             for (int i = 0; i < _players.Length; i++)
             {
                 // null, not alive/ landed/ readied/ ghosting, or already saw this player's team...
@@ -5178,7 +5401,6 @@ namespace WCSARS
 
             // hoping this makes cleaning up faster
             tmp_ignore.Clear();
-            tmp_ignore.TrimExcess();
             return ret;
         }
 

@@ -1,4 +1,90 @@
-﻿ -- Changelog -- 
+﻿ -- Changelog -- +------------------------------------------------------
+	-- 2/07/24 --
+
+	>> IMPORTANT:: "config class" update
+		> Basically making the config class more consistent/ able to recognize it loaded an invalid key.
+		> Have NOT tested if this with multiple players/ if everything works.
+	 ... Some things may be brokey due to adding more spaghetti!
+		> Was originally trying to make projectiles work, but that didn't turn out as I wanted.
+	... So that is being put on hold for now. The leftovers will be kept for the time being as well.
+	
+	>> What's New?
+		> More config variables to future proof
+			> Mostly loot rng seeds (assuming future version utilizes seeds in a similar manner as right now)
+		... Obviously the values that are unused in this version go unused.
+		> Match constructor with parameter of int/ string (port/ ip) has been removed.
+		> SARConstants class no longer in "Level-Related"
+			> Constants in SAR are obviously not only related to level loading, so correcting that oopsie.
+		... Also going to be using it to store values like heal times that need to be consistent.
+		> Weapon class got minor edits to be able to handle projectiles.
+
+--- Changes to Each Class ---
+	> This is also a new thing to better separate what's changed.
+	> If I ever update the Match class and any NetMessage related stuff I'll point it out, but yeah hopefully this looks nicer?
+-- Match--
+	-- IMPORTANT --
+		--> Old constructor (one that took "int port" & "string ip") has been removed
+			> The one using the config class is now the preferred one. Updates to that later...
+
+	-- Fields --
+		--> Added `_lobbyPlayersNeededToReduceWait`.
+		-------------------
+
+	-- General Methods --
+		--> `HandleTapeRequest` updated
+			> Utilizes constant for tape action duration, as this is an action we can't make configurable.
+		--> `CheckMoleCrates` updated
+			> Utilizes constant for move speed. Before it seemed like a magic number (still is imo)
+		--> `UpdateDownedPlayers` updated
+			> Utilizes the configurable variable for next bleedout time as originally intended.
+			> It not doing this was an oopsie...
+		--> `UpdateLobbyCountdown()` updated
+			> Does all necessary checks within the method, rather than the update loop itself.
+			> Also uses new config field "_lobbyPlayersNeededToReduceWait".
+		-------------------
+
+	-- NetMessage Methods --
+		--> No changes
+
+
+-- Config --
+	--> Added >> replaced ConfigLoader.cs
+
+
+-- Weapon --
+	-- Fields --
+		----- Added
+		-> Added `BulletMoveSpeed`
+		-> Added `BulletMoveSpeedIncPerRarity`
+		-> Added `BulletMaxDistanceBase`
+		-> Added `BulletMaxDistanceIncPerRarity`
+
+
+-- Player --
+	-- Methods --
+		---- Updated
+		-> `SetMyResurrector`
+			> Revive time is a value we can't make configurable, so it is now using SARConstant's value for it.
+
+
+-- SARLevel --
+	-- Methods --
+		----- Updated
+		-> `FindWalkableGridLocation`
+			> Now verifies that its starting search location is actually invalid before continuing.
+
+
+-- SARConstants --
+	-- Added Constants --
+		-> DeliveryMoleMoveSpeed
+		-> EagleMoveSpeed
+		-> TapeRepairDurationSeconds
+		-> TeammateReviveDurationSeconds
+		
+
+	-- Commentary --
+		--> Nothing.
+
 +------------------------------------------------------
 	-- 12/05/23 --
 
@@ -279,715 +365,4 @@ Oopsies:
 
 	- Godded-players riding hamsterballs would have the attack confirm sound play when they were hit
 
-+------------------------------------------------------
-
-+------------------------------------------------------
-	-- 6/8/23 --
-
-Match:
-	>> Most level-related code now resides in SARLevel.cs.
-	>> Players will no longer get stuck in objects after landing (for the most part; have yet to encounter otherwise).
-	>> Flight-paths are a thing now, although Matches are hard-coded to always have a path of (0, 0) to (4206, 4206).
-	>> Chat messages & the """command""" system has been improved upon.
-	>> Doodads exploding now exists, but that still needs work down the road.
-	>> It is now possible to /kick, /ban, and /ipban Players
-	>> New players (unseen playFabIDs) will now automatically be played in "player-data.json" to make editing their properties slightly easier.
-	>> Minor improvements to team-modes
-
-	++ General Updates
-		- Added config-field `_ssgTickRateSeconds`.
-		- Added config-field `_bleedoutRateSeconds`.
-		- Added config-field `_resHP`.
-			-----------
-		- Added field `_level`.
-		- Added field `_giantEagle`.
-		- Added field `_isFlightActive`.
-			-----------
-		- Added method `UpdateGiantEagle`.
-		- Added method `UpdateStunnedPlayers`.
-			-----------
-		- Removed field `_lootSeed`.
-		- Removed field `_coconutSeed`.
-		- Removed field `_vehicleSeed`.
-		- Removed field `_doodadList`.
-		- Removed field `_moleSpawnSpots`.
-		- Removed field `_totalLootCounter`.
-		- Removed field `_lootItems`.
-		- Removed variant for method `SendPlayerDeath`.
-			-----------
-		- Updated various /commands
-			--> "/help" SLIGHTLY updated, so if interested check it out.
-			--> /commands that should be able to take one or none arguments updated to do so (i.e., simply typing "/kill" instead of "/kill yourName" fixed/ added).
-			--> /commands that require a player argument now use "TryPlayerFromString" which checks for both usernames & userIDs.
-			--> Various commands now recognize "" as a blank argument.
-		- Updated method `HandlePlayerDowned`.
-		- Updated method `HandlePickupCanceled` (formally `CancelTeammatePickup`).
-		- Updated method `ResetForRoundStart`.
-			--> Now resets a Player's position to the giant-eagle's spot; sets a Player's `hasEjected` field to False!
-		- Updated method `HandlePlayerDied`.
-			--> Players should now drop their loot after dying
-			--> When a Player is killed, their teammates are no longer force-killed alongside them.
-		- Updated method `HandleEmoteRequest`.
-			--> Checks whether the requested emoting-position is close enough to their server-side position. If not, their request is simply ignored and this issue is logged.
-		- Updated method `SendPlayerEmote`.
-			--> Actually sets `Player.EmotePosition` to the new emoting-position as opposed to modifying `Player.Position`.
-
-	++ Message Handles
-		- Msg1 (AuthenticationRequest) messed with a little bit.
-			--> Wanted to add fills. Abandoned for now; unsure if will finish before pushing this out; if you see this you'll know which was chosen lol
-
-		- Msg4 (MatchInfo) send method `SendMatchInformation` updated.
-			--> Sends the Match's actual flight path, as opposed to the default `[0,0] > [4206, 4206]` every time.
-			--> Sends the RNG seeds found in `_level`.
-
-		- Msg7 (EjectRequested) handle method `HandleEjectRequest` updated.
-
-		- Msg8 (ForcePosition) send method `SendForcePosition` updated.
-			--> Parameter `isParachute` is now optional! (defualt is False!)
-			--> If `isParachute` parameter is true, all Player-ejection related values are set properly.
-
-		- Msg14 (PlayerPosUpdate) handle method `HandlePositionUpdate` updated.
-			--> Checks if the client is emoting. If they are, and are too far away, their emote is canceled.
-			--> Checks if the client is picking up a teammate/ being revived. If either are true and they're too far, their revive is canceled.
-			--> [REVERTED] Since flights are real; Players will now get forced to their last server-side position if it differs by more than 10 units.
-
-		- Msg16 (AttackRequest) handle method `HandleAttackRequest` "updated".
-			--> Simply removed some logging. This method needs quite a bit of work, especially if the server calculates projectiles itself.
-
-		- Msg20 (LootSpawned) send method `SendSpawnedLoot` added.
-			--> All previous send methods titled in the format "SendNew-X-Item" (where X is the LootType), has been consolodated into a singular send method!
-
-		- Msg21 (LootReqest) handle method `LootReqMatch` updated.
-			--> No longer utilizes the client's `Player.NextLootTime` field, as that has been removed.
-
-		- Msg25 (ChatMsgReceived) handle method `HandleChatMessage` updated.
-			--> Messages sent between teammates should now work properly. In addition, these messages are ONLY sent to teammates.
-			--> Send-Method branches: Msg26 (differs if to teammates/ all); Msg94 (warn message); or 106 (/roll).
-
-		- Msg26 (ChatMsg) send methods `SendChatMessageToAll` & `SendChatMessageTeammate` added.
-
-		- Msg32 (PlayerLanded) handle method `HandlePlayerLanded` added.
-			--> It should be impossible to get stuck in walls now, but SARLevel's collisionGrid and stuff can be improved greatly.
-
-		- Msg41 (GrenadeFinished) send method `SendGrenadeFinished` added.
-			--> Apparently this NetMsg is responsible for grenades doing their animation/ damage effect AND also to get bananas to play their splatter animation!
-			--> Msg40 handle has been updated to utilize this, alongside the handle for checking if a Player has slipped.
-
-		- Msg44 (SpectateUpdate) handle method `HandleSpectatorRequest` added.
-			--> Taking the position is similar to Msg14's handle; but also this method will move/ update spectator counts properly.
-
-		- Msg46 (PlayerDisconnected) send method `SendPlayerDisconnected` added.
-			--> Whenever a Player is to disappear from the lobby, this packet is sent.
-			--> Currently utilized always by the NetPeer.Disconnect handle && /ghost (so the ghoster's body disappears and stuff)
-
-		- Msg53 (GrassCutRequest) handle method `HandleGrassCutRequest` updated.
-			--> Shouldn't crash in the event a Client sends bogus data; instead kicking the goober
-			--> Actually checks whether the client/player did indeed cut the blades of grass they claim to have.
-			--> Now has a chance to spawn loot as well; although this can be greatly improved further.
-
-		- Msg54 (GrassCutConfirm) send method `SendGrassCut` added.
-		- Msg59 (GrassCutLootSound) send method `SendGrassLootFoundSound` added.
-			--> This is apparently responsible for the little sound-cue players hear whenever grass loot is found!
-
-		- Msg70 (RequestOpenMolecrate) handle method `HandleMolecrateOpenRequest` added.
-		- Msg71 (MolecrateOpened) send method `SendMolecrateOpened` added.
-
-		- Msg72 (DoodadDestroyRequest) handle method `HandleDoodadDestroyed` updated.
-			--> This is accoutning for some changes and improvements made wtih Doodads as a while in relation to SARLevel.
-
-		- Msg73 (DoodadDestroyed) send method `SendDestroyedDoodad` method added.
-			--> Previous this was a part of the Msg72 handle, and has been moved to its own method.
-			--> Takes a Doodad and attempts to calculate some server-side stuff; like whether Players or Hamsterballs are close enough to an exploding Doodad.
-			--> These checks can greatly be improved on. A "minor" improvment is actually doing explosive-barrel damage correctly.
-
-		- Msg74 (AttackRevUp) handle method `HandleAttackWindUp` updated.
-			--> Improved/ more sanity checks & send offloaded to separate method
-		- Msg75 (AttackRevUpConfirm) send method `SendAttackWindup` added.
-
-		- Msg76 (AttackRevDown) handle method `HandleAttackWindUp` updated.
-			--> Improved/ more sanity checks & send offloaded to separate method
-		- Msg77 (AttackRevDownConfirm) send method `SendAttackWindDown` added.
-
-		- Msg78 (SpectatorCountUpdated) send method `SendUpdatedSpectatorCount` added.
-			--> Lets all the client's know just how many other players are currently watching a particular one...
-
-		- Msg87 (TrapDeployRequest) handle method `HandleTrapDeployed` added.
-
-		- Msg88 (VehicleDestroyBananaRequest) handle method `HandleVehicleHitBanana` added.
-
-		- Msg111 (TrapDeployed) send method `SendTrapDeployed` added.
-			--> This and 87 still need some improvements, as do grenades as awhole
-
-		- Msg94 (ChatWarning) send method `SendChatMessageWarning` added.
-
-		- Msg95 (TeammateLeft) send method `SendTeammateDisconnected` updated slightly.
-			--> Used to remove Teammate[i] before actually using them. Likely at some point would cause an index-out-of-bounds; but not sure bc don't have 4+ people testing.
-
-		- Msg104 (AviaryShowStarted) send method `SendAviaryShow` added.
-
-		- Msg105 (GhostmodeEnabled) send method `SendGhostmodeEnabled` added.
-			--> Simply enables the UI and stuff. It would appear in v0.90.2 it's Ghost Mode is very basic.
-			--> However... there could be other things that must be done in order for this to work properly (like having to sent Msg46 after this one)
-
-		- Msg106 (Chat /roll Message) send method `SendRollMsg` added.
-
-SARLevel:
-	- Added to project
-		--> Represents the SAR game world; and takes over loading the level data from the Match.
-		--> Stores the CollisionGrid, which is used when landing to make sure players are not out of bounds!
-		--> Also does other helpful things using the collision grid as well in relation to items.
-
-DoodadType:
-	>> Overall simplified and improved to fit in with the way in which all other externally-loaded datatypes shall be loaded.
-		- Added field `AllDoodads`.
-		- Added field `MovementCollisionPts`.
-			--> Replaces MoveCollisionPoints + is now a readonly Int32Point-array.
-		- Added field `MovementAndSightCollisionPts`.
-			--> Replaces MoveSightCollisionPoints + is now a readonly Int32Point-array.
-		- Added method `GetDoodadFromID`
-		- Added method `NullAllDoodadsList`
-		- Updated method `DoodadType()` [constructor]
-			--> Privated [only usable in GetAllDoodadTypes()]; overall improved sylistically.
-		- Removed field `DoodadName`.
-			--> 1) Wasn't the DoodadType's name, it was its image name; 2) Its name is of no use.
-
-Doodad:
-		- Added field `Type`.
-		- Added field `Position`.
-		- Added field `HittableSpots`.
-		- Updated constuctor
-		- Removed old `position` fields `X` & `Y`.
-
-Decal / CollisionType / Tile / Rectangle:
-	- Added to project.
-		--> All these classes/ types are used for setting up a SARLevel's CollisionGrid field.
-	
-Weapon:
-	- Added static-field `AllWeapons`.
-	- Added static-method `GetWeaponFromID`.
-	- Added static-method `NullAllWeaponsList`.
-	- Updated static-method `GetOnlyGuns`.
-	- Updated method `GetAllWeaponTypes`.
-		--> Now searches for `weapons.json` found within the `Datafiles` folder.
-		--> Utilizes new `AllWeapons` field.
-
-GrassType & GameGrass:
-	- Added to project/
-		--> Represents different grass types/ grass objects in the game world. Requires "grass.json" to work properly.
-
-Player:
-	- Added field `PlayFabID`.
-	- Added field `RevivingID`.
-	- Added field `hasEjected`.
-	- Added field `isStunned`.
-	- Added field `StunEndTime`.
-	- Added field `isGhosted`.
-	- Added field `MySpectatorsIDs`
-	- Added field `WhoImSpectating`.
-		-----------
-	- Added method `Stun`.
-	- Added method `DownKnock`.
-		--> I'm aware this sounds/looks really stupid. This whole system is stupid.
-		--> This naming scheme exists so it is easier to differentiate between a downed-player and saviour-player's methods.
-	- Added method `DownSetSaviour`.
-	- Added method `DownResetState`.
-	- Added method `DownResurrect`.
-	- Added method `SaviourSetRevivee`.
-	- Added method `SaviourFinishedRessing`.
-	- Added method `AliveNonDownTeammteCount`.
-	- Added method `IsPIDMyTeammate`.
-		-----------
-	- Renamed field `ReviverID` to `SaviourID`.
-	- Renamed field `NextDownDamageTick` to `NextBleedTime`.
-	- Renamed field `Drinkies` to `HealthJuice`.
-	- Renamed field `Tapies` to `SuperTape`.
-		-----------
-	- Removed field `isFalling`.
-	- Removed field `NextLootTime`.
-
-GiantEagle:
-	- Added to project.
-		--> Holds flight paths/ represents the `Giant Eagle` NPC found in-game.
-
-Client:
-	- Added to project.
-		--> Goal: Add to Player class. Represents client-stuff like IPAddress, Fills, PlayFabID, etc.
-
-ConfigLoader:
-	- Added config `BleedoutRateSeconds`.
-	- Added config `ResurrectHP`.
-	- Added config `InfiniteMatch`.
-	- Updated config `SuperSkunkGasTickRate`.
-	- Renamed config `MaxLobbyTime` to simply `LobbyTime`.
-
-IntPoint16:
-	- Added to project.
-		--> Represents a pair of two Int16s (shorts); fairly simple. Utilized by GameGrass only, currently.
-
-Trap / TrapType
-	- Added to project.
-		--> Represents "traps" in the game (Skunk Nades & Bananas)
-		--> Appears to mostly work, but nanners do not disappear!
-
-Other:
-	- Added an icon to the executable :]
-		--> Thought changing it up would look nicer than to have the default program icon at all times. Edit the .csproj & remove the file to remove icon
-		
-	>> Simply minor changes made to pre-existing classes that should be noted.
-	Campfire & Coconut:
-		- Constructor now takes a single Vector2 `postion` as opposed to two (2) floats which served a similar purpose.
-
-	LootItem:
-		--> Added field `LootID`.
-
-	Int32Point:
-		--> Moved `Int32Point.cs` to SARStuff
-		
-	MersenneTwister:
-		- Added methods `NextInt` & `NextInt2`.
-			--> Needed these at some point; NextInt2 is used for /roll currently.
-
-	SimpleJSON:
-		- Added method `SaveToFile`.
-			--> Makes it possible to lazily save JSONArrays to a file (like with playerData!).
-
-Files Moved:
-	- `SimpleJSON.cs` moved to `SARStuff` folder.
-	- `Weapon.cs` moved to `SARStuff` folder.
-	- `Level-Junk` folder renamed to `Level-Related`.
-	- `Doodad.cs` moved to `Level-Related` folder (subfolder of `SARStuff`).
-	- `DoodadType.cs` moved to `Level-Related` folder (subfolder of `SARStuff`).
-	- `Tools` has been moved out of `WCSARS`; should be outer-most layer now.
-	-  Doodads/Weapons minifier updated to utilize the simplified/ lazy script from Decals/Tiles
-+------------------------------------------------------
-
-+------------------------------------------------------
-	-- 2/19/23 --
-
-Match:
-	>> Overall team-based modes *should* work. Can't find people to test it out consistently; so if something's broken don't be too surprised.
-	>> Super Skunk Gas should work more as intended
-
-	++ General Updates
-		- Added field `canSSGApproach`.
-		- Added field `_gamemode`.
-		- Added method `IsServerRunning`.
-			--> Various methods use this. Notably the `sends` which rely on the NetServer running to not crash.
-		- Added method `ResetForRoundStart`.
-		- Added method `UpdateSSGWarningTime`.
-		- Added method `HandleClientDisconnect`.
-		- Added method `SendTeammateDisconnected`.
-		- Added method `UpdateDownedPlayers`.
-		- Added method `RevivePlayer`.
-		- Added method `HandlePlayerDied`.
-		- Renamed field `_playerList` to `_players`.
-		- Renamed field `_weaponsList` to `_weapons`.
-		- Renamed method `SendShotConfirmed` to `SendConfirmAttack`.
-		- Renamed method `svu_SkunkGasRadius` to `UpdateSafezoneRadius`.
-		- Removed field `_nextGasWarnTimerCheck`.
-		- Updated method `CheckSkunkGas`.
-		- Updated method `UpdateLobbyCountdown`.
-		- Updated method `UpdateSafezoneRadius`.
-		- Fixed method `TryIndexFromConnection`.
-			--> Was returning the PlayerID as opposed to their index... Should work just fine now!
-	
-	++ Message Handles
-		- Msg5 (ReadyReceive) handle method `HandleReadyReceived` updated.
-			--> Little cleanup; sets player.isReady field; uses player.Teammates to handle teammodes!
-			--> Everyone has fills on! Redo incoming connections to make this work properly.
-		- Msg11 (LobbyPositionUpdate) method renamed to `SendLobbyPlayerPositions`.
-		- Msg12 (MatchPositionUpdate) method renamed to `SendMatchPlayerPositions`.
-		- Msg14 (HandlePlayerPosUpdate) method updated to handle downed-players.
-		- Msg15 (PlayerDied) send method `SendPlayerDeath` added.
-		- Msg18 (AttackConfirm) handle method updated a little.
-		- Msg34 (GasApproach) send method added. (`SendSSGApproachEvent`)
-		- Msg43 (CurrentLobbyCountdown) send method `SendCurrentLobbyCountdown` added.
-		- Msg80 (TeammatePickupRequest) handle method `HandleTeammatePickupRequest` added.
-		- Msg83 (PlayerRevived) send method `SendTeammateRevived` added.
-		- Msg84 (PlayerDowned) send added in method `HandlePlayerDowned`.
-		- Msg85 (MapMarked) handle method `HandleMapMarked` added.
-		- Msg85 (MapMark) send method `SendMapMarked` added.
-		- Msg112 (CurrentPlayerPings) send method `SendCurrentPlayerPings` updated.
-			--> Was sending a `short` not a `ushort`. Pings aren't really calculated and relies on NetLatencyUpdated, so still a little wrong probably
-	
-	++ Commands
-		- Added commands `/down` & `/forcedown`
-		- Added commands `/res` & `/forceres`
-
-Player:
-	- Added field `isReady`.
-	- Added field `Teammates`.
-	- Added field `NextGasTime`.
-	- Added field `hasBeenInGas`.
-		--> Prevents instant gas damage attempts.
-	- Added method `SetLastDamageSource`.
-	- Renamed field `ProjectilesList` to `Projectiles`.
-	- Removed field `LastShotID`.
-	- Renamed method `IsProjectileIDSafe` to `IsValidProjectileID`.
-	- Updated method `IsPlayerReal` to utilize field `isReady` in its check.
-
-ConfigLoader:
-	- Added field `Gamemode`.
-		--> Currently-known valid gamemode names: `solo`, `duo`, `squad`. Default is `solo`
-+------------------------------------------------------
-
-+------------------------------------------------------
-	-- 1/31/23 --
-
-Match:
-	>> Most message message hanldes moved to separate methods to clean up `HandleMessage()`.
-	>> Renamed a few methods to have more consistent naming scheme
-	
-	++ General Updates
-		- Added method `VerifyPlayer`.
-			--> Basically a simplification of `if (TryFindPlayer){} else: DC Player` that was everywhere.
-		- Added method `ValidWeaponIndex`.
-		- Added method `SendCancelReload`. (cannot use to force-cancel reloads; that's a limitation of the game)
-		- Updated Lobby section of ServerUpdateLoop to call method `svu_LobbyPositionUpdate`.
-			--> This method has like always existed. Not sure why it wasn't being used/got changed like that. Sorry!
-		- Updated method `LoadSARLevel`.
-			--> Will now check from the WC-SARS assembly location! (also Hamsterball / LootItem loading!)
-		- Updated method `CheckMovementConflicts`.
-		- Updated method `SendForcePosition` and removed old overrides.
-		- Updated method `SendPlayerEndTape`.
-		- Updated method `SendParachuteUpdate`.
-		- Updated method `HandleEmoteRequest`.
-			--> Additionally added method `SendPlayerEmote` which will not only send emote packets over, but handle server-side settings.
-			--> Updated method `SendPlayerEndedEmoting`; pretty much a copy of SendPlayerEmote, but specifically ends the emote.
-		- Updated method `HandleAuthenticationRequest`.
-		- Updated method `HandleIncomingPlayerRequest`.
-		- Updated method `HandleAttackRequest`.
-		- Updated method `UpdatePlayerDrinking`.
-		- Updated method `UpdatePlayerTaping`.
-		- Updated method `UpdatePlayerEmotes`.
-		- `Removed` method `advanceTimeAndEventCheck`, along with associated fields: `prevTimeA` & `matchTime`.
-			--> Skunk gas and other events will be added back at another point in time.
-		- Removed method `CheckDrinkTape`.
-		- Removed methods `getPlayerID` & `GetIDFromUsername`.
-	
-	++ Message Handles
-		- Msg7 (EjectRequest) handle put in separate method: `HandleEjectRequest`.
-		- Msg14 (PositionUpdate) handle put in separate method: `HandlePositionUpdate`.
-			--> Wanted to force clients back to their previous server-side spot, but caused problems. Try again when Giant Eagle!
-		- Msg27 (SlotUpdate) handle put into separate method: `HandleSlotUpdate`.
-		- Msg29 (ReloadRequest) handle put in separate method: `HandleReloadRequest`.
-		- Msg90 (ReloadCancel) handle now uses method `SendCancelReload`.
-		- Msg92 (ReloadFinished) handle put in separate method: HandleReloadFinished`.
-		- Msg47 (DrinkRequest) handle put in separate method: `HandleHealingRequest`.
-		- Msg55 (HamsterballEnter) handle put in separate method: `HandleHamsterballEnter`.
-		- Msg57 (HamsterballExit) handle put in separate method: `HandleHamsterballExit`.
-		- Msg60 (HamsterballHitPlayer) handle put in separate method: `HandleHamsterballAttack`.
-		- Msg62 (HamsterballBounced) handle put in separate method: `HandleHamsterballBounce`.
-		- Msg64 (HamsterballDamaged) handle put in separate method: `HandleHamsterballHit`.
-		- Msg98 (TapeRequest) handle put in separte method: `HandleTapeRequest`.
-		
-	++ Throwable Handles
-		>> Most throwable handles were just added to `work`. Throwables still do nothing.
-		- Update message handles for MsgIDs: `36`, `38`, and `40`.
-	
-	++ Commands
-		- Added method `TryPlayerFromString` (TPFS) to get Players from strings. Uses TryPlayerFromID/Name internally.
-		- Updated /forceland to use TryPlayerFromString.
-		- Updated /divemode to not only use TPFS, but also removed BOOL arg.
-			--> Instead of doing `/divemode 5` true; you now do `/divemode 5` OR `/divemode cleetus`.
-		- Updated /kill, /getpos & /pos, to use TPFS.
-		
-	++ Match Hamsterball Stuff
-		- Added method `DestroyHamsterball`.
-		- Added method `SendExitHamsterball`.
-		- Updated most other methods/handles that have to do with Hamsterballs.
-		
-	++ Match LootItem Stuff
-		- Added field `_maxAmmo`.
-			--> Ammo types should be its own separate thing, most like-- but this is fine for now.
-		- Updated method `HandleLootRequestMatch`.
-		- Updated all `MakeNew-X-LootItem` methods.
-		
-	++ Oopsies Section
-		- Msg97 (DUMMY!) handle wasn't using SendDummy method, even though it already existed for the UpdateThread.
-		- Msg27 (ActiveSlotUpdate) handle will no longer check if SentSlotID is less than 0, as it receives a BYTE (which are unsigned).
-
-Hamsterball:
-	- Relocated to `SARStuff` namespace.
-	- Renamed from `Hampterball` to `Hamsterball`.
-	- Removed fields `X` & `Y`.
-	- Added field `CurrentOwner`.
-	- Added field `Position`.
-
-Player:
-	- Updated class to be explicitly Public (before there was no access modifier).
-	- Added method `IsPlayerReal`.
-	- Added method `IsGunAndSlotValid`.
-	- Added method `IsProjectileIDSafe`.
-	- Added method `ResetHamsterball`.
-	- Added field `HamsterballVelocity`.
-	- Removed fields `VehicleVeloictyX` & `VehicleVelocityY`.
-	- Added field `EmotePosition`.
-	- Removed fields `EmotePositionX` & `EmotePositionY`.
-	- Added field `hasLanded`.
-	- Added field `NextLootTime`.
-	- Added field `Ammo`.
-	- Added field `LastThrowable`
-		--> Lazy fix for false-dc'ing of Players throwing throwables. Throwables still need redo.
-
-LootItem:
-	- Relocated to `SARStuff` namespace.
-	- Updated as a whole...
-	- Removed field `Ammo`.
-		--> All LootItem types now use GiveAmount in some way.
-	- Relocated Enums `WeaponType` & `LootType` out of LootItem class.
-
-Weapon: 
-	- Added field `MaxCarry`. (only used for throwables)
-
-Vector2:
-	- Added method override for `ToString`.
-	
-Tools:
-	- Added Python script `JSON Stripper - Doodads`. (FINALLY!)
-+------------------------------------------------------
-
-+------------------------------------------------------
-|    -- 1/1/23 #1 --
-|
-|--- Main Changes of Interest
-|- Added 'ConfigLoader.cs' to load config files!
-|   -- Bit over complicated. Would like to improve loading keys, but not quite sure of the best way how
-|- Added a 'Match' constructor which takes a only 'ConfigLoader' parameter
-|   -- Hopefully makes making silly edits to healing and stuff a lot easier; so can enjoy doing random custom stuff
-|- Added field 'Match._serverkey' so the ConnectionApproval key isn't hard-coded anymore.
-|- Added more configurable fields '_campfireHealPer', '_campfireHealRateSeconds' and '_coconutHeal'.
-|   -- Hoping all instances of the hard-coded values were edited to now use the fields, but sure some were missed.
-+------------------------------------------------------
-    
-+------------------------------------------------------
-|    -- 12/31/22 #2 --
-|
-|--- Main Changes of Interest
-|- Added 'Campfire.cs'; which allows for the addition of Campfires.
-|   -- Everything seems to work properly. Will have to edit this when actually handling Player landing, bc right now players can activate them while landing
-|- Added field '_campfires' to Match.
-|- Added field 'NextCampfireTime' to Player.
-|- Added field 'hasLanded' to Player.
-|   -- Awaiting implementation elsewhere. Kind of needs to be implemented everywhere though which stinks. Notably right now is for campfires though.
-|- Added methods 'CheckCampfiresLobby()' and 'CheckCampfiresMatch()' to Match.
-|- Match will now load all campfires from the level data file into '_campfires'.
-|
-|- Updated .gitignore to ignore all stuff from datafiles.
-+------------------------------------------------------
-
-+------------------------------------------------------
-|    -- 12/31/22 #1 --
-|
-|--- Main Changes of Interest
-|- Field 'Match._playerJSONdata' has been replaced with _playerData.
-|- Added field 'Match._bannedPlayers'.
-|- Added field 'Match._bannedIPs'.
-|   -- All of these have to do with the new and improved data json format, which was heavily based on Minecraft's. At least the general format.
-|   -- As of now... Although the files are auto generated if they don't yet exist, inputting data has to be done yourself. This shouldn't be too...
-|   ...difficult as the has been updated to show you how it is done. Otherwise, just in 'Match.cs' for references to the above fields.
-|- Added method 'Match.LoadJSONArray()' to load JSONArrays
-|   -- It's incredibly simple, and really doesn't scale the best, but it works. Should be noted that traversing the arrays seemed fast despite large sizes.
-|   -- For both banlists, a 14.8mb file with ~300k entries was loaded. At the time of both being used ~300mb of memory was used by the program.
-|   -- So indeed the scaling stinks! As long as the lists are short, everything is OK-enough for now.
-|- Added 'Vector2.ValidDistance' along with the read-only property 'magnitudeSquared'.
-|   -- 'ValidDistance' helps when wanting to find the distance between two vectors without having tons of duplicate code in 'Match.cs'.
-|   -- 'magnitudeSquare' should help elsewhere; but currently only used in 'ValidDistance()'
-|   -- NOTE: 'ValidDistance()' can return return the square-root distance if want, but 'Match.cs' only uses the squared-distance right now (it's faster).
-|- Replaced 'Coconut.x' and 'Coconut.y' with 'Coconut.Position', which is a Vector2.
-|
-|- Updated 'README.md'.
-|   -- Not quite sure what all to write, but hope it's in a more acceptable state than it was before.
-|
-|- Updated and renamed 'Match.sendAuthenticationResponseToClient()' to 'HandleAuthenticationRequest()'
-|   -- Should reflect the naming scheme better. IMPORTANT: The method now uses 'Match._bannedPlayers' to search for players with banned PlayFabIDs.
-|   -- PlayFabIDs will now also print to the console for in the event you want to add someone to the Banned-Players list.
-|- Updated `ConnectionApproval` in the Match's netloop to search for banned IPs before reading the ClientKey.
-|- Updated 'Match.serverHandlePlayerConnection()' to utilize Match's updated PlayerData field.
-|- Updated and renamed 'Match.serverSendCoconutEaten()' to 'Match.HandleCoconutRequest()'.
-|   -- Now uses the new 'Vector2.ValidDistance()' function!
-|
-|--- Oopsies Section
-|- Molecrate was checking if the Player was over the threshold, not *within*. Threshold also increased from 14.5 to 14.7 for good measure.
-|   -- Maybe caused by messing way too much with git histories, or just forgot to fix it.
-|   -- Figured if it was tested and the tests passed, then over 14.5 is a reasonable value. So the threshold has been increased from 14.5 to 14.7 for now.
-
-|--- Other Comments / Potential Tasks for next time
-|- Git history is wacky!! WHY???
-|   -- Kind of maybe messed way too hard with trying to clean up git history, and maybe accidentally overwrote the last 3 months worth of history... Sorry...
-|- Thinking of trying to do campfires soon now that Vector2 is a thing and also has a distance calculation built in.
-|   -- Although, fair warning: campfires probably won't be super accurate as the distance is just an estimate :[
-|- Would maybe try adding bananas, but that requires throwables to work- which was hoping to make overhaul LootItems first as well. So not quite sure yet!
-+------------------------------------------------------
-    
-+------------------------------------------------------
-|    -- 12/28/22 #1 --
-|
-|--- Main Changes of Interest
-|- The network loop in Match has been moved to its own separate thread.
-|   -- Hopefully clears up the constructor a little bit... Although it'll be pretty messy again soon.
-|- Added struct `Vector2`.
-|   -- Basically Unity's Vector2 struct. Needed it for a while, and it helps with the Molecrate.
-|- Added class `MoleCrate`.
-|   -- Mole crates have been added to the game! Still haven't agreed on how to actually write it! But it's here!
-|   -- While the Match does handle the Molecrate `correctly`, the Molecrate does not yet randomly spawn, nor does opening it give any players items.
-|- Added fields `_moleSpawnSpots`, `_maxMoleCrates`, and `_moleCrates` to Match.
-|   -- This is so the Match can actually handle mole crates.
-|- Added method `CheckMoleCrates()` to Match.
-|- Added command `/mole` to Match to test out Molecrate.
-|   -- Doesn't take any parameters. The path is hard-coded, but changing it does seem to handle correctly.
-|   -- Tried simplifying the reading of `weaponClass` key. Also throws exceptions now
-|
-|--- Oopsies Section
-|- Reminder that this project is also Github learning expierence.
-|   -- Messing around with stuff probably shouldn't leading to some wacky stuf like strange commit histories.
-+------------------------------------------------------
-
-+------------------------------------------------------
-|    -- 12/26/22 #1 --
-|
-|--- Main Changes of Interest
-|- Match:
-|   -- Renamed `serverSendPlayerShoteded()`  to `HandleAttackConfirm()`
-|   -- Tried to simplify `HandleAttackConfirm()` to not be tons of nested `try{} catch()` / `if`s; but may be more confusing to read
-|   -- `HandleAttackConfirm()` should now exit early if in lobby, attacking player is dead, or the target player is either dead or godmoded
-|   -- Renamed `serverSendShotInfo()` to `SendShotConfirmed()`.
-|   -- New method `SendExitVehicle()` to make sending hamsterball exit messages easier
-|   -- Moved `Match.GetAllGunsList()` to `Weapon` class.
-|   -- Set `Match._availableIDs` to have an initial capacity of `Match._playerList.Length`.
-|       --- This so all X number of IDs are available rather than a set 64.
-|   -- Set `Match._incomingConnections` to have an initial capacity of 4.
-|       --- Perhaps didn't need this as it would get resized anyways, but this should be fine-enough!
-|- Weapon:
-|   -- Renamed `ArmorDamageOverride` to `VehicleDamageOverride` to reflect its intended use
-|   -- Added `GetAllGunsList()` and `GetAllGunsList(Weapon[])`; although only the latter is used.
-|   -- Updated `GetAllWeaponsList()` to try and start where the executing assembly is located. Also throws exceptions now. Should likely handle these.
-|   -- Tried simplifying the reading of `weaponClass` key. Also throws exceptions now
-|
-|--- Oopsies Section
-|- Set Match._playerList default size back to 64 (from 1).
-|   -- The value of 1 was only intended to test whether the match was full or not. Even then, that wasn't finished so oopsies :[
-+------------------------------------------------------
-
-
-+------------------------------------------------------
-|    -- 12/26/22 #1 --
-|
-|--- Changes of Interest
-|- Match Stuff:
-|       -- Connections and Stuff --
-|   -- Renamed 'player_list' to '_playerList'.
-|   -- Renamed 'availableIDs' to '_availableIDs'.
-|   -- Renamed 'IncomingConnectionsList' to '_incomingConnections' (also moved more towards _playerList).
-|       -- For RNG Seeds  --
-|   -- Renamed 'sv_TotalLootCounter' to '_totalLootCounter'.
-|   -- Renamed `sv_LootSeed' to '_lootSeed'.
-|   -- Renamed 'sv_CoconutSeed' to `_coconutSeed'.
-|   -- Renamed 'sv_VehicleSeed' to `_vehicleSeed'.
-|   -- Renamed 'svd_ServerRNG' to `_servRNG' (although it still serves no purpose as of now).
-|       -- Data in General --
-|   -- Renamed 's_WeaponsList' to '_allWeaponsList'.
-|   -- Renamed 'CoconutList' to '_coconutList'.
-|   -- Renamed 'HamsterballList' to '_hamsterballList'.
-|   -- Renamed 'ItemList' to '_itemList'.
-|   -- Renamed 'svd_Doodads' to '_doodadList'.
-|   -- Renamed 'svd_PlayerDataJSON' to '_playerJSONdata'.
-|       -- General Match Stuff --
-|   -- Renamed 'LobbyTimeRemaining' to '_lobbyRemainingSeconds' (also made PRIVATE and added a commented-out public property).
-|   -- Renamed 'matchStarted' to '_hasMatchStarted'.
-|   -- Renamed 'matchFull' to '_isMatchFull'.
-|   -- Renamed 'm_SafeZone' to '_safeZone'.
-|   -- Renamed 'sv_doWins' to '_canCheckWins'.
-|   -- Renamed 'shouldUpdateAliveCount' to '_hasPlayerDied'.
-|   -- Renamed 'PoisonDamageQueue' to '_poisonDamageQueue' and added separate property (currently commented-out).
-|   -- Renamed 'sv_DDGMaxDmgTicks' to '_ddgMaxTicks'.
-|   -- Renamed 'sv_DDGTicksToAdd' to '_ddgAddTicks'.
-|   -- Renamed 'sv_DDGTickRate' to '_ddgTickRateSeconds'.
-|   -- Renamed 'sv_DDGDamagePerTick' to '_ddgDamagePerTick'.
-|   -- Renamed 'm_NextGasWarnTimerCheck' to '_nextGasWarnTimerCheck'.
-|   -- Renamed 'sv_HealAmount' to '_healPerTick'.
-|   -- Renamed 'sv_HealTickRate' to '_healRateSeconds'.
-|       -- Method Renames --
-|   -- Renamed 'serverForcePosition()' to 'SendForcePosition()'.
-|   -- Renamed 'serverHandleAttackWindUp()' to 'HandleAttackWindUp()'.
-|   -- Renamed 'serverSendAttackWindDown()' to 'HandleAttackWindDown()'.
-|   -- Renamed 'ServerMSG_PlayerHamsterballBounce()' to 'HandleHamsterballBounce()'.
-|   -- Renamed 'ServerAMSG_KillAnnouncement()' to 'SendPlayerDeath()'.
-|   -- Renamed 'sendClientMatchInfo2Connect()' to 'SendMatchInformation()'.
-|   -- Renamed 'send_dummy()' to 'SendDummy()'.
-|   -- Renamed `sendStartGame()` to 'SendMatchStart'.
-|- PlayerDataJSON initialization in default Match constructor will now show the path searched for and await key input before closing.
-|- Tagged 'SkunkGasRemainingApproachTime' as PRIVATE.
-|- Tagged 'SkunkGasWarningDuration' as PRIVATE.
-|- Added command `/god` and alternative '/godmode' to enable/disable Godmode.
-|- Improved test_damagePlayer() to check if the Player is God Moded AND whether or not they're actually alive.
-|- Added 'TryPlayerFromName' to try and get Player objects from Match._playerList by Username.
-|- Attempted to improve upon '/kill' so it is no longer just a glorified test of the KillAnnounce message type.
-|   -- It is now a glorified test of 'test_damagePlayer()' and 'TryPlayerFromName' instead.
-|
-|- Player fields renamed as well
-|   -- Renamed `sender` to `Sender`.
-|   -- Renamed `myID` to simply `ID`.
-|   -- Renamed `myName` to simply `Name`.
-|   -- Renamed `charID` to `AnimalID` so it is more obvious what this value is for.
-|   -- Renamed `gravestoneID` to `GravestoneID`.
-|   -- Renamed `deathEffectID` to `DeathExplosionID` to better reflect what this field is for.
-|   -- Renamed `emoteIDs` to `EmoteIDs`.
-|   -- Renamed `hatID` to `HatID`.
-|   -- Renamed `glassesID` to `GlassesID`.
-|   -- Renamed `beardID` to `BeardID`.
-|   -- Renamed `clothesID` to `ClothesID`.
-|   -- Renamed `meleeID` to `MeleeID`.
-|   -- Renamed `gunSkinCount` to `GunSkinCount`.
-|   -- Renamed `gunskinKey` to `GunSkinKeys`.
-|   -- Renamed `gunskinValue` to `GunSkinValues`.
-|   -- Renamed `position_X` to `PositionX`.
-|   -- Renamed `position_Y` to `PositionY`.
-|   -- Renamed `MyLootItems` to simply `LootItems`.
-|- Added field `isGodmode`.
-|
-|- Other:
-|   -- Tried moving `MersenneTwister` to SARStuff.
-|
-|--- Other Comments / Potential Tasks for next time
-|- Noticed there is a `MessageReceivedEvent` property for NetServer. Could/should maybe use this to block Match main thread for until a message is received.
-|- HandleAttackWindUp/Down could maybe use more work?
-|- HandleHamsterballBounce needs more work.
-+------------------------------------------------------
-
-
-
-+------------------------------------------------------
-|    -- 12/22/22 #1 --
-|
-|--- Changes of Interest
-|- RNG Seeds have been set back to hard-coded values and are no longer randomly generated.
-|   -- This is to make testing a little bit easier right now.
-|- Added `ServerHandleLobbyLootRequest()` to allow players to pickup GalleryWeapons (still needs some work!).
-|- Added `m_SafeMode` so there can be safe/nonsafe things (default = TRUE).
-|- Added `/safemode` command which toggles `m_SafeMode`.
-|- Added `/gun` ``command`` to make gun testing easier. 
-|- Added `GetAllGunsList()` which returns a Weapon-object array that only has Gun-Type Weapons.
-|
-|- Renamed `GSH_PlayerLootRequest` to `ServerHandleMatchLootRequest()`.
-|- Renamed ``GSH_AttackWindup()`` to `serverHandleAttackWindUp()`.
-|- Improved `serverHandleAttackWindUp()`.
-|    -- Try/Catch in case of error.
-|    -- NetConnection will be dropped if 1) Sends Msg74 while NOT in the PlayerList; 2) Are in a match, calls the method and they DON'T have the right WeaponID in the Slot
-|    -->> Potentially need to check if the Weapon given can actually be wound-up, but right now this all seems to be cool!
-|- Improved ``/list`` so now it works properly.
-|
-|--- Oopsies Section
-|- (last commit) Commented out uses of `serverSendShotInfo()` in sections relating to the Dartgun.
-|    -- This should fix the double-hit sound playing for those who hit people with DDG.
-|- Accidently replaced the `if` statement in the Lobby-Countdown check with a `while` loop. The correct one should be replaced now.
-|    -- This was meant to be the `if` statement in the MatchStarted loop, which wanted to be changed to a `while` like in the NotMatchStarted section
-|
-|--- Other Comments / Potential Tasks for next time
-|- In general renaming things so everything is more consistent, would be nice.
-|- Changes like Player.myID to Player.ID is likely to be taking place soon.
-|- Ammo is still not tracked, which is waiting on the LootItems rework to be done. Maybe added at the same time.
-|- Grenades and such are in a similar boat, in which they are not properly tracked because LootItems is too messy!
-|
-|- A rework to the command system as a whole would be quite nice. Not sure how to accomplish this right now.
 +------------------------------------------------------

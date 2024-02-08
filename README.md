@@ -34,7 +34,7 @@ Upon launching the program with all necessary data files acquired, the program w
 
 __To fix this,__ simply locate `server-config.txt` then change `server-ip` to either `127.0.0.1` (localhost), or your computer's local IP address. To find your local address (Windows) simply open command prompt, type `ipconfig`, and then look for `IPv4 Address... xxx.xxx.x.xxx)` (typically in the format `192.168.1.xxx`).
 
-To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMessage](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1409) to the server program correctly.
+To connect to the server the program is now hosting... one must figure that out on their own... Currently, the game must be modified so that it always connects to a specific IP address & sends [a certain NetMessage](https://github.com/WaffleIngester/WC-SARS/blob/master/WCSARS/Match.cs#L1374) to the server program correctly.
 
 Currently, there is no external program to hook onto the game and execute the join-server function with an arbitrarily-provided ip-address... but if someone wants to make one... hook me up :]
 
@@ -83,89 +83,12 @@ For simplicity sake, the below  section is collapsed. If you wish to view it, ju
 **Must be placed in the same folder as `WC-SARS.exe`.**
 (will be auto-generated if not found)
 
-> **NOTE:** config is super simple/ very wonky!!! If a key is missing it **will not** be regenerated unless the config file is deleted/or another key is formatted incorrectly!
+> **NOTE:** config file loading/ reading is a little busted, so be careful when feeding it invalid values!
 
 Configuration of properties that the program will utilize when setting up Matches.
-> Required: `server-ip`; `server-ip`; `server-port`
 
-> All other properties are optional. See below for a complete list.
+-- Details on each entry has been removed for the time being
 
-<details>
-<summary>List of all Properties (click to expand)</summary>
-
-* `server-ip` `string`
-    - IP Address the program will try to bind to.
-    - Defauts to `127.0.0.1`.
-* `server-port` `int`
-    - Port the program will try to bind to.
-    - Defaults to `42896`.
-* `server-key` `string`
-    - Key which incoming clients must give if they are to connect.
-* `gamemode` `string`
-    - Which `Gamemode` this Match will be.
-    - Defaults to `solo`. Valid options: `solo` `duo` `squad`
-* `use-config-seeds` `bool`
-    - Whther to use randomized seeds, or seeds defined here in the config.
-    - Defaults to `False`.
-* `seed-loot` `int`
-    - The seed to use for generating LootItems.
-* `seed-coconuts` `int`
-    - The seed to use for generating Coconuts.
-* `seed-hamsterballs` `int`
-    - The seed to use for generating Hamsterballs.
-* `max-players` `int`
-    - Maximum amount of Players that can join the Match.
-    - Default is `64`.
-* `lobby-time` `float`
-    - The amount of time to spend in lobby (in seconds).
-    - Defualts to `120 seconds`.
-* `molecrates-max` `short`
-    - Maximum amount of Molecrates that can spawn in the match.
-    - Default is `12`.
-* `dart-ticks-max` `int`
-    - Maximum number of dart-ticks a Player can have.
-    - Default is `12`.
-* `dart-tickrate` `float`
-    - Rate (in seconds) at which a Player can take dart damage.
-    - Default is `0.6 seconds`.
-* `dart-poisondmg` `int`
-    - The amount of Poison Damage to do on a dart-tick damage attempt
-    - Default is `9`, but this should be phased out by storing this in the weapon data.
-* `skunkgas-tickrate-seconds` `float`
-    - Rate (in seconds) at which a Player will take skunk gas damage.
-    - Default is `1.0 seconds`.
-* `heal-per-tick` `float`
-    - The amount of HP to heal a Player while they're drinking.
-    - Default is `4.75 HP`.
-* `drink-rate` `float`
-    - Rate (in seconds) at which a Player can heal at.
-    - Default is `0.5 seconds`.
-* `campfire-heal` `float`
-    - The amount of HP that a Campfire will give during a Campfire heal attempt
-    - Default is `4 HP`.
-* `campfire-heal-rate` `float`
-    - Rate (in seconds) at which a Player can be healed by a Campfire.
-    - Default is `1 second`.
-* `coconut-heal-base` `float`
-    - The amount of HP that a Coconut will give when eaten.
-    - Default is `5 HP`.
-* `downed-bleedout-rate` `float`
-    - Rate (in seconds) at which a downed Player will take bleed-out damage.
-    - Default is `1.0 seconds`.
-* `downed-resurrect-hp` `int`
-    - The amount of HP downed Players get once they are resurrected.
-    - Default is `25hp`.
-* `infinite-match` `bool`
-    - Whether the Match should should check for win-conditions.
-    - Defaults to `False`.
-* `safemode` `bool`
-    - Whether the Match should run in "Safemode" or not.
-    - Defaults to `True`, although has no real impact right now.
-* `debugmode` `bool`
-    - Whether or not to run in "Debug Mode"
-    - Defaults to `False`. (does nothing right now)
-
-</details>
 
 ## Player Data
 **Must be placed in the same folder as `WC-SARS.exe`.**

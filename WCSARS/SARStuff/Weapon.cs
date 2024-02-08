@@ -6,7 +6,7 @@ using WCSARS; // logging purposes
 
 namespace SARStuff
 {
-    internal class Weapon
+    public class Weapon
     {
         public static Weapon[] AllWeapons { get; private set; }
         public WeaponType WeaponType;
@@ -26,6 +26,10 @@ namespace SARStuff
         public int SpawnFrequency;
         public int MaxCarry;
         public float Radius;
+        public readonly short BulletMoveSpeed;
+        public readonly byte BulletMoveSpeedIncPerRarity;
+        public readonly short BulletMaxDistanceBase;
+        public readonly byte BulletMaxDistanceIncPerRarity;
 
         public Weapon(JSONNode data, short index)
         {
@@ -77,6 +81,23 @@ namespace SARStuff
             if (data["ammoSpawnAmount"]) AmmoSpawnAmount = (byte)data["ammoSpawnAmount"].AsInt;
 
             if (data["spawnRatioRelativeToOthers"]) SpawnFrequency = data["spawnRatioRelativeToOthers"].AsInt;
+
+
+            // bulletMoveSpeed
+            if (data["bulletMoveSpeed"])
+                BulletMoveSpeed = (short)data["bulletMoveSpeed"].AsInt;
+
+            // bulletMoveSpeedAddedPerRarity
+            if (data["bulletMoveSpeedAddedPerRarity"])
+                BulletMoveSpeedIncPerRarity = (byte)data["bulletMoveSpeedAddedPerRarity"].AsInt;
+
+            // bulletDistanceAtWhichDamageIs0
+            if (data["bulletDistanceAtWhichDamageIs0"])
+                BulletMaxDistanceBase = (short)data["bulletDistanceAtWhichDamageIs0"].AsInt;
+
+            // addedBulletDistanceAtWhichDamageIs0PerRarity
+            if (data["addedBulletDistanceAtWhichDamageIs0PerRarity"])
+                BulletMaxDistanceIncPerRarity = (byte)data["addedBulletDistanceAtWhichDamageIs0PerRarity"].AsInt;
         }
 
         public static Weapon[] GetAllWeaponTypes()

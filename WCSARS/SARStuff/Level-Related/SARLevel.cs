@@ -747,6 +747,14 @@ namespace SARStuff
         /// <returns>Vector2 representing a valid, walkable grid location.</returns>
         public Vector2 FindWalkableGridLocation(int startX, int startY) //, int dirX, int dirY <-- did not implement this yet
         {
+            if (((startX >= 0) && (startX <= LevelWidth)) && ((startY >= 0) && (startY < LevelHeight)))
+            {
+                //if (CollisionGrid[startX][startY] == CollisionType.None)
+                Vector2 dumb = new Vector2(startX, startY);
+                if (IsValidPlayerLoc(ref dumb))
+                    return new Vector2(startX, startY);
+            }
+
             // max regions
             int xMin = startX, xMax = startX, yMin = startY, yMax = startY;
 
@@ -774,7 +782,7 @@ namespace SARStuff
                 {
                     // check [xMin][y]
                     if (QuickIsValidPlayerLoc(xMin, y))
-                        return new Vector2((float)xMin, (float)y);
+                        return new Vector2(xMin, y);
 
                     // check [xMax][y]
                     if (QuickIsValidPlayerLoc(xMax, y))

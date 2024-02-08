@@ -237,7 +237,7 @@ namespace SARStuff
         {
             isBeingRevived = true;
             SaviourID = saviourPID;
-            ReviveTime = DateTime.UtcNow.AddSeconds(6f);
+            ReviveTime = DateTime.UtcNow.AddSeconds(SARConstants.TeammateReviveDurationSeconds);
         }
 
         /// <summary>
