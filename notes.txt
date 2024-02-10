@@ -1,4 +1,129 @@
-﻿ -- Changelog -- +------------------------------------------------------
+﻿ -- Changelog --
+ +------------------------------------------------------
+	-- 2/08/23 --
+
+	>> IMPORTANT:: heal-state update
+		> No more isDrinking, isTaping, isX-- generalizing things!
+		-----------
+	
+	>> What's New?
+		> Enum "HealActionState" to help facilliate the handling of heal-like actions.
+		> Update downed/ resurrection states
+
+----- Changes to Each Class --
+-- : Match :
+	-- Fields --
+		---- Renames
+		--> Rename "_drinkJuicePerTick" FROM "_healPerTick"
+		--> Rename "_drinkJuicePerTick" FROM "_healPerTick"
+		-------------------
+
+	-- General Methods --
+		---- Added
+		--> Added `UpdatePlayerHealState`
+			... Consolodation of `UpdatePlayerDrinking` & `UpdatePlayerTaping` AND...
+		--> Added `CancelAnyHealActions`
+		---- Update/ Modify
+		--> Updated `UpdateDownedPlayers`
+			... Utilize new down system
+		--> Update `HandleTeammateResFinished`
+		--> Update `HandleTeammateResCancel`
+			> Simplified process
+			> The ressing player is now solely responsible for revives (previously both members were racing to get it first)
+		---- Removed
+		--> Removed `UpdatePlayerDrinking`
+		--> Removed `UpdatePlayerTaping`
+		---- Renames
+		--> Rename "CancelAnyActionState" FROM "CheckMovementConflicts"
+		--> Rename "SendPlayerFinishedDrinking" FROM "SendPlayerEndDrink"
+		--> Rename "SendPlayerFinishedTaping" FROM "SendPlayerEndTape"
+		--> Rename "LazyRevivePlayer" FROM "RevivePlayer"
+			> Do not use this method outside of /commands. It's true to the lazy part of its name.
+		-------------------
+
+	-- NetMessage Methods --
+		--> Msg27 handle-method "HandleSlotUpdate" updated
+			> Any cancel-able action will be canceled upon swapping slots, as originally intended
+				... Was a "slip through the crack" kind of bug
+		  -----
+		--> Msg47 handle-method "HandleHealingRequest" updated
+		--> Msg98 handle-method "HandleTapeRequest" updated
+			> Now only does handling/ setting
+			> Now calls the required send-method when needed instead of constructing packets itself
+		  -----
+		--> Msg48 send-method "SendPlayerStartedDrinking" added
+		--> Msg99 send-method "SendPlayerStartedTaping" added
+			> Now only sends packets as opposed to non-obvious side effects like updating player data.
+		  -----
+		--> Msg49 send-method "SendPlayerFinishedDrinking" updated
+		--> Msg99 send-method "SendPlayerFinishedDrinking" updated
+			> Now only sends packets as opposed to non-obvious side effects like updating player data.
+			> Now only takes a player id# as opposed to an entire player object
+		  -----
+		--> Msg81 send-method "SendTeammatePickupStarted" updated.
+		--> Msg82 send-method "SendTeammatePickupCanceled" updated.
+		--> Msg83 send-method "SendTeammatePickupFinished" updated.
+			> Renamed methods/ variable named more consistently
+		--> Msg84 send-method "SendPlayerKnockedDowned" added.
+		--> Msg80 handle-method "HandleTeammatePickupRequest" updated.
+			> Utilize new revive system
+		-------------------
+			
+-- : Player :
+	-- Fields --
+		---- Added
+		--> Added `HealState`
+		--> Added `HealActionFinished`
+		--> Added [PRIVATE] `_healStateTimer`
+		--> Added [PRIVATE] `_hasHealActionEnded`
+		--> Added `DownedTeammate`
+		--> Added [PRIVATE] `_bleedoutTimer`
+		--> Added [PRIVATE] `_isBeingRessed`
+		---- Removed
+		--> Removed `isDrinking`
+		--> Removed `NextHealTime`
+		--> Removed `isTaping`
+		--> Removed `NextTapeTime`
+		--> Removed `isReviving`
+		--> Removed `RevivingID`
+		--> Removed `SaviourID`
+		--> Removed `ReviveTime`
+		--> Removed `NextBleedTime`
+		-------------------
+
+	-- General Methods --
+		---- Added
+		--> Added `ElapseTimerOrEnd`
+		--> Added `SetHealAction`
+		--> Added `ClearHealActionState`
+		--> Added `DeductTapeAndAddArmorTick`
+		--> Added `CanDrinkJuice`
+		--> Added `DrinkJuice`
+		--> Added `BeginRevivingHomie`
+		--> Added `ClearRevivingHomie`
+		--> Added `KnockDown`
+		--> Added `BeginBleedoutState`
+		--> Added `SetNextBleedoutTime`
+		--> Added `ElapseBleedoutEndsTimer`
+		--> Added `BeginResState
+		--> Added `EndDownedState`
+		---- Removed
+		--> Remove "SetMyResurrector"
+		--> Remove "ResurrectGotCanceledByRessorector"
+		--> Remove "ReviveFromDownedState"
+		--> Remove "SetWhoImRessing"
+		--> Remove "FinishedRessingPlayer"
+		-------------------
+
+-- : HealActionState :
+	-- Added to project!
+		-------------------
+
+	-- Commentary --
+		--> Thought more state-like way of handling things would be better than the constant "isX" "isY"
+	... whether or not this works out... we'll see I suppose.
+
+ +------------------------------------------------------
 	-- 2/07/24 --
 
 	>> IMPORTANT:: "config class" update

@@ -51,6 +51,26 @@ namespace SARStuff
 
         #region Players
         /// <summary>
+        ///  The maximum amount of HP a player can have.
+        /// </summary>
+        public const byte PlayerMaxHP = 100;
+
+        /// <summary>
+        ///  The maximum amount of health juice a player can have.
+        /// </summary>
+        public const byte PlayerMaxJuice = 200;
+
+        /// <summary>
+        ///  The maximum item slot id for player items.
+        /// </summary>
+        public const byte PlayerMaxItemSlotID = 2;
+
+        /// <summary>
+        ///  The (estimated) amount of time it takes for a player to take out their sippy cup
+        /// </summary>
+        public const float DrinkWindupDuration = 1.2f;
+
+        /// <summary>
         ///  The amount of time it takes for a player to repair their armor.
         /// </summary>
         public const float TapeRepairDurationSeconds = 3.0f;
@@ -59,7 +79,17 @@ namespace SARStuff
         ///  The amount of time it takes for a player to revive a downed teammate.
         /// </summary>
         public const float TeammateReviveDurationSeconds = 6.0f;
+
+        /// <summary>
+        ///  The maximum distance a player can be from their teammate to initate/ not cancel a revive by moving.
+        /// </summary>
+        public const float TeammateReviveMaxDistance = 8.0f;
         #endregion Players
+
+        /// <summary>
+        ///  The amount of time a banana will stun a player for.
+        /// </summary>
+        public const float BananaStunDurationSeconds = 2.0f;
 
         // it's possible to do this... but is it really all that necessary at this point in time?
         /*

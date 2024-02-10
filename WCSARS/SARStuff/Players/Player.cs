@@ -57,17 +57,16 @@ namespace SARStuff
         public Dictionary<short, Projectile> ThrownNades = new Dictionary<short, Projectile>();
 
         // Health Related
+        public bool HealActionFinished { get => _hasHealActionEnded; }
+        public HealActionState HealState = HealActionState.None;
         public bool isAlive = true;     // whether this Player is currently alive or not.
-        public byte HP = 100;           // amount of HP this Player current has *technically, server-side, this is a float. NetMsg-side, this is a byte.
+        public byte HP = SARConstants.PlayerMaxHP; // current amount of HP [*maybe* should be stored as float as opposed to byte]
         public byte ArmorTier = 0;      // the "level"/ "quality" of this Armor that this Player is currently wearing. [should not exceed 3]
         public byte ArmorTapes = 0;     // number of ticks remaining on this Player's Armor. (should not exceed Player.ArmorTier)
-        public byte HealthJuice = 25;  // amount of Health Juice this Player currently has [default start: 25]
+        public byte HealthJuice = 25;   // amount of Health Juice this Player currently has [default start: 25]
         public byte SuperTape = 0;      // amount of Super Tape this Player currently has [default start: 0]
-        public bool isDrinking = false; // whether this Player is currently drinking
-        public bool isTaping = false;   // whether this Player is currently repairing their armor
+
         //public Vector2 HealPosition;    // position this Player is currently healing at (older SAR versions forced players to stay put while healing]
-        public DateTime NextHealTime;           // time (seconds) until another heal-tick can be performed. [pull-out-time: 1.2s: default-rate: 0.5s]
-        public DateTime NextTapeTime;           // time (seconds) until this Player has finished repairing their armor. (3-seconds)
         public DateTime NextCampfireTime;       // time (seconds) until a campfire heal-tick can be performed.
         public DateTime NextGasTime;            // time (seconds) until a gas-tick can be done
         public DateTime NextSkunkBombGasTime;   // time (seconds) until a skunk-bomb gas-damage-tick can be performed.
@@ -77,16 +76,11 @@ namespace SARStuff
         public int DartTicks = 0;       // number of remaining dart-ticks for this Player.
         public DateTime DartNextTime;   // time (usually seconds) until another dart-poison-damage-tick is to be performed.
 
-        // Reviving
-        public bool isReviving;     // whether this Player is currently reviving another.
-        public short RevivingID;    // ID# of who this Player is reviving.
-        //  Downed
-        public bool isDown;             // whether this Player is currently downed.
-        public bool isBeingRevived;     // whether this Player is being revived.
-        public short SaviourID;         // ID# of the Player reviving this Player.
-        public DateTime ReviveTime;     // time (in seconds) until this Player will be revived.
-        public DateTime NextBleedTime;  // time (in seconds) until another bleed-tick can be performed.
+        // Downed / Revival
+        public bool IsBeingRevived { get => _isBeingRessed; }
+        public bool isSupposedToBeDown; // alleviate desync issues
         public byte TimesDowned;        // number of times that this Player has been downed
+        public Player DownedTeammate = null; // teammate this player is ressing
 
         // Weapon Stuff
         // if Player.ActiveSlot is updated when this is true, then this should get set to false and their reload canceled.
@@ -123,6 +117,13 @@ namespace SARStuff
         // other
         public List<Player> Teammates = new List<Player>(3); // perhaps teams should be stored/ handled by Matches not Players.
         public byte Placement = 0;
+
+        // TEST START
+        private float _healStateTimer = 0.0f;
+        private bool _hasHealActionEnded = true;
+        private float _bleedoutTimer = 0.0f;
+        private bool _isBeingRessed = false;
+        // TEST END
 
         // Create
         public Player(short id, short characterID, short umbrellaID, short gravestoneID, short deathExplosionID, short[] emotes, short hatID, short glassesID, short beardID, short clothingID, short meleeID, byte skinCount, short[] skinKeys, byte[] skinValues, string thisName, Client client)
@@ -211,77 +212,8 @@ namespace SARStuff
         public void Stun()
         {
             isStunned = true;
-            StunEndTime = DateTime.UtcNow.AddSeconds(2.0f); // actual: 2s; may have to do earlier?
+            StunEndTime = DateTime.UtcNow.AddSeconds(SARConstants.BananaStunDurationSeconds);
         }
-
-        #region Down/ Resurrectors
-        /// <summary>
-        /// Sets this Player into the "downed" state. Also sets all necessary downed-state related fields.
-        /// </summary>
-        /// <param name="nextBleedTImeSeconds">Time (in seconds) until this Player will begin taking bleed-out damage.</param>
-        public void KnockDown(float nextBleedTImeSeconds)
-        {
-            WalkMode = MovementMode.Downed;
-            HP = 100; // knocked-hp gets reset to 100
-            isDown = true;
-            isBeingRevived = false;
-            NextBleedTime = DateTime.UtcNow.AddSeconds(nextBleedTImeSeconds);
-            TimesDowned += 1; // I find this nicer to look at, at this moment in time
-        }
-
-        /// <summary>
-        /// Sets this Player as being revived + who is reviving them.
-        /// </summary>
-        /// <param name="saviourPID"></param>
-        public void SetMyResurrector(short saviourPID)
-        {
-            isBeingRevived = true;
-            SaviourID = saviourPID;
-            ReviveTime = DateTime.UtcNow.AddSeconds(SARConstants.TeammateReviveDurationSeconds);
-        }
-
-        /// <summary>
-        /// Resets this Player's downed-state fields related to taking bleed-out damage (Player is no longer being revived).
-        /// </summary>
-        /// <param name="nextBleedTImeSeconds">Time (in seconds) until this Player will begin taking bleed-out damage again.</param>
-        public void ResurrectGotCanceledByRessorector(float nextBleedTImeSeconds)
-        {
-            isBeingRevived = false;
-            SaviourID = -1;
-            NextBleedTime = DateTime.UtcNow.AddSeconds(nextBleedTImeSeconds);
-        }
-
-        /// <summary>
-        /// Resets this Player's downed-state-related fields and puts them in an alive-state with the provided HP. (does not effect Player.isAlive)
-        /// </summary>
-        public void ReviveFromDownedState(byte resHP)
-        {
-            isDown = false;
-            isBeingRevived = false;
-            SaviourID = -1;
-            WalkMode = MovementMode.Walking;
-            HP = resHP; // default is 25
-        }
-
-        /// <summary>
-        /// Marks this Player as reviving another + the ID of who they are reviving.
-        /// </summary>
-        /// <param name="downedPID">The PlayerID of the downed-player being revived.</param>
-        public void SetWhoImRessing(short downedPID)
-        {
-            isReviving = true;
-            RevivingID = downedPID;
-        }
-
-        /// <summary>
-        /// Resets this Player's reviving-related fields (must be the Player who is reviving another).
-        /// </summary>
-        public void FinishedRessingPlayer()
-        {
-            isReviving = false;
-            RevivingID = -1;
-        }
-        #endregion Down/ Resurrectors
 
         /// <summary>
         ///  Determines the number of alive & non-downed Players this Player is teammates with.
@@ -292,7 +224,7 @@ namespace SARStuff
             int ret = 0;
             foreach (Player mate in Teammates)
             {
-                if (mate.isAlive && !mate.isDown)
+                if (mate.isAlive && (WalkMode != MovementMode.Downed))
                     ret++;
             }
             return ret;
@@ -355,6 +287,151 @@ namespace SARStuff
 
             Teammates.Add(pTeammate);
             return true;
+        }
+
+        public void ElapseTimerOrEnd(float deltaTime)
+        {
+            if (_hasHealActionEnded)
+                return;
+
+            _healStateTimer -= deltaTime;
+            if (_healStateTimer <= 0.0f)
+                ClearHealActionState();
+        }
+
+        public void SetHealAction(HealActionState healAction, float duration)
+        {
+            HealState = healAction;
+            _healStateTimer = duration;
+            _hasHealActionEnded = false;
+        }
+
+        public void ClearHealActionState()
+        {
+            HealState = HealActionState.None;
+            _healStateTimer = 0.0f;
+            _hasHealActionEnded = true;
+        }
+
+        /// <summary>
+        ///  Deducts 1 tape item from this player while simultaneously repairing 1 armor tick.
+        /// </summary>
+        public void DeductTapeAndAddArmorTick()
+        {
+            SuperTape -= 1;
+            ArmorTapes += 1;
+        }
+
+        /// <summary>
+        ///  Causes this player to enter the reviving-teammate heal-state.
+        /// </summary>
+        /// <param name="downedTeammate"> Player this player will try reviving.</param>
+        public void BeginRevivingHomie(Player downedTeammate)
+        {
+            DownedTeammate = downedTeammate;
+            SetHealAction(HealActionState.Reviving, SARConstants.TeammateReviveDurationSeconds);
+        }
+
+        /// <summary>
+        ///  Clears this player's reviving-teammate field. Modifies nothing else.
+        /// </summary>
+        public void ClearRevivingHomie()
+        {
+            DownedTeammate = null;
+        }
+
+        /// <summary>
+        ///  Sets this player into the downed state--- setting all necessary variables in the process.
+        /// </summary>
+        public void KnockDown()
+        {
+            HP = SARConstants.PlayerMaxHP;
+            WalkMode = MovementMode.Downed;
+            if (TimesDowned < byte.MaxValue)
+                TimesDowned++;
+        }
+
+        /// <summary>
+        ///  Initates the bleedout state for this player.
+        /// </summary>
+        /// <param name="secondsUntilBleedout"> Seconds until first bleedout tick.</param>
+        public void BeginBleedoutState(float secondsUntilBleedout)
+        {
+            _bleedoutTimer = secondsUntilBleedout;
+            _isBeingRessed = false;
+            isSupposedToBeDown = true;
+        }
+
+        /// <summary>
+        ///  Sets this player's bleedout timer to the provided value.
+        /// </summary>
+        /// <param name="secondsUntilNextBleedout"> Seconds until next bleedout tick.</param>
+        public void SetNextBleedoutTime(float secondsUntilNextBleedout)
+        {
+            _bleedoutTimer = secondsUntilNextBleedout;
+        }
+
+        /// <summary>
+        ///  Elapses this player's bleedout timer and checks whether it has finished.
+        /// </summary>
+        /// <param name="frameTime"> Time to remove from the bleedout timer.</param>
+        /// <returns> True if the bleedout timer reaches its end; otherwise, False.</returns>
+        public bool ElapseBleedoutEndsTimer(float frameTime)
+        {
+            _bleedoutTimer -= frameTime;
+            if (_bleedoutTimer <= 0.0f)
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        ///  Marks this downed-player as getting revived by a teammate.
+        /// </summary>
+        public void BeginResState()
+        {
+            _bleedoutTimer = 100;
+            _isBeingRessed = true;
+        }
+        
+        /// <summary>
+        ///  Ends this player's downed state. Setting all necessary variables in the process.
+        /// </summary>
+        /// <param name="newHP"> Amount of HP this player will have.</param>
+        public void EndDownedState(byte newHP)
+        {
+            isSupposedToBeDown = false;
+            _isBeingRessed = false;
+            WalkMode = MovementMode.Walking;
+            HP = newHP;
+        }
+
+        /// <summary>
+        ///  Determines whether it is possible for this player to drink any health juice.
+        /// </summary>
+        /// <returns></returns>
+        public bool CanDrinkJuice()
+        {
+            return (HP < SARConstants.PlayerMaxHP) && (HealthJuice > 0);
+        }
+
+        /// <summary>
+        ///  Attempts to drink the provided amount of health juice. Heals this player for however much they are able to drink.
+        /// </summary>
+        /// <param name="juiceAmount"> Amount of juice to try drinking.</param>
+        public void DrinkJuice(byte juiceAmount)
+        {
+            if (!CanDrinkJuice())
+                return;
+
+            if ((HP + juiceAmount) > SARConstants.PlayerMaxHP) // hp overflow
+                juiceAmount = (byte)(100 - juiceAmount);
+
+            if ((HealthJuice - juiceAmount) < 0) // no negative juice amount
+                juiceAmount = HealthJuice;
+
+            HP += juiceAmount;
+            HealthJuice -= juiceAmount;
         }
 
         public override string ToString() => $"<{Name} ({ID})>";

@@ -61,8 +61,8 @@ namespace WCSARS
         private GiantEagle _giantEagle = new GiantEagle(new Vector2(0f, 0f), new Vector2(4248f, 4248f));
 
         // -- Healing Values --
-        private float _healPerTick = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
-        private float _healRateSeconds = 0.5f; // 0.5s
+        private float _drinkJuicePerTick = 4.75f; // 4.75 health/drinkies every 0.5s according to the SAR wiki 7/21/22
+        private float _drinkRateSeconds = 0.5f; // 0.5s
         private float _coconutHealAmountHP = 5f;
         private float _campfireHealPer = 4f;
         private float _campfireHealRateSeconds = 1f;
@@ -121,8 +121,8 @@ namespace WCSARS
             _bannedIPs = LoadJSONArray(_baseloc + "banned-ips.json");
 
             // Set healing values
-            _healPerTick = cfg.JuiceHpPerTick; // WARN [BAD] | BYTE -> FLOAT
-            _healRateSeconds = cfg.JuiceDrinkRateSeconds;
+            _drinkJuicePerTick = cfg.JuiceHpPerTick; // WARN [BAD] | BYTE -> FLOAT
+            _drinkRateSeconds = cfg.JuiceDrinkRateSeconds;
             _coconutHealAmountHP = cfg.CoconutHealHP; // WARN [BAD] | BYTE -> FLOAT
             _campfireHealPer = cfg.CampfireHpPerTick; // WARN [BAD] | BYTE -> FLOAT
             _campfireHealRateSeconds = cfg.CampfireTickRateSeconds;
@@ -315,6 +315,7 @@ namespace WCSARS
                     // Because /commands are a thing
                     CheckMoleCrates();
                     UpdatePlayerDataChanges();
+                    UpdatePlayerHealState((float)DeltaTime.TotalSeconds);
                     UpdateDownedPlayers();
                     UpdateStunnedPlayers();
 
@@ -347,8 +348,8 @@ namespace WCSARS
                     // Match Player Updates
                     SendMatchPlayerPositions();
                     UpdatePlayerDataChanges();
-                    UpdatePlayerDrinking();
-                    UpdatePlayerTaping();
+
+                    UpdatePlayerHealState((float)DeltaTime.TotalSeconds);
                     UpdatePlayerEmotes();
                     UpdateDownedPlayers();
                     UpdateStunnedPlayers();
@@ -443,47 +444,42 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
-        private void UpdatePlayerDrinking() // Appears OK
+        private void UpdatePlayerHealState(float deltaTime)
         {
+            // server is responsible for CONTINUING heal-states & FORCIBLY ending heal-states
+            // server is also responsible for ticking the heal-state timer, as there's no global update loop...
+
             for (int i = 0; i < _players.Length; i++)
             {
-                if (_players[i] == null || !_players[i].isDrinking || (_players[i].NextHealTime > DateTime.UtcNow))
+                if ((_players[i] == null) || (_players[i].HealState == HealActionState.None))
                     continue;
 
-                if ((_players[i].HealthJuice > 0) && (_players[i].HP < 100))
-                {
-                    float hp = _healPerTick;
-                    if ((hp + _players[i].HP) > 100)
-                        hp = 100 - _players[i].HP;
-                    if ((_players[i].HealthJuice - hp) < 0)
-                        hp = _players[i].HealthJuice;
-
-                    byte _tmp = (byte)hp; // spaghetti fix; ideally Player.HP is a float or a similar data-type to _healPerTick...
-                    _players[i].HP += _tmp;
-                    _players[i].HealthJuice -= _tmp;
-
-                    if ((_players[i].HP == 100) || (_players[i].HealthJuice == 0))
-                        SendPlayerEndDrink(_players[i]);
-                    else
-                        _players[i].NextHealTime = DateTime.UtcNow.AddSeconds(_healRateSeconds);
-                }
-                else
-                    SendPlayerEndDrink(_players[i]);
-            }
-        }
-
-        private void UpdatePlayerTaping() // Appears OK
-        {
-            for (int i = 0; i < _players.Length; i++)
-            {
-                if (_players[i] == null || !_players[i].isTaping)
+                HealActionState previous_state = _players[i].HealState;
+                _players[i].ElapseTimerOrEnd(deltaTime);
+                if (!_players[i].HealActionFinished)
                     continue;
 
-                if (DateTime.UtcNow > _players[i].NextTapeTime) // isTaping *should* ONLY get set if tape-checks pass.
+                switch (previous_state)
                 {
-                    _players[i].SuperTape -= 1;
-                    _players[i].ArmorTapes += 1;
-                    SendPlayerEndTape(_players[i]);
+                    case HealActionState.Drinking:
+                        _players[i].DrinkJuice((byte)_drinkJuicePerTick);
+                        if (_players[i].CanDrinkJuice())
+                            _players[i].SetHealAction(HealActionState.Drinking, _drinkRateSeconds);
+                        else
+                            SendPlayerFinishedDrinking(_players[i].ID);
+                        break;
+
+                    case HealActionState.Taping:
+                        _players[i].DeductTapeAndAddArmorTick();
+                        SendPlayerFinishedTaping(_players[i].ID);
+                        break;
+
+                    case HealActionState.Reviving:
+                        HandleTeammateResFinished(_players[i]);
+                        break;
+                    default:
+                        Logger.Failure($"[FAILURE] Unhandled state: {_players[i].HealState}");
+                        break;
                 }
             }
         }
@@ -500,20 +496,21 @@ namespace WCSARS
             }
         }
 
-        private void UpdateDownedPlayers() // Appears OK
+        private void UpdateDownedPlayers()
         {
             for (int i = 0; i < _players.Length; i++)
             {
-                if (_players[i] == null || !_players[i].isAlive || !_players[i].isDown)
+                if ((_players[i] == null) || !_players[i].isAlive)
                     continue;
 
-                if (_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].ReviveTime))
-                    RevivePlayer(_players[i]);
-                else if (!_players[i].isBeingRevived && (DateTime.UtcNow >= _players[i].NextBleedTime))
+                if ((_players[i].WalkMode != MovementMode.Downed) || _players[i].IsBeingRevived)
+                    continue;
+
+                if (_players[i].ElapseBleedoutEndsTimer((float)DeltaTime.TotalSeconds))
                 {
-                    _players[i].NextBleedTime = DateTime.UtcNow.AddSeconds(_bleedoutRateSeconds);
+                    _players[i].SetNextBleedoutTime(_bleedoutRateSeconds);
                     DamagePlayer(_players[i], 2 + (2 * _players[i].TimesDowned), _players[i].LastAttackerID, _players[i].LastWeaponID);
-                    // Please see: https://animalroyale.fandom.com/wiki/Downed_state
+                    // see: https://animalroyale.fandom.com/wiki/Downed_state
                 }
             }
         }
@@ -608,18 +605,6 @@ namespace WCSARS
                     }
                 }
             }
-        }
-
-        /// <summary>
-        /// Revives the provided player utilizing the information stored within their fields.
-        /// </summary>
-        /// <param name="player">Player to revive.</param>
-        private void RevivePlayer(Player player)
-        {
-            SendPickupFinished(player.SaviourID, player.ID);
-            if (TryPlayerFromID(player.SaviourID, out Player saviour))
-                saviour.FinishedRessingPlayer();
-            player.ReviveFromDownedState(_resurrectSetHP);
         }
 
         private void CheckForWinnerWinnerChickenDinner()
@@ -1121,7 +1106,7 @@ namespace WCSARS
                         {
                             if (player.LootItems[2].WeaponType != WeaponType.Throwable) return;
                             if (!player.IsPlayerReal()) return;
-                            CheckMovementConflicts(player);
+                            CancelAnyActionState(player);
                             try
                             {
                                 float spawnX = msg.ReadFloat();
@@ -1246,7 +1231,7 @@ namespace WCSARS
                     HandleAttackWindDown(msg);
                     break;
 
-                    // Msg80 -- Teammate Pickup Request
+                    // Msg80 -- Teammate Pickup Request >>> Teammate Pickup Start (Msg81)
                 case 80:
                     HandleTeammatePickupRequest(msg);
                     break;
@@ -1291,9 +1276,7 @@ namespace WCSARS
             }
         }
 
-        /// <summary>
-        /// Sends an Authentication Response packet to sender of this NetMessage. If the sent PlayFabID is in the banlist, then the connection is dropped.
-        /// </summary>
+        // Msg1 | "Authentication Request" >>> Msg2 | "Authentication Response" --- received whenever a player tries joining the server
         private void HandleAuthenticationRequest(NetIncomingMessage pMsg)
         {
             // has this player already tried getting authenticated?
@@ -1676,7 +1659,7 @@ namespace WCSARS
                     {
                         case MovementMode.Rolling:
                         case MovementMode.CreepRolling:
-                            CheckMovementConflicts(player);
+                            CancelAnyActionState(player);
                             if (player.isReloading)
                                 SendCancelReload(player);
                             break;
@@ -1695,12 +1678,12 @@ namespace WCSARS
                             break;
 
                         case MovementMode.Downed:
-                            if (!player.isDown)
+                            if (!player.isSupposedToBeDown)
                                 rWalkMode = MovementMode.Walking;
                             break;
 
                         case MovementMode.BananaStunned:
-                            if (!player.isStunned)
+                            if (!player.isStunned) // alleviates desync issue
                                 rWalkMode = MovementMode.Walking;
                             break;
                         default:
@@ -1708,7 +1691,7 @@ namespace WCSARS
                     }
 
                     // try to force walkmodes if player trying to cheese their way out...
-                    if (player.isDown && (rWalkMode != MovementMode.Downed))
+                    if (player.isSupposedToBeDown && (rWalkMode != MovementMode.Downed))
                         rWalkMode = MovementMode.Downed;
                     if (player.isStunned && (rWalkMode != MovementMode.BananaStunned))
                         rWalkMode = MovementMode.BananaStunned;
@@ -1722,11 +1705,14 @@ namespace WCSARS
                     if (player.isEmoting && !player.Position.IsNear(player.EmotePosition, 4f))
                         HandleEmoteCancel(player);
 
-                    // todo - fix this breaking sometimes...
-                    if (player.isReviving && TryPlayerFromID(player.RevivingID, out Player whoImRessing) && !player.Position.IsNear(whoImRessing.Position, 3f))
-                        HandlePickupCanceled(player);
-                    if (player.isBeingRevived && TryPlayerFromID(player.SaviourID, out Player mySaviour) && !player.Position.IsNear(mySaviour.Position, 3f))
-                        HandlePickupCanceled(player);
+                    if ((player.HealState == HealActionState.Reviving))
+                    {
+                        if ((player.DownedTeammate != null) && !player.Position.IsNear(player.DownedTeammate.Position, SARConstants.TeammateReviveMaxDistance))
+                        {
+                            GoWarnModsAndAdmins("res canceled; moved too far away");
+                            HandleTeammateResCancel(player);
+                        }
+                    }
                 }
                 catch (NetException netEx)
                 {
@@ -1757,7 +1743,7 @@ namespace WCSARS
             player.Placement = (byte)aliveTeams;
             player.isAlive = false;
 
-            CheckMovementConflicts(player);
+            CancelAnyActionState(player);
             SendPlayerDeath(player.ID, player.Position, player.LastAttackerID, player.LastWeaponID);
             SendEndScreenItemDrops(player);
 
@@ -1800,7 +1786,7 @@ namespace WCSARS
 
                     if (player.isReloading)
                         SendCancelReload(player);
-                    CheckMovementConflicts(player);
+                    CancelAnyActionState(player);
 
                     // data reads -- kind of messy, but it is what it is
                     short rWeaponID = amsg.ReadInt16();
@@ -2032,7 +2018,7 @@ namespace WCSARS
             player.SetLastDamageSource(sourceID, weaponID);
             if (damage >= player.HP) // hp - damage =< 0
             {
-                if (!player.isDown && player.Teammates.Count > 0)
+                if ((player.WalkMode != MovementMode.Downed) && player.Teammates.Count > 0)
                 {
                     if (player.AliveNonDownTeammteCount() == 0)
                     {
@@ -2176,253 +2162,6 @@ namespace WCSARS
                                         "\n> Type '/help [command]' for more information";
                                 }
                                 break;
-
-                            #region removable commands
-                            // adds new player but if solos or team is full gets put on other team
-                            case "/p": // you shouldn't use this unless you know what you're doing
-                                for (int i = 0; i < _players.Length; i++)
-                                {
-                                    if (_players[i] != null)
-                                        continue;
-                                    Player addPlayer = new Player((short)i, 0, 0, 0, 0, new short[] { -1, -1, -1, -1, -1, -1 }, 0, 0, 0, 0, 0, 0, new short[] { }, new byte[] { }, "tmp", new Client());
-                                    addPlayer.hasReadied = true;
-
-                                    _players[i] = addPlayer;
-                                    if (_gamemode != SARConstants.GamemodeSolos)
-                                        FindTeamToAddPlayerTo(addPlayer);
-
-                                    SendAllPlayerCharacters(GetAllReadiedAlivePlayers());
-                                    responseMsg = "added a new player...";
-                                    break;
-                                }
-                                break;
-
-                            case "/gb":
-                                responseMsg = "Valid HamsterballIDs: ";
-                                foreach (int key in _hamsterballs.Keys)
-                                    responseMsg += $"{key}, ";
-                                break;
-                            case "/b":
-                                if (command.Length >= 2 && command[1] != "")
-                                {
-                                    if (int.TryParse(command[1], out int ballKey))
-                                    {
-                                        if (_hamsterballs.ContainsKey(ballKey))
-                                        {
-                                            SendForcePosition(player, _hamsterballs[ballKey].Position);
-                                            responseMsg = $"Teleported {player} to Hamsterball[{ballKey}].";
-                                        }
-                                        else responseMsg = $"No such hamsterball \"{ballKey}\"!";
-                                    }
-                                    else responseMsg = $"Command error: not INT.";
-                                }
-                                else
-                                    responseMsg = "Insufficient # of arguments provided.\n\"/tpball\" takes at least 1!\nUsage: /tpball [ballID] OR /tpball [ballID] <X> <Y>.";
-                                break;
-
-                            case "/forceb":
-                                {
-
-                                    if (TryPlayerFromString(command[1], out Player ballee))
-                                    {
-                                        short hamsterballID = short.Parse(command[2]);
-                                        if (_hamsterballs.ContainsKey(hamsterballID))
-                                        {
-                                            CheckMovementConflicts(ballee);
-                                            ballee.SetHamsterball(hamsterballID);
-                                            _hamsterballs[hamsterballID].CurrentOwner = ballee;
-                                            SendHamsterballEntered(ballee.ID, (short)hamsterballID, _hamsterballs[hamsterballID].Position);
-                                        }
-                                    }
-                                }
-                                break;
-
-                            case "/leaveball":
-                                {
-                                    if (TryPlayerFromString(command[1], out Player ballee))
-                                    {
-
-                                        Hamsterball hamsterball = _hamsterballs[ballee.HamsterballID];
-                                        hamsterball.Position = ballee.Position;
-                                        hamsterball.CurrentOwner = null;
-                                        ballee.ResetHamsterball();
-                                        SendHamsterballExit(ballee.ID, hamsterball.ID, ballee.Position);
-                                    }
-                                }
-                                break;
-
-                            case "/setlanded": // gotta remove this broski
-                                for (int i = 0; i < _players.Length; i++)
-                                {
-                                    if (_players[i] != null)
-                                        _players[i].hasLanded = true;
-                                }
-                                responseMsg = "set EVERYONE to as having landed";
-                                break;
-
-                            case "/tpbarrel":
-                                {
-                                    foreach (Doodad doodad in _level.Doodads)
-                                    {
-                                        if (doodad.Type.DestructibleDamageRadius > 0)
-                                        {
-                                            SendForcePosition(player, doodad.Position);
-                                            responseMsg = $"Sent you to Doodad @ {doodad.Position}";
-                                            break;
-                                        }
-                                    }
-                                }
-                                break;
-
-                            case "/boomb":
-                                {
-                                    try
-                                    {
-                                        float x = int.Parse(command[1]);
-                                        float y = int.Parse(command[2]);
-
-                                        HandleDoodadDestructionFromPoint(new Vector2(x, y));
-                                        responseMsg = $"Tried destroying Doodad @ {(x, y)}";
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        responseMsg = $"{ex}";
-                                    }
-                                }
-                                break;
-
-                            case "/tpb":
-                                try
-                                {
-                                    short ballID = short.Parse(command[1]);
-                                    if (!_hamsterballs.ContainsKey(ballID))
-                                    {
-                                        responseMsg = $"There is no ball with id: \"{ballID}\"";
-                                        break;
-                                    }
-                                    SendHamsterballExit(player.ID, ballID, player.Position);
-                                }
-                                catch (Exception ex)
-                                {
-                                    responseMsg = $"Goofed somewhere";
-                                    Logger.Failure($"There was indeed an error at some point for doing something I don't really care what\n{ex}");
-                                }
-                                break;
-
-                            case "/mates":
-                                Logger.Success("/mates has been used!");
-                                if (command.Length >= 2 && command[1] != "")
-                                {
-                                    if (TryPlayerFromString(command[1], out Player mates))
-                                    {
-                                        string print = $"{mates} has {mates.Teammates.Count} teammates for a total of {mates.Teammates.Count + 1} players. isFillsDisabled: {mates.Client.isFillsDisabled}\n0) {mates}\n";
-                                        for (int i = 0; i < mates.Teammates.Count; i++)
-                                        {
-                                            print += $"{i + 1}) {mates.Teammates[i]}\n";
-                                        }
-                                        print += "-----------";
-                                        Logger.Basic(print);
-                                    }
-                                    else responseMsg = $"Could not locate player \"{command[1]}\"";
-                                }
-                                else
-                                {
-                                    string print = $"{player} has {player.Teammates.Count} teammates for a total of {player.Teammates.Count + 1} players. isFillsDisabled: {player.Client.isFillsDisabled}\n0) {player}\n";
-                                    for (int i = 0; i < player.Teammates.Count; i++)
-                                    {
-                                        print += $"{i + 1}) {player.Teammates[i]}\n";
-                                    }
-                                    print += "-----------";
-                                    Logger.Basic(print);
-                                }
-                                break;
-
-                            // testing if teammates can "dc" but stick around and be used for junk
-                            case "/d": // you also shouldn't use this unless you know what you are doing.
-                                if (command.Length >= 2 && command[1] != "")
-                                {
-                                    if (TryPlayerFromString(command[1], out Player dcP))
-                                        HandleTeammateLeavingMatch(dcP, false);
-                                    else
-                                        responseMsg = $"Could not locate player \"{command[1]}\"";
-                                }
-                                else
-                                    responseMsg = "Missing some stuff...";
-                                break;
-                            case "/check": //12/1/23 --> can remove
-                                try
-                                {
-                                    bool wasSafe;
-                                    wasSafe = _level.IsValidPlayerLoc(ref player.Position);
-                                    responseMsg = $"{player.Position} valid: {wasSafe}";
-                                }
-                                catch (Exception excp)
-                                {
-                                    GoWarnModsAndAdmins("command broke");
-                                    Logger.Failure($"/check - erorr\n{excp}");
-                                }
-                                break;
-                            case "/quick":
-                                try
-                                {
-                                    int x = (int)player.Position.x;
-                                    int y = (int)player.Position.y;
-                                    bool wasSafe = _level.QuickIsValidPlayerLoc(x, y);
-                                    responseMsg = $"{player.Position} (used: {(x, y)}) valid: {wasSafe}";
-                                }
-                                catch (Exception excp)
-                                {
-                                    GoWarnModsAndAdmins("command broke");
-                                    Logger.Failure($"/quick - erorr\n{excp}");
-                                }
-                                break;
-                            case "/move":
-                                if (command.Length >= 3 && command[1] != "")
-                                {
-                                    try
-                                    {
-                                        float x = float.Parse(command[1]);
-                                        float y = float.Parse(command[2]);
-                                        SendForcePosition(player, new Vector2(x, y), false);
-                                        responseMsg = $"teleported you to {(x, y)}";
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        responseMsg = "ouch! error handling the command!";
-                                        Logger.Failure($"unhandled general exception:\n{ex}");
-                                    }
-                                }
-                                else
-                                    responseMsg = "Insufficient amount of arguments provided. usage: /move {positionX} {positionY}";
-                                break;
-                            case "/improve":
-                                if (_level.QuickIsValidPlayerLoc((int)player.Position.x, (int)player.Position.y))
-                                    responseMsg = "Your position is already valid.";
-                                else
-                                {
-                                    int x = (int)player.Position.x, y = (int)player.Position.y;
-                                    Vector2 newpos = _level.FindWalkableGridLocation(x, y);
-                                    SendForcePosition(player, newpos, false);
-                                    responseMsg = $"You have been teleported to {newpos}";
-                                }
-                                break;
-                            case "/levelsize":
-                                responseMsg = $"LevelWidth={_level.LevelWidth}\nLevel Height={_level.LevelHeight}";
-                                break;
-                            case "/type":
-                                try
-                                {
-                                    int x = (int)player.Position.x;
-                                    int y = (int)player.Position.y;
-                                    responseMsg = $"{(x, y)} type: {_level.CollisionGrid[x][y]}";
-                                }
-                                catch (Exception excp)
-                                {
-                                    GoWarnModsAndAdmins("command broke");
-                                    Logger.Failure($"/type - erorr\n{excp}");
-                                }
-                                break;
-                            #endregion removable commands
 
                             case "/kick":
                                 if (player.Client.isMod || player.Client.isDev)
@@ -2859,17 +2598,15 @@ namespace WCSARS
                                 {
                                     if (TryPlayerFromString(command[1], out Player resPlayer))
                                     {
-                                        resPlayer.SaviourID = resPlayer.ID;
-                                        RevivePlayer(resPlayer);
+                                        LazyRevivePlayer(resPlayer);
                                         responseMsg = $"Forced {resPlayer} to get picked up.";
                                     }
                                     else responseMsg = $"Couldn't locate player \"{command[1]}\"";
                                 }
                                 else
                                 {
-                                    player.SaviourID = player.ID;
-                                    RevivePlayer(player);
-                                    responseMsg = $"Peace be with you, {player.Name}.";
+                                    LazyRevivePlayer(player);
+                                    responseMsg = $"Come on, still lot's to be done.";
                                 }
                                 break;
 
@@ -3327,9 +3064,12 @@ namespace WCSARS
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleSlotUpdate", out Player player))
             {
-                if (!player.IsPlayerReal()) return;
+                if (!player.IsPlayerReal())
+                    return;
                 try
                 {
+                    CancelAnyActionState(player);
+
                     byte slot = pmsg.ReadByte();
                     if (slot > 4) return;
                     if (player.isReloading) SendCancelReload(player);
@@ -3478,7 +3218,7 @@ namespace WCSARS
                         player.isReloading = true;
                         //player.ReloadFinishTime = DateTime.Ut
                     }
-                    CheckMovementConflicts(player);
+                    CancelAnyActionState(player);
                     // Send Reload :]
                     NetOutgoingMessage msg = server.CreateMessage();
                     msg.Write((byte)30);    // Byte  | MessageID (30)
@@ -3671,14 +3411,25 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
-        // Msg49 | "Player Ended Drinking" -- Sent once a player has finished drinking.
-        private void SendPlayerEndDrink(Player player)
+        // Msg48 "Drink Start" -- send to announce a player started drinking/ play animation.
+        private void SendPlayerStartedDrinking(short playerID)
         {
-            if (!IsServerRunning()) return;
-            player.isDrinking = false;
+            if (!IsServerRunning())
+                return;
+            NetOutgoingMessage msg = server.CreateMessage(3);
+            msg.Write((byte)48);    // 1 Byte  | MsgID (48)
+            msg.Write(playerID);    // 2 Short | PlayerID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg49 | "Drink Ended" --- send to announce that a player has stopped drinking/ end animation.
+        private void SendPlayerFinishedDrinking(short playerID)
+        {
+            if (!IsServerRunning())
+                return;
             NetOutgoingMessage msg = server.CreateMessage(3);
             msg.Write((byte)49);    // 1 Byte  | MsgID (49)
-            msg.Write(player.ID);   // 2 Short | PlayerID
+            msg.Write(playerID);   // 2 Short | PlayerID
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -3971,7 +3722,7 @@ namespace WCSARS
                         Logger.DebugServer($"ItemPosition: {item.Position}");
                         Logger.Failure($"[HandleMatchLootReq] Player not close enough to loot...");
                     }
-                    CheckMovementConflicts(player);
+                    CancelAnyActionState(player);
 
                     // Ok give the item.
                     //string itemdata = $"-- Found Item! --\nName: {item.Name}; Type: {item.LootType}; WeaponType: {item.WeaponType}\nRarity: {item.Rarity}; Give: {item.GiveAmount}; Position: {item.Position}\n";
@@ -4245,7 +3996,7 @@ namespace WCSARS
                         return;
 
                     // everything else ok
-                    CheckMovementConflicts(player);
+                    CancelAnyActionState(player);
                     player.SetHamsterball((short)hampterID);
                     _hamsterballs[hampterID].CurrentOwner = player;
                     SendHamsterballEntered(player.ID, (short)hampterID, _hamsterballs[hampterID].Position);
@@ -4483,7 +4234,7 @@ namespace WCSARS
                     }
                     else
                     {
-                        CancelAllNonEmoteActions(player);
+                        CancelAnyHealActions(player);
                         SendEmotePerformed(player.ID, rEmoteID);
                         player.EmoteStarted(rEmoteID, emotingPosition, rEmoteDuration);
                     }
@@ -4713,7 +4464,7 @@ namespace WCSARS
                     byte slot = pMsg.ReadByte();
 
                     // verify player isn't lying...
-                    if (slot >= 3) // v0.90.2:: [0, 1, 2]
+                    if (slot >= SARConstants.PlayerMaxItemSlotID)
                     {
                         Logger.Failure($"[HandleAttackWindupReq - Error] {player} @ {pMsg.SenderConnection} sent invalid slot id \"{slot}\"!");
                         pMsg.SenderConnection.Disconnect("There was an error reading your packet data. [AttackWindup]");
@@ -4732,6 +4483,7 @@ namespace WCSARS
                     }
 
                     // packet data checks all passed successfully!
+                    CancelAnyActionState(player); // forgot to do this!
                     SendAttackWindup(player.ID, weaponID, slot);
                 }
                 catch (NetException netEx)
@@ -4747,7 +4499,7 @@ namespace WCSARS
         {
             if (!IsServerRunning()) return;
             NetOutgoingMessage msg = server.CreateMessage(6);
-            msg.Write((byte)75);    // 1 Byte  | MsgID (76)
+            msg.Write((byte)75);    // 1 Byte  | MsgID (75)
             msg.Write(playerID);    // 2 Short | PlayerID
             msg.Write(weaponID);    // 2 Short | WeaponID
             msg.Write(slotID);      // 1 Byte  | SlotID
@@ -4807,8 +4559,7 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
-        /// <summary>Handles an incoming "HealRequest" packet (Msg47); Either ignoring or accepting the message and starting the Player heal.</summary>
-        /// <param name="pmsg">Incoming message to read data from.</param>
+        // Msg47 | "Drink Request" --- received whenever a player attempts to heal/ drink.
         private void HandleHealingRequest(NetIncomingMessage pmsg) // Msg47 >> Msg48
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleHealingRequest", out Player player))
@@ -4821,14 +4572,10 @@ namespace WCSARS
                     Vector2 requestPostion = new Vector2(posX, posY);
                     if (requestPostion.IsNear(player.Position, 2)){
                         SendForcePosition(player, requestPostion);
-                        CheckMovementConflicts(player);
+                        CancelAnyActionState(player);
                         player.Position = requestPostion;
-                        player.isDrinking = true;
-                        player.NextHealTime = DateTime.UtcNow.AddSeconds(1.2d);
-                        NetOutgoingMessage msg = server.CreateMessage();
-                        msg.Write((byte)48);
-                        msg.Write(player.ID);
-                        server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+                        player.SetHealAction(HealActionState.Drinking, _drinkRateSeconds + SARConstants.DrinkWindupDuration);
+                        SendPlayerStartedDrinking(player.ID);
                     }
                 }
                 catch (NetException netEx)
@@ -4839,8 +4586,7 @@ namespace WCSARS
             }
         }
 
-        /// <summary> Handles an incoming "TapingRequest" packet (Msg98); Either ignoring, or accepting the request and setting the required fields.</summary>
-        /// <param name="pmsg">Incoming message that contains TapeRequest data.</param>
+        // Msg98 | "Tape Request" --- received whenever a player attempts to repair their armor.
         private void HandleTapeRequest(NetIncomingMessage pmsg) // Msg98 >> Msg99
         {
             if (VerifyPlayer(pmsg.SenderConnection, "HandleTapeRequest", out Player player))
@@ -4854,15 +4600,13 @@ namespace WCSARS
                     Vector2 requestPosition = new Vector2(posX, posY);
                     if (requestPosition.IsNear(player.Position, 2))
                     {
+                        CancelAnyActionState(player);
                         SendForcePosition(player, requestPosition);
-                        CheckMovementConflicts(player);
+
                         player.Position = requestPosition;
-                        player.isTaping = true;
-                        player.NextTapeTime = DateTime.UtcNow.AddSeconds(SARConstants.TapeRepairDurationSeconds);
-                        NetOutgoingMessage tapetiem = server.CreateMessage();
-                        tapetiem.Write((byte)99);
-                        tapetiem.Write(player.ID);
-                        server.SendToAll(tapetiem, NetDeliveryMethod.ReliableUnordered);
+                        player.SetHealAction(HealActionState.Taping, SARConstants.TapeRepairDurationSeconds);
+
+                        SendPlayerStartedTaping(player.ID);
                     }
                 }
                 catch (NetException netEx)
@@ -4922,13 +4666,11 @@ namespace WCSARS
                     Logger.Failure($"[TeammatePickupRequest | Error: {player} is not real.");
                     return;
                 }
-                if (player.isReviving)
+                if (player.HealState == HealActionState.Reviving)
                 {
                     Logger.Failure($"[TeammatePickupRequest | Error: {player} is already reviving a player?");
                     return;
                 }
-                CheckMovementConflicts(player);
-
                 try
                 {
                     // reading of messae data...
@@ -4945,16 +4687,16 @@ namespace WCSARS
                         Logger.Failure($"[HandleTeammatePickupRequest] {player} isn't teammates with {teammate}.");
                         return;
                     }
-                    if (!player.Position.IsNear(teammate.Position, 7.4f))
+                    if (!player.Position.IsNear(teammate.Position, SARConstants.TeammateReviveMaxDistance))
                     {
                         Logger.Failure($"Teammate wasn't close enough to revive!");
                         return;
                     }
 
-                    // everything is OK
-                    teammate.SetMyResurrector(player.ID);
-                    player.SetWhoImRessing(teammateID);
-                    SendPickupBegan(player.ID, teammateID);
+                    CancelAnyActionState(player);
+                    player.BeginRevivingHomie(teammate);
+                    teammate.BeginResState();
+                    SendTeammatePickupStarted(player.ID, teammateID);
                 }
                 catch (NetException netEx)
                 {
@@ -4964,74 +4706,53 @@ namespace WCSARS
             }
         }
 
-        // Msg81 | "Teammate Pickup Begin" --- Sent whenever a teammate begins reviving their teammate; it displays to all other players this "action" of doing so
-        private void SendPickupBegan(short saviourID, short downedID)
+        // Msg81 | "Teammate Pickup Begin" --- send whenever a player starts a pickup; causes animation to start.
+        private void SendTeammatePickupStarted(short reviverID, short downedID)
         {
-            if (!IsServerRunning()) return;
-            NetOutgoingMessage msg = server.CreateMessage(5); // initCapacity = (byte)[1] + 2x(short)[2] = 5
+            if (!IsServerRunning())
+                return;
+            NetOutgoingMessage msg = server.CreateMessage(5);
             msg.Write((byte)81);    // 1 Byte  | MsgID (81)
-            msg.Write(saviourID);   // 2 Short | Reviving-PlayerID 
-            msg.Write(downedID);    // 2 Short | Downed-PlayerID
+            msg.Write(reviverID);   // 2 Short | ID# of ressing teammate
+            msg.Write(downedID);    // 2 Short | ID# of downed teammate
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
         }
 
-        // Msg82 | "Teammate Pickup Canceled" --- Sent whenever a reviver does something to cancel the revive; it displays the "action" of the player canceling to all others
-        private void SendPickupCanceled(short revivingPID, short downedPID)
+        // Msg82 | "Teammate Pickup Canceled" --- send whenever a player cancels a pickup; causes animation to end.
+        private void SendTeammatePickupCanceled(short reviverID, short downedID)
         {
-            if (!IsServerRunning()) return;
+            if (!IsServerRunning())
+                return;
             NetOutgoingMessage msg = server.CreateMessage(5); // initCapacity = (byte)[1] + 2x(short)[2] = 5
             msg.Write((byte)82);    // 1 Byte  | MsgID (82)
-            msg.Write(revivingPID); // 2 Short | RevivingPlayerID
-            msg.Write(downedPID);   // 2 Short | DownedPlayerID
+            msg.Write(reviverID);   // 2 Short | ID# of ressing teammate
+            msg.Write(downedID);    // 2 Short | ID# of downed teammate
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
-        /// <summary>
-        /// Sends a "Player-Revived" packet to all NetPeers using the provided paramters. NO server-side setting of required fields.
-        /// </summary>
-        /// <param name="ressingID">ID of the player who is reviving.</param>
-        /// <param name="downedID">ID of the player who has been revived.</param>
-        private void SendPickupFinished(short ressingID, short downedID) // Msg83
+        // Msg83 | "Teammate Pickup Finished" --- send whenver a player finishing ressing a teammate; causes animation to end.
+        private void SendTeammatePickupFinished(short reviverID, short downedID)
         {
-            if (!IsServerRunning()) return;
+            if (!IsServerRunning())
+                return;
             NetOutgoingMessage msg = server.CreateMessage(5);
             msg.Write((byte)83);    // 1 Byte  | MsgID (83)
-            msg.Write(ressingID);   // 2 Short | RevierID
-            msg.Write(downedID);    // 2 Short | RevieeID
+            msg.Write(reviverID);   // 2 Short | ID# of ressing teammate
+            msg.Write(downedID);    // 2 Short | ID# of downed teammate
             server.SendToAll(msg, NetDeliveryMethod.ReliableSequenced);
         }
 
-        // Msg84 | "Player Downed" -- Sent in team-based modes when the Player should've died, but they still have teammates alive.
-        private void HandlePlayerDowned(Player player, short attackerID, short wepaonID)
+        // Msg84 (literally) | "Player Knocked" --- send whenever a player is to be knocked down; plays animation to clients
+        private void SendPlayerKnockedDowned(short playerID, short attackerID, short weaponID)
         {
-            if (!IsServerRunning()) return;
-            // Server-Side Vars
-            CheckMovementConflicts(player);
-            player.KnockDown(_bleedoutRateSeconds);
-            // Net Message
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)84);   // Byte  | MsgID (84)
-            msg.Write(player.ID);  // Short | Downed PlayerID
-            msg.Write(attackerID); // Short | Killer PlayerID [-2 = SSG; any other is nothing, or a PlayerID]
-            msg.Write(wepaonID);   // Short | WeaponID / DamageSourceID [-3 Barrel; -2 Hamsterballs; -1 = None; 0+ Weapons]
+            if (!IsServerRunning())
+                return;
+            NetOutgoingMessage msg = server.CreateMessage(7);
+            msg.Write((byte)84);    // 1 Byte  | MsgID (84)
+            msg.Write(playerID);    // 2 Short | Downed PlayerID
+            msg.Write(attackerID);  // 2 Short | Killer PlayerID [-2 = SSG; any other is nothing, or a PlayerID]
+            msg.Write(weaponID);    // 2 Short | WeaponID / DamageSourceID [-3 Barrel; -2 Hamsterballs; -1 = None; 0+ Weapons]
             server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
-        }
-
-        // Handles a reviving-player canceling their revive
-        private void HandlePickupCanceled(Player player)
-        {
-            if (player.isReviving)
-            {
-                SendPickupCanceled(player.ID, player.RevivingID); // must go first, or store the revivingPlayerID
-                if (TryPlayerFromID(player.RevivingID, out Player downedPlayer)) downedPlayer.ResurrectGotCanceledByRessorector(_bleedoutRateSeconds);
-                player.FinishedRessingPlayer();
-            }
-            else if (player.isDown)
-            {
-                SendPickupCanceled(player.SaviourID, player.ID);
-                if (TryPlayerFromID(player.SaviourID, out Player thisSaviour)) thisSaviour.FinishedRessingPlayer();
-                player.ResurrectGotCanceledByRessorector(_bleedoutRateSeconds);
-            }
         }
 
         // Msg87 | "Trap Deploy Request" --- Received when a player throws a "trap" throwable (banana/skunk nades)
@@ -5147,15 +4868,25 @@ namespace WCSARS
             server.SendToAll(dummy, NetDeliveryMethod.ReliableOrdered);
         }
 
-        /// <summary>
-        /// Sends a NetMessage to all connected clients that states a player with the provided PlayerID has finished/stopped taping their armor.
-        /// </summary>
-        private void SendPlayerEndTape(Player player) // Msg100
+        // Msg99 | "Taping Start" --- sent whenever a player starts taping
+        private void SendPlayerStartedTaping(short playerID)
         {
-            player.isTaping = false;
-            NetOutgoingMessage msg = server.CreateMessage();
-            msg.Write((byte)100);   // Byte  | MsgID (100)
-            msg.Write(player.ID);   // Short | PlayerID
+            if (!IsServerRunning())
+                return;
+            NetOutgoingMessage msg = server.CreateMessage(3);
+            msg.Write((byte)99);    // 1 Byte  | MsgID (99)
+            msg.Write(playerID);    // 2 Short | PlayerID
+            server.SendToAll(msg, NetDeliveryMethod.ReliableUnordered);
+        }
+
+        // Msg100 | "Taping Finished" --- sent whenever a player finishes taping
+        private void SendPlayerFinishedTaping(short playerID) // Msg100
+        {
+            if (!IsServerRunning())
+                return;
+            NetOutgoingMessage msg = server.CreateMessage(3);
+            msg.Write((byte)100);   // 1 Byte  | MsgID (100)
+            msg.Write(playerID);    // 2 Short | PlayerID
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
@@ -5228,22 +4959,38 @@ namespace WCSARS
             server.SendToAll(msg, NetDeliveryMethod.ReliableOrdered);
         }
 
-        /// <summary>
-        /// Sends NetMessages to all NetPeers containing the packets that will stop drinking, taping, and emoting.
-        /// </summary>
-        private void CheckMovementConflicts(Player player) // Player fields are reset within each of these methods.
+
+        // attempts to cancel any action state
+        private void CancelAnyActionState(Player player) // Player fields are reset within each of these methods.
         {
-            SendPlayerEndDrink(player);
-            SendPlayerEndTape(player);
+            if (player.HealState != HealActionState.None)
+                CancelAnyHealActions(player);
+
+            // todo - other states
             HandleEmoteCancel(player);
-            HandlePickupCanceled(player);
         }
 
-        private void CancelAllNonEmoteActions(Player player)
+        // cancels any current healing actions the provided player is performing.
+        private void CancelAnyHealActions(Player player)
         {
-            SendPlayerEndDrink(player);
-            SendPlayerEndTape(player);
-            HandlePickupCanceled(player);
+            switch (player.HealState)
+            {
+                case HealActionState.Drinking:
+                    SendPlayerFinishedDrinking(player.ID);
+                    break;
+
+                case HealActionState.Taping:
+                    SendPlayerFinishedTaping(player.ID);
+                    break;
+
+                case HealActionState.Reviving:
+                    HandleTeammateResCancel(player);
+                    break;
+                default:
+                    Logger.Warn($"[CancelAnyHealActions] Unhandled action \"{player.HealState}\"");
+                    break;
+            }
+            player.ClearHealActionState();
         }
 
         /// <summary>
@@ -5304,6 +5051,47 @@ namespace WCSARS
                     pPlayer.Teammates.Remove(pPlayer.Teammates[i]);
                 }
             }
+        }
+
+        // facilitates the knocking-down of players.
+        private void HandlePlayerDowned(Player player, short attackerID, short weaponID)
+        {
+            CancelAnyActionState(player);
+            player.KnockDown();
+            player.BeginBleedoutState(_bleedoutRateSeconds);
+            SendPlayerKnockedDowned(player.ID, attackerID, weaponID);
+        }
+
+        // handles this player's teammate pickup finish action
+        private void HandleTeammateResFinished(Player player)
+        {
+            Player downedMember = player.DownedTeammate;
+            if (downedMember == null)
+            {
+                Logger.Failure($"[HTeammateResFin] [ERROR] {player}'s downed teammate was null!");
+                GoWarnModsAndAdmins($"{player} downed teammate null!!");
+                SendTeammatePickupFinished(player.ID, -1);
+                return;
+            }
+            downedMember.EndDownedState(_resurrectSetHP);
+            player.ClearRevivingHomie();
+            SendTeammatePickupFinished(player.ID, downedMember.ID);
+        }
+
+        // handles this player's teammate pickup cancel action
+        private void HandleTeammateResCancel(Player player)
+        {
+            Player downedMember = player.DownedTeammate;
+            if (downedMember == null)
+            {
+                Logger.Failure($"[HTeammateResCancel] [ERROR] {player}'s downed teammate was null!");
+                GoWarnModsAndAdmins($"{player} downed teammate null!");
+                return;
+            }
+            downedMember.BeginBleedoutState(_bleedoutRateSeconds);
+            player.ClearRevivingHomie();
+            player.ClearHealActionState();
+            SendTeammatePickupCanceled(player.ID, downedMember.ID);
         }
 
         /// <summary>
@@ -5734,5 +5522,25 @@ namespace WCSARS
         /// <summary> Returns whether this Match's NetServer is still running or not.</summary>
         /// <returns>True if the NetServer's status is "running"; False is otherwise.</returns>
         public bool IsServerRunning() => server?.Status == NetPeerStatus.Running;
+
+
+        /// <summary>
+        ///  Lazily "revives" a player from the downed state--- used for /commands
+        /// </summary>
+        /// <param name="player"> Player to mark as no longer being down.</param>
+        private void LazyRevivePlayer(Player player)
+        {
+            if (player.DownedTeammate != null)
+            {
+                SendTeammatePickupFinished(player.ID, player.DownedTeammate.ID);
+                player.DownedTeammate.EndDownedState(_resurrectSetHP);
+                player.ClearRevivingHomie();
+            }
+            else
+            {
+                player.EndDownedState(_resurrectSetHP);
+                SendTeammatePickupFinished(player.ID, player.ID);
+            }
+        }
     }
 }
